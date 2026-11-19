@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Calculator, CheckCircle2, Download, Lock, Plus, Printer, Pencil, Search, UserRound } from 'lucide-react';
+import { Calculator, CheckCircle2, Download, Lock, Plus, Printer, Pencil, Search } from 'lucide-react';
 import { apiFetch, downloadWithAuth, formatDA, hasPerm } from '../lib/api';
 import { Modal, PageHeader, PayslipPrintModal, StatusText } from '../components/ui';
 
