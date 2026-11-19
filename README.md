@@ -161,22 +161,26 @@ Les autorisations sont vérifiées côté serveur par des permissions associées
 
 ~~~text
 .
-├── server.ts                 # Démarrage Express + Vite (développement)
-├── electron/\n│   └── main.cjs               # Fenêtre Windows et démarrage du serveur local\n├── .github/workflows/\n│   └── windows-installer.yml  # Build et publication du setup Windows\n├── package.json              # Dépendances et scripts
-├── vite.config.ts            # Configuration Vite / React / Tailwind
+├── server.ts
+├── electron/
+│   └── main.cjs
+├── .github/workflows/
+│   └── windows-installer.yml
+├── package.json
+├── vite.config.ts
 ├── index.html
 ├── server/
-│   ├── auth.ts               # Authentification et permissions
-│   ├── backup.ts             # Sauvegarde et restauration ZIP
-│   ├── calculations.ts       # Calculs métier et fiscaux
-│   ├── db.ts                 # SQLite et migrations
-│   ├── routes.ts             # API Express
+│   ├── auth.ts
+│   ├── backup.ts
+│   ├── calculations.ts
+│   ├── db.ts
+│   └── routes.ts
 └── src/
-    ├── App.tsx               # Navigation et assemblage des modules
-    ├── main.tsx              # Point d'entrée React
-    ├── components/           # Composants d'interface
-    ├── lib/                  # Client API et utilitaires
-    └── pages/                # Pages métier
+    ├── App.tsx
+    ├── main.tsx
+    ├── components/
+    ├── lib/
+    └── pages/
 ~~~
 
 ## Périmètre du projet
