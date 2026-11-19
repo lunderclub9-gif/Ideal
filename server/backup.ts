@@ -181,6 +181,46 @@ export function listBackups(): BackupEntry[] {
   return db.prepare('SELECT * FROM backup_history ORDER BY id DESC LIMIT 100').all() as BackupEntry[];
 }
 
+export function verifyBackupArchive(filePath: string): { verified: true; documentCount: number; schemaVersion: number } {
+  if (!fs.existsSync(filePath)) throw new Error('Archive de sauvegarde introuvable sur le disque.');
+  const zip = new AdmZip(filePath);
+  const dbEntry = zip.getEntry('gestionpro.db');
+  const manifestEntry = zip.getEntry('manifest.json');
+  if (!dbEntry || !manifestEntry) throw new Error('Archive invalide : base ou manifeste manquant.');
+  const dbBytes = dbEntry.getData();
+  const manifest = JSON.parse(manifestEntry.getData().toString('utf8')) as BackupManifest;
+  if (!manifest.db_sha256 || sha256Buffer(dbBytes) !== manifest.db_sha256) {
+    throw new Error('Empreinte SHA-256 de la base incorrecte.');
+  }
+  if (manifest.integrity_check !== 'ok') throw new Error('Le manifeste ne confirme pas l’intégrité de la base.');
+  const tempPath = path.join(BACKUPS_DIR, `.verify-${Date.now()}-${process.pid}.db`);
+  try {
+    fs.writeFileSync(tempPath, dbBytes, { flag: 'wx' });
+    verifySqliteSnapshot(tempPath);
+  } finally {
+    try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch {}
+  }
+
+  const expected = new Map((manifest.files || []).map((file) => [safeArchivePath(file.path), file]));
+  let documentCount = 0;
+  for (const entry of zip.getEntries()) {
+    if (entry.isDirectory || entry.entryName === 'gestionpro.db' || entry.entryName === 'manifest.json') continue;
+    const normalized = entry.entryName.replace(/\\/g, '/');
+    if (!normalized.startsWith('Documents/')) throw new Error('L’archive contient un fichier hors de Documents.');
+    const relative = safeArchivePath(normalized.slice('Documents/'.length));
+    const bytes = entry.getData();
+    const declared = expected.get(relative);
+    if (declared && (declared.size !== bytes.length || declared.sha256 !== sha256Buffer(bytes))) {
+      throw new Error(`Intégrité du document ${relative} incorrecte.`);
+    }
+    documentCount++;
+  }
+  if (manifest.document_count !== documentCount || (manifest.files && expected.size !== documentCount)) {
+    throw new Error('Le nombre de documents ne correspond pas au manifeste.');
+  }
+  return { verified: true, documentCount, schemaVersion: Number(manifest.schema_version || 1) };
+}
+
 function safeArchivePath(relativePath: string): string {
   const normalized = relativePath.replace(/\\/g, '/');
   if (!normalized || normalized.startsWith('/') || /^[A-Za-z]:/.test(normalized)) {
