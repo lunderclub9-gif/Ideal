@@ -445,7 +445,7 @@ router.post('/clients', requireAuth, requirePermission('clients:write'), (req: A
       b.ai || '',
       b.payment_terms || 'Virement',
       Number(b.credit_limit || 0),
-      notes,
+      b.notes || '',
       b.status || 'active'
     );
   const created = db.prepare('SELECT * FROM clients WHERE id = ?').get(info.lastInsertRowid);
