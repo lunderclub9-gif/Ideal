@@ -1652,7 +1652,7 @@ router.put('/attendance/:id', requireAuth, requirePermission('attendance:write')
   const dayFraction = status === 'absent' || status === 'unpaid_leave' ? 0 : status === 'half_day' ? 0.5 : Number(b.day_fraction ?? 1);
   const overtimeHours = Number(b.overtime_hours || 0);
   const advanceAmount = Number(b.advance_amount || 0);
-  if (!workerId || !/^\\d{4}-\\d{2}-\\d{2}$/.test(attDate) || !['present','absent','half_day','paid_leave','unpaid_leave','sick_leave','holiday'].includes(status) ||
+  if (!workerId || !/^\d{4}-\d{2}-\d{2}$/.test(attDate) || !['present','absent','half_day','paid_leave','unpaid_leave','sick_leave','holiday'].includes(status) ||
       !Number.isFinite(dayFraction) || dayFraction < 0 || dayFraction > 1 || !Number.isFinite(overtimeHours) || overtimeHours < 0 || !Number.isFinite(advanceAmount) || advanceAmount < 0) {
     res.status(400).json({ error: 'Vérifiez le salarié, la date, le statut et les montants du pointage.' }); return;
   }
@@ -2428,7 +2428,7 @@ router.put('/fuel-entries/:id', requireAuth, requirePermission('fuel:write'), (r
   if (!Number.isFinite(liters) || liters <= 0 || !Number.isFinite(pricePerLiter) || pricePerLiter <= 0 ||
       !Number.isFinite(odometerBefore) || odometerBefore < 0 || !Number.isFinite(odometerAfter) || odometerAfter < 0 ||
       (odometerBefore > 0 && odometerAfter > 0 && odometerAfter < odometerBefore) ||
-      !/^\\d{4}-\\d{2}-\\d{2}$/.test(entryDate) || !Number.isFinite(Date.parse(entryDate + 'T00:00:00'))) {
+      !/^\d{4}-\d{2}-\d{2}$/.test(entryDate) || !Number.isFinite(Date.parse(entryDate + 'T00:00:00'))) {
     res.status(400).json({ error: 'Vérifiez la date, les litres, le prix et les relevés kilométriques.' }); return;
   }
   const vehicleId = Number(old.vehicle_id);
@@ -2567,7 +2567,7 @@ router.put('/repair-orders/:id', requireAuth, requirePermission('repairs:write')
   const repairDate = String(b.repair_date ?? old.repair_date);
   if (!description || !['waiting','in_progress','completed'].includes(status) ||
       ![parts,labor,towing,downtime].every(Number.isFinite) || [parts,labor,towing,downtime].some(v=>v<0) ||
-      !/^\\d{4}-\\d{2}-\\d{2}$/.test(repairDate) || !Number.isFinite(Date.parse(repairDate+'T00:00:00'))) {
+      !/^\d{4}-\d{2}-\d{2}$/.test(repairDate) || !Number.isFinite(Date.parse(repairDate+'T00:00:00'))) {
     res.status(400).json({ error: 'Vérifiez la description, le statut, la date et les coûts de réparation.' }); return;
   }
   const total = round2(parts + labor + towing);
@@ -2890,7 +2890,7 @@ router.put('/expenses/:id', requireAuth, requirePermission('expenses:write'), (r
     res.status(400).json({ error: 'Cette dépense est déjà rapprochée avec un relevé bancaire. Créez une opération de régularisation au lieu de modifier l’historique.' }); return;
   }
   const expDate = String(b.expense_date || old.expense_date);
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(expDate) || !Number.isFinite(Date.parse(expDate + 'T00:00:00'))) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expDate) || !Number.isFinite(Date.parse(expDate + 'T00:00:00'))) {
     res.status(400).json({ error: 'Date de dépense invalide.' }); return;
   }
   const method = String(b.payment_method || old.payment_method || 'Espèces');
