@@ -8,6 +8,8 @@ const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gestionpro-smoke-'));
 const appData = path.join(tempRoot, 'AppData', 'Roaming');
 const userData = path.join(appData, 'GestionPro-DZ');
 const portFile = path.join(userData, 'server-port.txt');
+const startupLogFile = path.join(userData, 'startup.log');
+const serverBundle = path.resolve('release', 'win-unpacked', 'resources', 'app.asar.unpacked', 'dist-server', 'server.cjs');
 let child;
 
 function sleep(ms) {
@@ -16,6 +18,7 @@ function sleep(ms) {
 
 async function startApp() {
   try { fs.unlinkSync(portFile); } catch {}
+  try { fs.unlinkSync(startupLogFile); } catch {}
   child = spawn(exe, ['--disable-gpu'], {
     env: { ...process.env, APPDATA: appData, GESTIONPRO_SMOKE_TEST: '1' },
     stdio: 'ignore',
@@ -30,7 +33,8 @@ async function startApp() {
     }
     await sleep(400);
   }
-  throw new Error('Desktop app did not start its local server within 45 seconds.');
+  const diagnostics = fs.existsSync(startupLogFile) ? fs.readFileSync(startupLogFile, 'utf8') : '(startup.log was not created)';
+  throw new Error('Desktop app did not start its local server within 45 seconds. Bundled server exists=' + fs.existsSync(serverBundle) + '. Startup diagnostics: ' + diagnostics);
 }
 
 async function stopApp() {
@@ -43,6 +47,7 @@ async function stopApp() {
 
 async function run() {
   if (!fs.existsSync(exe)) throw new Error('Windows packaged executable not found: ' + exe);
+  if (!fs.existsSync(serverBundle)) throw new Error('Packaged server bundle was not unpacked: ' + serverBundle);
 
   let base = await startApp();
   const page = await fetch(base + '/');
