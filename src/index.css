@@ -101,3 +101,34 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+
+/* GestionPro DZ — calm teal workspace theme */
+@layer base {
+  body {
+    background: #f3f7f6;
+    color: #1c2b2a;
+    -webkit-font-smoothing: antialiased;
+  }
+  .dark body {
+    background: #101b1b;
+    color: #e5efed;
+  }
+  input, select, textarea {
+    border-color: #d6e2df;
+    border-radius: 0.65rem;
+    transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
+  }
+  input:focus, select:focus, textarea:focus {
+    border-color: #0f8a80;
+    box-shadow: 0 0 0 3px rgb(15 138 128 / 12%);
+    outline: none;
+  }
+}
+@layer utilities {
+  .bg-blue-700 { background-color: #087f75 !important; }
+  .hover\\:bg-blue-800:hover { background-color: #06665f !important; }
+  .text-blue-700 { color: #087f75 !important; }
+  .border-blue-700 { border-color: #087f75 !important; }
+  .focus\\:ring-blue-500:focus { --tw-ring-color: rgb(8 127 117 / 28%) !important; }
+}
