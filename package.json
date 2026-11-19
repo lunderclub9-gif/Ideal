@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "clean": "node -e \"for (const p of ['dist','dist-server','release']) require('node:fs').rmSync(p,{recursive:true,force:true})\"",
     "lint": "tsc --noEmit",
-    "dist:win": "npm run build && electron-builder --win nsis --x64",
+    "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
@@ -88,5 +88,7 @@
     "electronFuses": {
       "runAsNode": true
     }
-  }
+  },
+  "description": "Application de gestion locale pour les entreprises algériennes.",
+  "author": "GestionPro DZ"
 }
