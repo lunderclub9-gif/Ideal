@@ -51,6 +51,14 @@ async function stopApp() {
 async function run() {
   if (!fs.existsSync(exe)) throw new Error('Windows packaged executable not found: ' + exe);
   if (!fs.existsSync(serverBundle)) throw new Error('Packaged server bundle was not unpacked: ' + serverBundle);
+  const releaseDir = path.resolve('release');
+  const updateMetadata = path.join(releaseDir, 'latest.yml');
+  const installer = path.join(releaseDir, 'GestionPro-DZ-Setup-0.1.' + process.env.GITHUB_RUN_NUMBER + '.exe');
+  if (!fs.existsSync(updateMetadata)) throw new Error('electron-updater metadata latest.yml is missing from the Windows build.');
+  const metadataText = fs.readFileSync(updateMetadata, 'utf8');
+  if (!metadataText.includes('GestionPro-DZ-Setup-0.1.' + process.env.GITHUB_RUN_NUMBER + '.exe')) throw new Error('latest.yml does not reference the versioned installer.');
+  if (!fs.existsSync(installer)) throw new Error('Versioned installer is missing: ' + installer);
+  if (!fs.existsSync(installer + '.blockmap')) throw new Error('Installer blockmap is missing; differential update cannot be published.');
 
   let base = await startApp();
   const page = await fetch(base + '/');
@@ -142,6 +150,7 @@ async function run() {
   }
 
   console.log('SMOKE_TEST_OK: packaged app starts, creates owner, blocks duplicate setup, creates and downloads a verified backup, restores it with a safety copy, preserves SQLite after restart, and authenticates owner.');
+  console.log('UPDATE_METADATA_OK: latest.yml, versioned installer, and installer blockmap are present.');
 }
 
 run().catch(error => {
