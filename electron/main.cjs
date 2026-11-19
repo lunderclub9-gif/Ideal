@@ -85,6 +85,7 @@ else {
     if (mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus(); }
   });
   app.whenReady().then(async () => {
+    app.setPath('userData', path.join(app.getPath('appData'), 'GestionPro-DZ'));
     app.setAppUserModelId('dz.gestionpro.desktop');
     try { await createMainWindow(); }
     catch (error) { stopServer(); dialog.showErrorBox('GestionPro DZ', error?.message || 'Impossible de démarrer le serveur local.'); app.quit(); }
