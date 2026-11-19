@@ -337,6 +337,66 @@ export function CommercialPrintModal({
   );
 }
 
+export function PaymentReceiptPrintModal({
+  payment,
+  company,
+  onClose,
+}: {
+  payment: any | null;
+  company: any | null;
+  onClose: () => void;
+}) {
+  if (!payment) return null;
+  const isInflow = payment.direction === 'inflow';
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/70 flex items-center justify-center p-4 overflow-y-auto">
+      <div className="w-full max-w-3xl bg-white text-slate-900 rounded-xl shadow-2xl overflow-hidden print-area">
+        <div className="px-5 py-3 bg-slate-100 border-b border-slate-200 flex items-center justify-between no-print">
+          <span className="text-xs font-semibold">Aperçu du reçu — {payment.receipt_number}</span>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-700 rounded-lg"><Printer className="w-3.5 h-3.5" /> Imprimer / PDF</button>
+            <button type="button" onClick={onClose} className="px-3 py-1.5 text-xs border border-slate-300 rounded-lg">Fermer</button>
+          </div>
+        </div>
+        <div className="p-8 space-y-6 text-xs">
+          <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4">
+            <div className="space-y-1">
+              {company?.logo_data && <img src={company.logo_data} alt="Logo de l’entreprise" className="max-h-16 max-w-40 object-contain mb-2" />}
+              <div className="text-lg font-bold uppercase">{company?.name || 'Mon entreprise'}</div>
+              <div>{company?.address}</div><div>Tél : {company?.phone} · {company?.email}</div>
+              <div className="font-mono text-[11px]">NIF : {company?.nif || '—'} · RC : {company?.rc || '—'}</div>
+            </div>
+            <div className="text-right space-y-1">
+              <div className="text-base font-bold text-blue-800">REÇU DE {isInflow ? 'PAIEMENT' : 'RÈGLEMENT'}</div>
+              <div className="font-mono text-sm font-bold">{payment.receipt_number}</div>
+              <div>Date : {formatDateFr(payment.payment_date)}</div>
+              {payment.is_reversal ? <div className="font-bold text-red-700">CONTRE-PASSATION</div> : null}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4 bg-slate-50 border border-slate-200 rounded-lg p-4">
+            <div><div className="text-[11px] uppercase text-slate-500">{isInflow ? 'Reçu de' : 'Versé à'}</div><div className="font-bold text-sm mt-1">{payment.client_name || payment.supplier_name || 'Tiers non renseigné'}</div></div>
+            <div className="text-right"><div className="text-[11px] uppercase text-slate-500">Pièce liée</div><div className="font-mono font-semibold mt-1">{payment.doc_number || payment.purchase_id || '—'}</div></div>
+          </div>
+          <div className="border border-slate-300 rounded-lg overflow-hidden">
+            <div className="flex justify-between p-3 border-b border-slate-200"><span>Mode de paiement</span><strong>{payment.payment_method}</strong></div>
+            <div className="flex justify-between p-3 border-b border-slate-200"><span>Référence</span><span className="font-mono">{payment.reference || '—'}</span></div>
+            <div className="flex justify-between p-4 bg-slate-900 text-white text-sm font-bold"><span>Montant {isInflow ? 'reçu' : 'versé'}</span><span className="font-mono">{formatDA(Math.abs(Number(payment.amount || 0)), 2)}</span></div>
+          </div>
+          {payment.notes && <div><strong>Observations :</strong> {payment.notes}</div>}
+          <div className="pt-8 flex justify-between items-end border-t border-slate-200">
+            <div className="text-[11px] text-slate-500">{company?.footer_note}</div>
+            <div className="text-center w-56">
+              {company?.stamp_data && <img src={company.stamp_data} alt="Cachet de l’entreprise" className="max-h-20 max-w-40 object-contain mx-auto mb-2" />}
+              <div className="font-semibold mb-12">Cachet & Signature</div>
+              <div className="border-t border-slate-400 pt-1 text-[11px] text-slate-500">La Direction</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function PayslipPrintModal({
   slip,
   period,
