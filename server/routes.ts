@@ -2848,7 +2848,7 @@ router.post('/documents', requireAuth, requirePermission('documents:write'), upl
   const cat = String(b.category || 'General').trim();
   const docDate = String(b.doc_date || new Date().toISOString().slice(0, 10));
   const notes = String(b.notes || '');
-  if (!file || !title || title.length > 180 || cat.length > 40 || notes.length > 1000 || !/^\\d{4}-\\d{2}-\\d{2}$/.test(docDate)) {
+  if (!file || !title || title.length > 180 || cat.length > 40 || notes.length > 1000 || !/^\d{4}-\d{2}-\d{2}$/.test(docDate)) {
     res.status(400).json({ error: 'Fichier, intitulé, catégorie, date ou notes invalides.' });
     return;
   }
