@@ -3159,7 +3159,7 @@ router.put('/settings', requireAuth, requirePermission('settings:write'), (req: 
   const db = getDb();
   const old = db.prepare('SELECT * FROM company_settings WHERE id = 1').get() as any;
   db.prepare(
-    `UPDATE company_settings SET name=?, legal_form=?, address=?, phone=?, email=?, nif=?, nis=?, rc=?, ai=?, header_note=?, footer_note=?, overhead_rate_percent=?, auto_backup_time=?, auto_backup_keep_daily=?, updated_at=datetime('now') WHERE id = 1`
+    `UPDATE company_settings SET name=?, legal_form=?, address=?, phone=?, email=?, nif=?, nis=?, rc=?, ai=?, header_note=?, footer_note=?, logo_data=?, stamp_data=?, overhead_rate_percent=?, auto_backup_time=?, auto_backup_keep_daily=?, updated_at=datetime('now') WHERE id = 1`
   ).run(
     b.name ?? old.name,
     b.legal_form ?? old.legal_form,
@@ -3172,6 +3172,8 @@ router.put('/settings', requireAuth, requirePermission('settings:write'), (req: 
     b.ai ?? old.ai,
     b.header_note ?? old.header_note,
     b.footer_note ?? old.footer_note,
+    b.logo_data ?? old.logo_data,
+    b.stamp_data ?? old.stamp_data,
     b.overhead_rate_percent !== undefined ? Number(b.overhead_rate_percent) : old.overhead_rate_percent,
     b.auto_backup_time ?? old.auto_backup_time,
     b.auto_backup_keep_daily !== undefined ? Number(b.auto_backup_keep_daily) : old.auto_backup_keep_daily
