@@ -86,7 +86,7 @@ function runMigrations(db: Database.Database) {
 
       CREATE TABLE IF NOT EXISTS company_settings (
         id INTEGER PRIMARY KEY CHECK(id = 1),
-        name TEXT NOT NULL DEFAULT 'Entreprise Algérienne BTP',
+        name TEXT NOT NULL DEFAULT 'Mon entreprise',
         legal_form TEXT DEFAULT 'SARL',
         address TEXT DEFAULT '',
         phone TEXT DEFAULT '',
