@@ -676,4 +676,48 @@ function runMigrations(db: Database.Database) {
     `);
     db.prepare('INSERT INTO schema_migrations (version) VALUES (1)').run();
   }
+
+  // Version 2: extend the existing service catalogue without replacing or rewriting
+  // any service rows. This catalogue is the configurable "Types de travaux" source.
+  const migration2 = db.prepare('SELECT version FROM schema_migrations WHERE version = 2').get();
+  if (!migration2) {
+    const serviceColumns = (db.pragma('table_info(services)') as Array<{ name: string }>).map((c) => c.name);
+    if (!serviceColumns.includes('category')) {
+      db.exec("ALTER TABLE services ADD COLUMN category TEXT NOT NULL DEFAULT 'Général'");
+    }
+    if (!serviceColumns.includes('description')) {
+      db.exec("ALTER TABLE services ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+    }
+    if (!serviceColumns.includes('created_at')) {
+      db.exec("ALTER TABLE services ADD COLUMN created_at TEXT NOT NULL DEFAULT ''");
+      db.exec("UPDATE services SET created_at = datetime('now') WHERE created_at = ''");
+    }
+    if (!serviceColumns.includes('updated_at')) {
+      db.exec("ALTER TABLE services ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''");
+      db.exec("UPDATE services SET updated_at = datetime('now') WHERE updated_at = ''");
+    }
+    // Starter catalogue only when the existing catalogue is genuinely empty.
+    // Existing user-defined services are never overwritten or duplicated.
+    const serviceCount = (db.prepare('SELECT COUNT(*) AS count FROM services').get() as { count: number }).count;
+    if (serviceCount === 0) {
+      const insertService = db.prepare(
+        `INSERT INTO services (code, name, category, description, unit, default_price, cost_rate, tva_rate, active)
+         VALUES (?, ?, ?, ?, ?, 0, 0, 0, 1)`
+      );
+      const seedStarterCatalogue = db.transaction(() => {
+        const starterServices = [
+          ['RESINE', 'Résine', 'Revêtement', 'Travaux de résine et revêtements décoratifs', 'm²'],
+          ['EPOXY', 'Époxy', 'Revêtement', 'Revêtement et finition époxy', 'm²'],
+          ['PLOMBERIE', 'Plomberie', 'Réseaux', 'Installation et réparation de plomberie', 'Forfait'],
+          ['PEINTURE', 'Peinture', 'Finition', 'Travaux de peinture intérieure et extérieure', 'm²'],
+          ['CARRELAGE', 'Carrelage', 'Finition', 'Pose et finition de carrelage', 'm²'],
+          ['ELECTRICITE', 'Électricité', 'Réseaux', 'Installation et maintenance électrique', 'Point'],
+        ] as const;
+        starterServices.forEach((row) => insertService.run(...row));
+      });
+      seedStarterCatalogue();
+    }
+    db.exec('CREATE INDEX IF NOT EXISTS idx_services_active_name ON services(active, name)');
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (2)').run();
+  }
 }

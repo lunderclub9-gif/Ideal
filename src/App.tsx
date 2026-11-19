@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import {
   BarChart3,
   Building2,
+  ChevronDown,
   ClipboardCheck,
+  CreditCard,
   FileSpreadsheet,
   FolderOpen,
   Fuel,
@@ -17,6 +19,7 @@ import {
   Receipt,
   Scale,
   Settings,
+  Search,
   ShieldAlert,
   ShoppingCart,
   Sun,
@@ -43,6 +46,7 @@ import SetupPage from './pages/SetupPage';
 import DashboardPage from './pages/DashboardPage';
 import ClientsPage from './pages/ClientsPage';
 import ProjectsPage from './pages/ProjectsPage';
+import ServicesPage from './pages/ServicesPage';
 import InvoicesPage from './pages/InvoicesPage';
 import AttendancePage from './pages/AttendancePage';
 import PayrollPage from './pages/PayrollPage';
@@ -50,6 +54,7 @@ import MaterialsPage from './pages/MaterialsPage';
 import SuppliersPage from './pages/SuppliersPage';
 import FleetPage from './pages/FleetPage';
 import TreasuryPage from './pages/TreasuryPage';
+import DebtsPage from './pages/DebtsPage';
 import {
   BackupPage,
   DocumentsPage,
@@ -70,6 +75,7 @@ const NAV_ITEMS: NavEntry[] = [
   { id: 'dashboard', label: 'Tableau de bord', group: 'Pilotage', permission: 'dashboard:view', icon: LayoutDashboard },
   { id: 'clients', label: 'Clients', group: 'Chantiers & Commercial', permission: 'clients:read', icon: Users },
   { id: 'projects', label: 'Chantiers', group: 'Chantiers & Commercial', permission: 'projects:read', icon: Building2 },
+  { id: 'services', label: 'Types de travaux', group: 'Chantiers & Commercial', permission: 'settings:read', icon: Hammer },
   { id: 'invoices', label: 'Devis & Factures', group: 'Chantiers & Commercial', permission: 'invoices:read', icon: FileSpreadsheet },
   { id: 'attendance', label: 'Pointage', group: 'Équipes & Paie', permission: 'attendance:read', icon: ClipboardCheck },
   { id: 'payroll', label: 'Personnel & Paie', group: 'Équipes & Paie', permission: 'payroll:read', icon: Wallet },
@@ -80,6 +86,7 @@ const NAV_ITEMS: NavEntry[] = [
   { id: 'fuel', label: 'Carburant', group: 'Stock, Achats & Parc', permission: 'vehicles:read', icon: Fuel },
   { id: 'tools', label: 'Outillage & Sorties', group: 'Stock, Achats & Parc', permission: 'materials:read', icon: Hammer },
   { id: 'treasury', label: 'Trésorerie', group: 'Finances & Administration', permission: 'treasury:read', icon: Landmark },
+  { id: 'debts', label: 'Dettes & Créances', group: 'Finances & Administration', permission: 'treasury:read', icon: CreditCard },
   { id: 'expenses', label: 'Dépenses', group: 'Finances & Administration', permission: 'expenses:read', icon: Receipt },
   { id: 'taxes', label: 'Comptabilité & Impôts', group: 'Finances & Administration', permission: 'taxes:read', icon: Scale },
   { id: 'documents', label: 'Centre de documents', group: 'Finances & Administration', permission: 'documents:read', icon: FolderOpen },
@@ -99,6 +106,8 @@ export default function App() {
   const [route, setRoute] = useState<string>(getInitialRoute);
   const [dark, setDark] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [navSearch, setNavSearch] = useState('');
+  const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
   const [setupRequired, setSetupRequired] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -144,6 +153,11 @@ export default function App() {
         setPermissions([]);
       });
   }, []);
+
+  useEffect(() => {
+    const active = NAV_ITEMS.find((item) => item.id === route);
+    if (active) setCollapsedGroups((current) => current.filter((group) => group !== active.group));
+  }, [route]);
 
   useEffect(() => {
     if (!user) return;
@@ -215,7 +229,9 @@ export default function App() {
   }
 
   const visibleNav = NAV_ITEMS.filter((item) => hasPerm(permissions, item.permission));
-  const groups = Array.from(new Set(visibleNav.map((i) => i.group)));
+  const normalizedNavSearch = navSearch.trim().toLocaleLowerCase('fr');
+  const filteredNav = visibleNav.filter((item) => !normalizedNavSearch || `${item.label} ${item.group}`.toLocaleLowerCase('fr').includes(normalizedNavSearch));
+  const groups = Array.from(new Set(filteredNav.map((i) => i.group)));
   const currentNav = NAV_ITEMS.find((i) => i.id === route);
   const authorized = currentNav ? hasPerm(permissions, currentNav.permission) : true;
 
@@ -246,6 +262,8 @@ export default function App() {
         return <ClientsPage permissions={permissions} />;
       case 'projects':
         return <ProjectsPage permissions={permissions} />;
+      case 'services':
+        return <ServicesPage permissions={permissions} />;
       case 'invoices':
         return <InvoicesPage permissions={permissions} />;
       case 'attendance':
@@ -266,6 +284,8 @@ export default function App() {
         return <FleetPage initialSection="tools" permissions={permissions} />;
       case 'treasury':
         return <TreasuryPage initialTab="treasury" permissions={permissions} />;
+      case 'debts':
+        return <DebtsPage />;
       case 'expenses':
         return <TreasuryPage initialTab="expenses" permissions={permissions} />;
       case 'taxes':
@@ -273,7 +293,7 @@ export default function App() {
       case 'documents':
         return <DocumentsPage permissions={permissions} />;
       case 'reports':
-        return <ReportsPage />;
+        return <ReportsPage permissions={permissions} />;
       case 'settings':
         return <SettingsPage permissions={permissions} />;
       case 'backup':
@@ -285,6 +305,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+      {mobileMenu && <button type="button" aria-label="Fermer le menu" onClick={() => setMobileMenu(false)} className="fixed inset-0 z-30 bg-slate-950/40 lg:hidden no-print" />}
       <aside
         className={`fixed inset-y-0 left-0 z-40 w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col transition-transform lg:translate-x-0 no-print ${
           mobileMenu ? 'translate-x-0' : '-translate-x-full'
@@ -304,12 +325,22 @@ export default function App() {
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
+        <div className="px-3 pt-3">
+          <label className="relative block">
+            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+            <input value={navSearch} onChange={(e) => setNavSearch(e.target.value)} placeholder="Rechercher un module…" aria-label="Rechercher un module" className="w-full pl-9 pr-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500" />
+          </label>
+          <p className="mt-2 px-1 text-[10px] text-slate-400">{filteredNav.length} modules disponibles</p>
+        </div>
+        <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
+          {groups.length === 0 && <p className="px-3 py-6 text-xs text-slate-500 text-center">Aucun module correspondant.</p>}
           {groups.map((grp) => (
             <div key={grp}>
-              <p className="px-3 mb-1.5 text-[11px] font-semibold text-slate-400 dark:text-slate-500">{grp}</p>
-              <div className="space-y-0.5">
-                {visibleNav
+              <button type="button" onClick={() => setCollapsedGroups((current) => current.includes(grp) ? current.filter((name) => name !== grp) : [...current, grp])} aria-expanded={!collapsedGroups.includes(grp)} className="w-full px-3 mb-1.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200">
+                <span>{grp}</span><ChevronDown className={`w-3.5 h-3.5 transition-transform ${collapsedGroups.includes(grp) ? '-rotate-90' : ''}`} />
+              </button>
+              {!collapsedGroups.includes(grp) && <div className="space-y-0.5">
+                {filteredNav
                   .filter((i) => i.group === grp)
                   .map((item) => {
                     const Icon = item.icon;
@@ -319,6 +350,7 @@ export default function App() {
                         key={item.id}
                         type="button"
                         onClick={() => navigate(item.id)}
+                        aria-current={active ? 'page' : undefined}
                         className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
                           active
                             ? 'bg-blue-700 text-white'
@@ -330,7 +362,7 @@ export default function App() {
                       </button>
                     );
                   })}
-              </div>
+              </div>}
             </div>
           ))}
         </nav>

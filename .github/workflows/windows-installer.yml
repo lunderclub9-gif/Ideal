@@ -1,6 +1,20 @@
 name: Build GestionPro DZ for Windows
 
 on:
+  pull_request:
+    branches: ['**']
+    paths:
+      - 'src/**'
+      - 'server/**'
+      - 'server.ts'
+      - 'package.json'
+      - 'electron/**'
+      - 'scripts/**'
+      - 'vite.config.ts'
+      - 'index.html'
+      - 'public/**'
+      - 'tsconfig.json'
+      - '.github/workflows/windows-installer.yml'
   push:
     branches: [main]
     paths:
@@ -42,10 +56,14 @@ jobs:
         run: |
           $package = Get-Content package.json -Raw | ConvertFrom-Json
           $package.version = "0.1.${{ github.run_number }}"
-          $package | ConvertTo-Json -Depth 100 | Set-Content package.json -Encoding utf8
+          $package | ConvertTo-Json -Depth 100 | Out-File package.json -Encoding utf8NoBOM
           Write-Host "Building GestionPro DZ version $($package.version)"
       - name: TypeScript check
         run: npm run lint
+      - name: Verify French-only application interface
+        run: npm run check:french-ui
+      - name: Test backup, restore and session protection
+        run: npm run test:data-protection
       - name: Build application and Windows installer
         run: npm run dist:win
       - name: Smoke test packaged Windows application
@@ -61,6 +79,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Publish downloadable GitHub Release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: windows-build-${{ github.run_number }}
