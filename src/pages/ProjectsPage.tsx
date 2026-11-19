@@ -7,6 +7,7 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
   const [projects, setProjects] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [workers, setWorkers] = useState<any[]>([]);
+  const [services, setServices] = useState<any[]>([]);
   const [selected, setSelected] = useState<any | null>(null);
   const [tab, setTab] = useState<'overview' | 'tasks' | 'avenants' | 'contracts' | 'costs'>('overview');
   const [createOpen, setCreateOpen] = useState(false);
@@ -34,10 +35,11 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
 
   async function loadList() {
     try {
-      const [p, c, w] = await Promise.all([apiFetch('/projects'), apiFetch('/clients'), apiFetch('/workers')]);
+      const [p, c, w, workTypes] = await Promise.all([apiFetch('/projects'), apiFetch('/clients'), apiFetch('/workers'), apiFetch('/services')]);
       setProjects(p);
       setClients(c);
       setWorkers(w);
+      setServices(workTypes);
     } catch (e: any) {
       setError(e.message);
     }
@@ -644,12 +646,15 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
                 onChange={(e) => setNewProj({ ...newProj, project_type: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"
               >
-                <option>Plomberie &amp; Sanitaire</option>
-                <option>Carrelage &amp; Revêtement</option>
-                <option>Peinture &amp; Décoration</option>
-                <option>Travaux généraux BTP</option>
-                <option>Transport &amp; Terrassement</option>
+                <option value="">Sélectionner un type de travaux...</option>
+                {services.filter((service) => service.active).map((service) => (
+                  <option key={service.id} value={service.name}>{service.name} — {service.unit}</option>
+                ))}
+                {newProj.project_type && !services.some((service) => service.active && service.name === newProj.project_type) && (
+                  <option value={newProj.project_type}>{newProj.project_type} (type historique)</option>
+                )}
               </select>
+              <p className="mt-1 text-[10px] text-slate-500">La liste provient du Catalogue des types de travaux. Gérez-la depuis le menu « Types de travaux ».</p>
             </div>
             <div className="sm:col-span-2">
               <label className="block font-medium mb-1">Intitulé du chantier *</label>
