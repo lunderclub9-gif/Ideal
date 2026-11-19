@@ -2259,6 +2259,10 @@ router.post('/purchases/:id/receive', requireAuth, requirePermission('suppliers:
     res.status(404).json({ error: 'Bon de commande introuvable.' });
     return;
   }
+  if (pu.status === 'cancelled') {
+    res.status(400).json({ error: 'Ce bon de commande est annulé et ne peut plus être réceptionné.' });
+    return;
+  }
   if (pu.status === 'received' || pu.status === 'paid') {
     res.status(400).json({ error: 'Ce bon de commande a déjà été réceptionné en stock.' });
     return;
@@ -2455,11 +2459,15 @@ router.put('/fuel-entries/:id', requireAuth, requirePermission('fuel:write'), (r
       !/^\d{4}-\d{2}-\d{2}$/.test(entryDate) || !Number.isFinite(Date.parse(entryDate + 'T00:00:00'))) {
     res.status(400).json({ error: 'Vérifiez la date, les litres, le prix et les relevés kilométriques.' }); return;
   }
-  const vehicleId = Number(old.vehicle_id);
+  const vehicleId = b.vehicle_id ? Number(b.vehicle_id) : Number(old.vehicle_id);
+  const vehicle = db.prepare('SELECT id FROM vehicles WHERE id=?').get(vehicleId);
+  if (!Number.isInteger(vehicleId) || !vehicle) {
+    res.status(400).json({ error: 'Veuillez sélectionner un véhicule valide.' }); return;
+  }
   const totalCost = round2(liters * pricePerLiter);
   db.transaction(() => {
-    db.prepare(`UPDATE fuel_entries SET date=?, liters=?, price_per_liter=?, total_cost=?, odometer_before=?, odometer_after=?, driver_worker_id=?, project_id=?, trip_purpose=?, fuel_station=?, notes=? WHERE id=?`).run(
-      entryDate, liters, pricePerLiter, totalCost, odometerBefore, odometerAfter,
+    db.prepare(`UPDATE fuel_entries SET date=?, vehicle_id=?, liters=?, price_per_liter=?, total_cost=?, odometer_before=?, odometer_after=?, driver_worker_id=?, project_id=?, trip_purpose=?, fuel_station=?, notes=? WHERE id=?`).run(
+      entryDate, vehicleId, liters, pricePerLiter, totalCost, odometerBefore, odometerAfter,
       b.driver_worker_id !== undefined ? (b.driver_worker_id ? Number(b.driver_worker_id) : null) : old.driver_worker_id,
       b.project_id ? Number(b.project_id) : null,
       b.trip_purpose ?? old.trip_purpose, b.fuel_station ?? old.fuel_station,
@@ -2604,9 +2612,9 @@ router.put('/repair-orders/:id', requireAuth, requirePermission('repairs:write')
     );
     const openOrders = db.prepare("SELECT COUNT(*) AS count FROM repair_orders WHERE vehicle_id=? AND id<>? AND status<>'completed'").get(old.vehicle_id,id) as any;
     if (status === 'completed' && Number(openOrders.count) === 0) {
-      db.prepare("UPDATE vehicles SET status='available' WHERE id=? AND status IN ('under_maintenance','broken_down')").run(old.vehicle_id);
+      db.prepare("UPDATE vehicles SET status=CASE WHEN current_project_id IS NOT NULL THEN 'on_project' ELSE 'available' END WHERE id=? AND status IN ('under_maintenance','broken_down')").run(old.vehicle_id);
     } else {
-      db.prepare("UPDATE vehicles SET status='under_maintenance' WHERE id=? AND status IN ('available','under_maintenance','broken_down')").run(old.vehicle_id);
+      db.prepare("UPDATE vehicles SET status='under_maintenance' WHERE id=? AND status IN ('available','on_project','under_maintenance','broken_down')").run(old.vehicle_id);
     }
   })();
   logAudit(req.user!, 'UPDATE', 'repair_order', old.order_number, `${old.status}: ${old.total_cost} DA`, `${status}: ${total} DA`);
