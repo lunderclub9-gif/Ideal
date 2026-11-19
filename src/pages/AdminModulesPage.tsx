@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Download, FileSpreadsheet, FolderUp, HardDrive, RotateCcw, ShieldCheck, Upload } from 'lucide-react';
+import { Download, FileSpreadsheet, FolderUp, HardDrive, Printer, RotateCcw, ShieldCheck, Upload } from 'lucide-react';
 import { apiFetch, downloadWithAuth, formatDA, formatDateFr, getToken, hasPerm } from '../lib/api';
 import { PageHeader, StatusText } from '../components/ui';
 
@@ -244,53 +244,53 @@ export function ReportsPage() {
   if (!data) return <div className="p-6 text-xs text-slate-500">Génération des rapports...</div>;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 print-container">
       <PageHeader
         title="Rapports de gestion & Rentabilité"
-        subtitle="Analyse consolidée par chantier, coût de main-d’œuvre et coûts du parc véhicules"
+        subtitle="Synthèse des chantiers, de la main-d’œuvre, du parc, des factures et des règlements"
         actions={
-          <button
-            type="button"
-            onClick={() => downloadWithAuth('/reports/export/xlsx', 'rapport_complet_gestionpro_dz.xlsx')}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-emerald-700 rounded-lg"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" /> Exporter classeur Excel (.xlsx)
-          </button>
+          <div className="flex flex-wrap gap-2 no-print">
+            <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium border border-slate-300 dark:border-slate-700 rounded-lg">
+              <Printer className="w-3.5 h-3.5" /> Imprimer / PDF
+            </button>
+            <button type="button" onClick={() => downloadWithAuth('/reports/export/xlsx', 'rapport_complet_gestionpro_dz.xlsx')} className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-emerald-700 rounded-lg">
+              <FileSpreadsheet className="w-3.5 h-3.5" /> Classeur Excel complet
+            </button>
+          </div>
         }
       />
 
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 font-semibold text-sm">
-          Rentabilité réelle par chantier
-        </div>
-        <table className="w-full text-xs">
-          <thead className="bg-slate-50 dark:bg-slate-800/60">
-            <tr>
-              <th className="p-3 text-left">Chantier</th>
-              <th className="p-3 text-left">Statut</th>
-              <th className="p-3 text-right">Facturé HT</th>
-              <th className="p-3 text-right">Coût réel total</th>
-              <th className="p-3 text-right">Bénéfice net</th>
-            </tr>
-          </thead>
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden print-sheet">
+        <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 font-semibold text-sm">Rentabilité réelle par chantier</div>
+        <div className="overflow-x-auto"><table className="w-full text-xs">
+          <thead className="bg-slate-50 dark:bg-slate-800/60"><tr><th className="p-3 text-left">Chantier</th><th className="p-3 text-left">Statut</th><th className="p-3 text-right">Facturé HT</th><th className="p-3 text-right">Coût réel total</th><th className="p-3 text-right">Bénéfice net</th></tr></thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-            {data.projectProfits.map((p: any) => (
-              <tr key={p.project_number}>
-                <td className="p-3"><span className="font-mono font-semibold mr-2">{p.project_number}</span>{p.title}</td>
-                <td className="p-3"><StatusText status={p.status} /></td>
-                <td className="p-3 text-right font-mono tabular-nums">{formatDA(p.invoiced_ht)}</td>
-                <td className="p-3 text-right font-mono tabular-nums">{formatDA(p.total_actual_cost)}</td>
-                <td className={`p-3 text-right font-mono tabular-nums font-bold ${p.net_profit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                  {formatDA(p.net_profit)}
-                </td>
-              </tr>
-            ))}
+            {data.projectProfits.map((p: any) => <tr key={p.project_number}>
+              <td className="p-3"><span className="font-mono font-semibold mr-2">{p.project_number}</span>{p.title}</td><td className="p-3"><StatusText status={p.status} /></td>
+              <td className="p-3 text-right font-mono tabular-nums">{formatDA(p.invoiced_ht)}</td><td className="p-3 text-right font-mono tabular-nums">{formatDA(p.total_actual_cost)}</td>
+              <td className={`p-3 text-right font-mono tabular-nums font-bold ${p.net_profit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{formatDA(p.net_profit)}</td>
+            </tr>)}
           </tbody>
-        </table>
+        </table></div>
       </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden print-sheet">
+          <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 font-semibold text-sm">Activité de la main-d’œuvre</div>
+          <div className="overflow-x-auto"><table className="w-full text-xs"><thead className="bg-slate-50 dark:bg-slate-800/60"><tr><th className="p-3 text-left">Salarié</th><th className="p-3 text-left">Poste</th><th className="p-3 text-right">Jours approuvés</th><th className="p-3 text-right">Avances</th></tr></thead><tbody>
+            {(data.workerCosts || []).map((w: any, i: number) => <tr key={i} className="border-t border-slate-100 dark:border-slate-800"><td className="p-3 font-medium">{w.full_name}</td><td className="p-3">{w.job_title}</td><td className="p-3 text-right font-mono">{Number(w.total_days || 0).toFixed(2)}</td><td className="p-3 text-right font-mono">{formatDA(w.total_advances)}</td></tr>)}
+          </tbody></table></div>
+        </div>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden print-sheet">
+          <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 font-semibold text-sm">Coûts du parc véhicules</div>
+          <div className="overflow-x-auto"><table className="w-full text-xs"><thead className="bg-slate-50 dark:bg-slate-800/60"><tr><th className="p-3 text-left">Véhicule</th><th className="p-3 text-left">Immatriculation</th><th className="p-3 text-right">Carburant</th><th className="p-3 text-right">Réparations</th></tr></thead><tbody>
+            {(data.fleetCosts || []).map((v: any, i: number) => <tr key={i} className="border-t border-slate-100 dark:border-slate-800"><td className="p-3 font-medium">{v.name}</td><td className="p-3 font-mono">{v.registration || '—'}</td><td className="p-3 text-right font-mono">{formatDA(v.fuel_cost)}</td><td className="p-3 text-right font-mono">{formatDA(v.repair_cost)}</td></tr>)}
+          </tbody></table></div>
+        </div>
+      </div>
+      <div className="text-[11px] text-slate-500">Document interne de gestion — les montants sont calculés à partir des mouvements et pièces enregistrés dans GestionPro DZ.</div>
     </div>
-  );
-}
+  );}
 
 export function SettingsPage({ permissions }: { permissions: string[] }) {
   const [company, setCompany] = useState<any>(null);
