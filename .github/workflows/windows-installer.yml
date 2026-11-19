@@ -2,7 +2,7 @@ name: Build GestionPro DZ for Windows
 
 on:
   pull_request:
-    branches: [main]
+    branches: ['**']
     paths:
       - 'src/**'
       - 'server/**'
