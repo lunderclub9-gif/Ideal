@@ -41,17 +41,17 @@ function configureAutoUpdater() {
       await autoUpdater.checkForUpdates();
       return updateStatus;
     } catch (error) {
-      publishUpdateStatus({ state: 'error', message: 'تعذر الاتصال بخادم التحديثات. تحقق من الإنترنت ثم أعد المحاولة.' });
+      publishUpdateStatus({ state: 'error', message: 'Impossible de contacter le serveur de mises à jour. Vérifiez votre connexion Internet, puis réessayez.' });
       return updateStatus;
     }
   });
   ipcMain.handle('gestionpro:install-update', async () => {
     if (updateStatus.state !== 'downloaded') return false;
     const choice = await dialog.showMessageBox(mainWindow, {
-      type: 'warning', buttons: ['إعادة التشغيل والتثبيت', 'إلغاء'], defaultId: 1, cancelId: 1,
-      title: 'تثبيت تحديث GestionPro DZ',
-      message: 'تم إنشاء نسخة احتياطية موثقة بنجاح. هل تريد إعادة تشغيل GestionPro DZ وتثبيت التحديث الآن؟',
-      detail: 'سيتم إغلاق البرنامج وإعادة تشغيله بعد التثبيت. لن يحذف التحديث بيانات الشركة المحفوظة في AppData.'
+      type: 'warning', buttons: ['Redémarrer et installer', 'Annuler'], defaultId: 1, cancelId: 1,
+      title: 'Installer la mise à jour de GestionPro DZ',
+      message: 'Une sauvegarde vérifiée a été créée. Voulez-vous redémarrer GestionPro DZ et installer la mise à jour maintenant ?',
+      detail: 'Le programme sera fermé puis redémarré après l’installation. La mise à jour ne supprimera pas les données de l’entreprise enregistrées dans AppData.'
     });
     if (choice.response !== 0) return false;
     autoUpdater.quitAndInstall(false, true);

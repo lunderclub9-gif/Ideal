@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowDownLeft, ArrowUpRight, Download, Plus } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Download, Pencil, Plus } from 'lucide-react';
 import { apiFetch, downloadWithAuth, formatDA, formatDateFr, hasPerm } from '../lib/api';
 import { Modal, PageHeader, StatusText } from '../components/ui';
 
@@ -8,6 +8,7 @@ export default function MaterialsPage({ permissions }: { permissions: string[] }
   const [movements, setMovements] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [matOpen, setMatOpen] = useState(false);
+  const [editingMaterial, setEditingMaterial] = useState<any | null>(null);
   const [movOpen, setMovOpen] = useState(false);
   const [error, setError] = useState('');
 
@@ -53,12 +54,25 @@ export default function MaterialsPage({ permissions }: { permissions: string[] }
     load();
   }, []);
 
+  function openNewMaterial() {
+    setEditingMaterial(null);
+    setMatForm({ name: '', code: '', category: 'Ciment & Liants', unit: 'Sac', current_quantity: 0, purchase_price: 0, min_stock_level: 10, storage_location: 'Dépôt principal' });
+    setMatOpen(true);
+  }
+
+  function openEditMaterial(material: any) {
+    setEditingMaterial(material);
+    setMatForm({ name: material.name, code: material.code, category: material.category || 'Divers', unit: material.unit || 'U', current_quantity: material.current_quantity, purchase_price: material.purchase_price, min_stock_level: material.min_stock_level, storage_location: material.storage_location || 'Dépôt principal' });
+    setMatOpen(true);
+  }
+
   async function saveMaterial(e: React.FormEvent) {
     e.preventDefault();
     setError('');
     try {
-      await apiFetch('/materials', { method: 'POST', body: JSON.stringify(matForm) });
+      await apiFetch(editingMaterial ? `/materials/${editingMaterial.id}` : '/materials', { method: editingMaterial ? 'PUT' : 'POST', body: JSON.stringify(matForm) });
       setMatOpen(false);
+      setEditingMaterial(null);
       await load();
     } catch (err: any) {
       setError(err.message);
@@ -102,7 +116,7 @@ export default function MaterialsPage({ permissions }: { permissions: string[] }
                 </button>
                 <button
                   type="button"
-                  onClick={() => setMatOpen(true)}
+                  onClick={openNewMaterial}
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg"
                 >
                   <Plus className="w-3.5 h-3.5" /> Nouveau matériau
@@ -127,6 +141,7 @@ export default function MaterialsPage({ permissions }: { permissions: string[] }
                 <th className="p-3 text-right">Seuil min.</th>
                 <th className="p-3 text-right">Prix achat unitaire</th>
                 <th className="p-3 text-left">État</th>
+                {canWrite && <th className="p-3 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -150,6 +165,7 @@ export default function MaterialsPage({ permissions }: { permissions: string[] }
                     <td className="p-3">
                       <StatusText status={isLow ? 'delayed' : 'available'} label={isLow ? 'Stock bas' : 'Normal'} />
                     </td>
+                    {canWrite && <td className="p-3 text-right"><button type="button" onClick={() => openEditMaterial(m)} title="Modifier le matériau" aria-label={`Modifier ${m.name}`} className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><Pencil className="w-3.5 h-3.5" /> Modifier</button></td>}
                   </tr>
                 );
               })}
@@ -196,7 +212,7 @@ export default function MaterialsPage({ permissions }: { permissions: string[] }
         </div>
       </div>
 
-      <Modal open={matOpen} onClose={() => setMatOpen(false)} title="Nouveau matériau en catalogue">
+      <Modal open={matOpen} onClose={() => { setMatOpen(false); setEditingMaterial(null); }} title={editingMaterial ? `Modifier ${editingMaterial.name}` : "Nouveau matériau en catalogue"}>
         <form onSubmit={saveMaterial} className="space-y-3 text-xs">
           <div className="grid grid-cols-2 gap-3">
             <div>

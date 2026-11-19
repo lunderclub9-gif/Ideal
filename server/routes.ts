@@ -1955,6 +1955,26 @@ router.post('/materials', requireAuth, requirePermission('materials:write'), (re
   res.status(201).json(db.prepare('SELECT * FROM materials WHERE id = ?').get(info.lastInsertRowid));
 });
 
+router.put('/materials/:id', requireAuth, requirePermission('materials:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const old = db.prepare('SELECT * FROM materials WHERE id = ?').get(id) as any;
+  if (!old) { res.status(404).json({ error: 'Matériau introuvable.' }); return; }
+  const b = req.body || {};
+  const name = String(b.name ?? old.name).trim();
+  const code = String(b.code ?? old.code).trim();
+  if (!name || !code) { res.status(400).json({ error: 'Désignation et code matériau sont obligatoires.' }); return; }
+  db.prepare(`UPDATE materials SET name=?, code=?, category=?, unit=?, purchase_price=?, selling_price=?, min_stock_level=?, preferred_supplier_id=?, storage_location=? WHERE id=?`).run(
+    name, code, b.category ?? old.category, b.unit ?? old.unit,
+    Number(b.purchase_price ?? old.purchase_price), Number(b.selling_price ?? old.selling_price),
+    Number(b.min_stock_level ?? old.min_stock_level),
+    b.preferred_supplier_id === undefined ? old.preferred_supplier_id : (b.preferred_supplier_id ? Number(b.preferred_supplier_id) : null),
+    b.storage_location ?? old.storage_location, id
+  );
+  logAudit(req.user!, 'UPDATE', 'material', code, old.name, name);
+  res.json(db.prepare('SELECT * FROM materials WHERE id = ?').get(id));
+});
+
 router.get('/stock-movements', requireAuth, requirePermission('materials:read'), (_req, res) => {
   const db = getDb();
   const rows = db
@@ -2076,6 +2096,23 @@ router.post('/suppliers', requireAuth, requirePermission('suppliers:write'), (re
     .run(b.name.trim(), b.contact_name || '', b.phone || '', b.email || '', b.address || '', b.nif || '', b.nis || '', b.rc || '', b.ai || '', b.payment_terms || '30 jours', b.notes || '');
   logAudit(req.user!, 'CREATE', 'supplier', info.lastInsertRowid, '', b.name.trim());
   res.status(201).json(db.prepare('SELECT * FROM suppliers WHERE id = ?').get(info.lastInsertRowid));
+});
+
+router.put('/suppliers/:id', requireAuth, requirePermission('suppliers:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const old = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id) as any;
+  if (!old) { res.status(404).json({ error: 'Fournisseur introuvable.' }); return; }
+  const b = req.body || {};
+  const name = String(b.name ?? old.name).trim();
+  if (!name) { res.status(400).json({ error: 'Le nom du fournisseur est obligatoire.' }); return; }
+  db.prepare(`UPDATE suppliers SET name=?, contact_name=?, phone=?, email=?, address=?, nif=?, nis=?, rc=?, ai=?, payment_terms=?, notes=? WHERE id=?`).run(
+    name, b.contact_name ?? old.contact_name, b.phone ?? old.phone, b.email ?? old.email,
+    b.address ?? old.address, b.nif ?? old.nif, b.nis ?? old.nis, b.rc ?? old.rc,
+    b.ai ?? old.ai, b.payment_terms ?? old.payment_terms, b.notes ?? old.notes, id
+  );
+  logAudit(req.user!, 'UPDATE', 'supplier', id, old.name, name);
+  res.json(db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id));
 });
 
 router.get('/purchases', requireAuth, requirePermission('suppliers:read'), (_req, res) => {
