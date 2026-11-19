@@ -1232,6 +1232,98 @@ router.get('/payments', requireAuth, requirePermission('invoices:read'), (_req, 
   res.json(rows);
 });
 
+// ==================== CONFIGURABLE WORK TYPES / SERVICE CATALOGUE ====================
+// Existing quotations and project records remain compatible: service records are
+// maintained as a catalogue and are never hard-deleted.
+router.get('/services', requireAuth, requirePermission('projects:read'), (_req, res) => {
+  const db = getDb();
+  res.json(
+    db.prepare('SELECT * FROM services ORDER BY active DESC, category COLLATE NOCASE ASC, name COLLATE NOCASE ASC').all()
+  );
+});
+
+router.post('/services', requireAuth, requirePermission('settings:write'), (req: AuthedRequest, res) => {
+  const b = req.body || {};
+  const code = String(b.code || '').trim().toUpperCase();
+  const name = String(b.name || '').trim();
+  const unit = String(b.unit || '').trim();
+  const defaultPrice = Number(b.default_price ?? 0);
+  const costRate = Number(b.cost_rate ?? 0);
+  const tvaRate = Number(b.tva_rate ?? 0);
+  if (!/^[A-Z0-9][A-Z0-9_-]{1,29}$/.test(code) || !name || !unit) {
+    res.status(400).json({ error: 'Code (2 à 30 caractères), nom et unité sont obligatoires.' });
+    return;
+  }
+  if (![defaultPrice, costRate, tvaRate].every(Number.isFinite) || defaultPrice < 0 || costRate < 0 || tvaRate < 0 || tvaRate > 100) {
+    res.status(400).json({ error: 'Les prix et coûts doivent être positifs ou nuls, et la TVA doit être comprise entre 0 et 100 %.' });
+    return;
+  }
+  const db = getDb();
+  try {
+    const info = db.prepare(
+      `INSERT INTO services (code, name, category, description, unit, default_price, cost_rate, tva_rate, active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      code, name, String(b.category || 'Général').trim() || 'Général',
+      String(b.description || '').trim(), unit, defaultPrice, costRate, tvaRate,
+      b.active === false ? 0 : 1
+    );
+    const row = db.prepare('SELECT * FROM services WHERE id = ?').get(info.lastInsertRowid);
+    logAudit(req.user!, 'CREATE', 'work_type', code, '', row);
+    res.status(201).json(row);
+  } catch (error: any) {
+    if (String(error?.message || '').includes('UNIQUE constraint failed')) {
+      res.status(409).json({ error: 'Ce code existe déjà. Choisissez un code différent.' });
+      return;
+    }
+    throw error;
+  }
+});
+
+router.put('/services/:id', requireAuth, requirePermission('settings:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const b = req.body || {};
+  const db = getDb();
+  const old = db.prepare('SELECT * FROM services WHERE id = ?').get(id) as any;
+  if (!old) {
+    res.status(404).json({ error: 'Type de travaux introuvable.' });
+    return;
+  }
+  const code = String(b.code ?? old.code).trim().toUpperCase();
+  const name = String(b.name ?? old.name).trim();
+  const unit = String(b.unit ?? old.unit).trim();
+  const defaultPrice = Number(b.default_price ?? old.default_price);
+  const costRate = Number(b.cost_rate ?? old.cost_rate);
+  const tvaRate = Number(b.tva_rate ?? old.tva_rate);
+  if (!/^[A-Z0-9][A-Z0-9_-]{1,29}$/.test(code) || !name || !unit) {
+    res.status(400).json({ error: 'Code (2 à 30 caractères), nom et unité sont obligatoires.' });
+    return;
+  }
+  if (![defaultPrice, costRate, tvaRate].every(Number.isFinite) || defaultPrice < 0 || costRate < 0 || tvaRate < 0 || tvaRate > 100) {
+    res.status(400).json({ error: 'Les prix et coûts doivent être positifs ou nuls, et la TVA doit être comprise entre 0 et 100 %.' });
+    return;
+  }
+  try {
+    db.prepare(
+      `UPDATE services SET code=?, name=?, category=?, description=?, unit=?, default_price=?, cost_rate=?, tva_rate=?, active=?, updated_at=datetime('now')
+       WHERE id=?`
+    ).run(
+      code, name, String(b.category ?? old.category).trim() || 'Général',
+      String(b.description ?? old.description).trim(), unit, defaultPrice, costRate, tvaRate,
+      b.active === undefined ? old.active : (b.active ? 1 : 0), id
+    );
+    const row = db.prepare('SELECT * FROM services WHERE id = ?').get(id);
+    logAudit(req.user!, 'UPDATE', 'work_type', code, old, row);
+    res.json(row);
+  } catch (error: any) {
+    if (String(error?.message || '').includes('UNIQUE constraint failed')) {
+      res.status(409).json({ error: 'Ce code existe déjà. Choisissez un code différent.' });
+      return;
+    }
+    throw error;
+  }
+});
+
 // ==================== WORKERS, ATTENDANCE & PAYROLL ====================
 router.get('/workers', requireAuth, requirePermission('attendance:read'), (_req, res) => {
   const db = getDb();
