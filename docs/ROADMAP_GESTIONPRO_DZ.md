@@ -60,11 +60,8 @@
 - Contrôle final de tous les textes visibles et tests de build Windows.
 
 ## État et reprise
-- Phase 1 : implémentée sur `phase-1-foundation`, en attente de validation CI et de revue.
-- Phase 2 : implémentée sur `phase-2-workforce-final`, en attente de validation CI et de revue.
-- Phase 3 : implémentée sur `phase-3-debts-finance` ; CI Windows (TypeScript, build, installateur et smoke test) réussie sur la PR #5. Les scénarios comptables sur données réelles restent à vérifier.
-- Phase 4 : implémentée sur `phase-4-documents-exports` ; CI Windows réussie (TypeScript, installateur et smoke test). Les vérifications métier sur une base locale réelle restent à effectuer.
-- Phase 5 : implémentée sur `phase-5-data-protection` ; CI Windows réussie (TypeScript, tests de protection des données, build, installateur et smoke test). Les scénarios sur la base réelle restent à vérifier.
-- Phase 6 : implémentation validée par CI sur `phase-6-ui-overhaul` ; navigation filtrable/repliable, accessibilité des composants partagés et édition sûre des fiches matériaux/fournisseurs ajoutées. TypeScript, tests de protection des données, build Windows, smoke test et upload de l'artefact réussis. Tests métier réels à effectuer.
-- Phase 7 : en cours sur `phase-7-french-only` ; textes du panneau de mise à jour et des dialogues Windows traduits en français ; contrôle automatisé ajouté pour interdire les caractères arabes dans le code source de l'interface.
+- Phases 1 à 7 : intégrées dans `main` par le commit `d44e3a758d17228064335a0717c213ac0ce17cfb`.
+- CI Windows complète réussie sur la même arborescence de code : TypeScript, contrôle français uniquement, tests de protection des données, build de l'application et de l'installateur, smoke test et upload de l'artefact. La vérification post-fusion propre à `main` est en cours.
+- Les tests automatisés et le smoke test ne remplacent pas la recette métier sur le poste Windows de l'utilisateur : il reste à tester une copie de la base réelle, les parcours CRUD selon les rôles, les scénarios comptables, la sauvegarde/restauration et les mises à jour sur une installation existante.
+- Les textes codés en dur de l'interface sont en français ; les données saisies par les utilisateurs et les anciens contenus métier ne sont pas traduits ni supprimés.
 - Consulter `PHASE_1_STATUS.md`, `PHASE_2_STATUS.md` et `PHASE_3_STATUS.md` pour les points de reprise.
