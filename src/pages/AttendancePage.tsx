@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCheck, Download, Plus, Trash2 } from 'lucide-react';
+import { CheckCheck, Download, Plus, Trash2, Pencil } from 'lucide-react';
 import { apiFetch, downloadWithAuth, formatDA, formatDateFr, hasPerm } from '../lib/api';
 import { Modal, PageHeader, StatusText } from '../components/ui';
 
@@ -12,6 +12,7 @@ export default function AttendancePage({ permissions }: { permissions: string[] 
   const [dateFilter, setDateFilter] = useState(todayLocal);
   const [showAllDates, setShowAllDates] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<any | null>(null);
   const [error, setError] = useState('');
 
   const [form, setForm] = useState({
@@ -52,13 +53,31 @@ export default function AttendancePage({ permissions }: { permissions: string[] 
     e.preventDefault();
     setError('');
     try {
-      await apiFetch('/attendance', { method: 'POST', body: JSON.stringify(form) });
+      await apiFetch(editingEntry ? `/attendance/${editingEntry.id}` : '/attendance', { method: editingEntry ? 'PUT' : 'POST', body: JSON.stringify(form) });
       setCreateOpen(false);
+      setEditingEntry(null);
       setForm({ attendance_date: todayLocal, worker_id: '', project_id: '', status: 'present', day_fraction: 1, overtime_hours: 0, advance_amount: 0, notes: '' });
       await load();
     } catch (err: any) {
       setError(err.message);
     }
+  }
+
+
+  function openEditEntry(row: any) {
+    if (row.approval_status !== 'pending') return;
+    setEditingEntry(row);
+    setForm({
+      attendance_date: row.attendance_date,
+      worker_id: String(row.worker_id),
+      project_id: row.project_id ? String(row.project_id) : '',
+      status: row.status,
+      day_fraction: Number(row.day_fraction || 0),
+      overtime_hours: Number(row.overtime_hours || 0),
+      advance_amount: Number(row.advance_amount || 0),
+      notes: row.notes || '',
+    });
+    setCreateOpen(true);
   }
 
   async function approveVisible() {
@@ -186,6 +205,7 @@ export default function AttendancePage({ permissions }: { permissions: string[] 
                     <StatusText status={r.approval_status} />
                   </td>
                   <td className="p-3 text-right">
+                    {canWrite && r.approval_status === 'pending' && <button type="button" onClick={() => openEditEntry(r)} className="p-1 text-teal-700 hover:text-teal-900" title="Modifier le pointage" aria-label="Modifier le pointage"><Pencil className="w-3.5 h-3.5" /></button>}
                     {canWrite && (r.approval_status === 'pending' || canApprove) && (
                       <button
                         type="button"
@@ -298,8 +318,8 @@ export default function AttendancePage({ permissions }: { permissions: string[] 
             />
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setCreateOpen(false)} className="px-3 py-2 border rounded-lg">Annuler</button>
-            <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg font-medium">Enregistrer</button>
+            <button type="button" onClick={() => { setCreateOpen(false); setEditingEntry(null); }} className="px-3 py-2 border rounded-lg">Annuler</button>
+            <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg font-medium">{editingEntry ? "Enregistrer les modifications" : "Enregistrer"}</button>
           </div>
         </form>
       </Modal>
