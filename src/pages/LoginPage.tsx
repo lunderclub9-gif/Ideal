@@ -2,17 +2,9 @@ import React, { useState } from 'react';
 import { Building2, HardDrive, Lock, ShieldCheck } from 'lucide-react';
 import { apiFetch, saveSession } from '../lib/api';
 
-const DEMO_ROLES = [
-  { username: 'admin', pass: 'admin123', label: 'Gérant / Administrateur', desc: 'Accès complet, validations paie/pointage, sauvegarde' },
-  { username: 'comptable', pass: 'compta123', label: 'Comptable', desc: 'Facturation, paiements, paie, TVA/CNAS/IRG, trésorerie' },
-  { username: 'chef', pass: 'chef123', label: 'Chef de chantier', desc: 'Chantiers, pointage quotidien, avancement, carburant' },
-  { username: 'magasinier', pass: 'stock123', label: 'Magasinier', desc: 'Stock, bons de sortie chantier, achats, outillage' },
-  { username: 'chauffeur', pass: 'driver123', label: 'Chauffeur / Opérateur', desc: 'Parc véhicules, pleins carburant, signalement pannes' },
-];
-
 export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -71,7 +63,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
             Connexion au poste de travail
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Entrez vos identifiants ou sélectionnez un profil de démonstration.
+            Entrez les identifiants de votre compte utilisateur.
           </p>
 
           <form onSubmit={submit} className="mt-5 space-y-4">
@@ -113,35 +105,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
             </button>
           </form>
 
-          <div className="mt-6 pt-5 border-t border-slate-200 dark:border-slate-800">
-            <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">
-              Accès rapide par rôle (données réelles Bâti-Tichy &amp; Services)
-            </div>
-            <div className="grid grid-cols-1 gap-1.5">
-              {DEMO_ROLES.map((r) => (
-                <button
-                  key={r.username}
-                  type="button"
-                  onClick={() => {
-                    setUsername(r.username);
-                    setPassword(r.pass);
-                    setError('');
-                  }}
-                  className={`flex items-center justify-between text-left px-3 py-2 rounded-lg border text-xs transition-colors ${
-                    username === r.username
-                      ? 'border-blue-600 bg-blue-50/70 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200'
-                      : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60'
-                  }`}
-                >
-                  <div>
-                    <div className="font-medium">{r.label}</div>
-                    <div className="text-[11px] text-slate-500 dark:text-slate-400">{r.desc}</div>
-                  </div>
-                  <span className="font-mono text-[11px] text-slate-500 ml-2 shrink-0">{r.username}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+
         </div>
       </div>
     </div>
