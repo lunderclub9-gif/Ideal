@@ -400,6 +400,30 @@ export function SettingsPage({ permissions }: { permissions: string[] }) {
               <label className="block font-medium mb-1">E-mail</label>
               <input type="email" value={company.email || ''} onChange={(e) => setCompany({ ...company, email: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" />
             </div>
+            <div>
+              <label className="block font-medium mb-1">Logo de l’entreprise (PNG, JPG, WebP — 1,5 Mo max.)</label>
+              <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                if (file.size > 1.5 * 1024 * 1024) { setMsg('Le logo dépasse 1,5 Mo.'); return; }
+                const reader = new FileReader();
+                reader.onload = () => setCompany({ ...company, logo_data: String(reader.result || '') });
+                reader.readAsDataURL(file);
+              }} className="w-full text-xs" />
+              {company.logo_data && <div className="mt-2 flex items-center gap-3"><img src={company.logo_data} alt="Aperçu du logo" className="max-h-12 max-w-32 object-contain" /><button type="button" onClick={() => setCompany({ ...company, logo_data: '' })} className="text-red-700">Retirer</button></div>}
+            </div>
+            <div>
+              <label className="block font-medium mb-1">Cachet de l’entreprise (PNG, JPG, WebP — 1,5 Mo max.)</label>
+              <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                if (file.size > 1.5 * 1024 * 1024) { setMsg('Le cachet dépasse 1,5 Mo.'); return; }
+                const reader = new FileReader();
+                reader.onload = () => setCompany({ ...company, stamp_data: String(reader.result || '') });
+                reader.readAsDataURL(file);
+              }} className="w-full text-xs" />
+              {company.stamp_data && <div className="mt-2 flex items-center gap-3"><img src={company.stamp_data} alt="Aperçu du cachet" className="max-h-12 max-w-32 object-contain" /><button type="button" onClick={() => setCompany({ ...company, stamp_data: '' })} className="text-red-700">Retirer</button></div>}
+            </div>
             <div className="sm:col-span-2">
               <label className="block font-medium mb-1">Mention d’en-tête des documents</label>
               <input type="text" maxLength={250} value={company.header_note || ''} onChange={(e) => setCompany({ ...company, header_note: e.target.value })} placeholder="Informations complémentaires à afficher sur les documents" className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" />
