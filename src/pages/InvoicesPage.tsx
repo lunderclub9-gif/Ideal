@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowRightLeft, CreditCard, FilePlus2, Plus, Printer, RotateCcw } from 'lucide-react';
+import { ArrowRightLeft, CreditCard, FilePlus2, Plus, Printer, RotateCcw, Pencil, X } from 'lucide-react';
 import { apiFetch, formatDA, formatDateFr, hasPerm } from '../lib/api';
 import { CommercialPrintModal, Modal, PageHeader, PaymentReceiptPrintModal, StatusText } from '../components/ui';
 
@@ -21,6 +21,7 @@ export default function InvoicesPage({ permissions }: { permissions: string[] })
   const [printDoc, setPrintDoc] = useState<any | null>(null);
   const [printPayment, setPrintPayment] = useState<any | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingDoc, setEditingDoc] = useState<any | null>(null);
   const [payDoc, setPayDoc] = useState<any | null>(null);
   const [dupWarning, setDupWarning] = useState('');
   const [error, setError] = useState('');
@@ -71,12 +72,45 @@ export default function InvoicesPage({ permissions }: { permissions: string[] })
     load();
   }, []);
 
+  function openCreateDoc() {
+    setEditingDoc(null);
+    setForm({
+      doc_type: 'devis', client_id: '', project_id: '',
+      issue_date: new Date().toISOString().slice(0, 10), due_date: '',
+      discount_percent: 0, issue_immediately: false, notes: '',
+      lines: [{ description: '', unit: 'Forfait', quantity: 1, unit_price: 0, tva_rate: 19 }],
+    });
+    setCreateOpen(true);
+  }
+
+  function openEditDoc(doc: any) {
+    if (doc.status !== 'draft' || doc.locked_at) return;
+    setEditingDoc(doc);
+    setForm({
+      doc_type: doc.doc_type,
+      client_id: String(doc.client_id),
+      project_id: doc.project_id ? String(doc.project_id) : '',
+      issue_date: doc.issue_date || '',
+      due_date: doc.due_date || '',
+      discount_percent: Number(doc.discount_percent || 0),
+      issue_immediately: false,
+      notes: doc.notes || '',
+      lines: (doc.lines || []).map((line: any) => ({
+        description: line.description || '', unit: line.unit || 'U',
+        quantity: Number(line.quantity || 0), unit_price: Number(line.unit_price || 0),
+        tva_rate: Number(line.tva_rate ?? 19),
+      })),
+    });
+    setCreateOpen(true);
+  }
+
   async function handleCreateDoc(e: React.FormEvent) {
     e.preventDefault();
     setError('');
     try {
-      await apiFetch('/commercial-documents', { method: 'POST', body: JSON.stringify(form) });
+      await apiFetch(editingDoc ? `/commercial-documents/${editingDoc.id}` : '/commercial-documents', { method: editingDoc ? 'PUT' : 'POST', body: JSON.stringify({ ...form, issue_immediately: editingDoc ? false : form.issue_immediately }) });
       setCreateOpen(false);
+      setEditingDoc(null);
       await load();
     } catch (err: any) {
       setError(err.message);
@@ -147,7 +181,7 @@ export default function InvoicesPage({ permissions }: { permissions: string[] })
           canWrite && (
             <button
               type="button"
-              onClick={() => setCreateOpen(true)}
+              onClick={openCreateDoc}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg"
             >
               <Plus className="w-3.5 h-3.5" /> Nouvelle pièce commerciale
@@ -233,6 +267,11 @@ export default function InvoicesPage({ permissions }: { permissions: string[] })
                       >
                         <Printer className="w-3 h-3" /> PDF
                       </button>
+                      {canWrite && d.status === 'draft' && !d.locked_at && (
+                        <button type="button" onClick={() => openEditDoc(d)} className="inline-flex items-center gap-1 px-2 py-1 border border-slate-300 dark:border-slate-700 rounded hover:bg-slate-100 dark:hover:bg-slate-800">
+                          <Pencil className="w-3 h-3" /> Modifier
+                        </button>
+                      )}
                       {canWrite && (d.doc_type === 'devis' || d.doc_type === 'proforma') && (
                         <button
                           type="button"
@@ -324,7 +363,7 @@ export default function InvoicesPage({ permissions }: { permissions: string[] })
       </div>
 
       {/* Create Commercial Doc Modal */}
-      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Créer un document commercial" maxWidth="max-w-3xl">
+      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title={editingDoc ? `Modifier le brouillon — ${editingDoc.doc_number}` : "Créer un document commercial"} maxWidth="max-w-3xl">
         <form onSubmit={handleCreateDoc} className="space-y-4 text-xs">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
@@ -448,6 +487,11 @@ export default function InvoicesPage({ permissions }: { permissions: string[] })
               </div>
             ))}
           </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div><label className="block font-medium mb-1">Date d’échéance</label><input type="date" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
+            <div><label className="block font-medium mb-1">Remise (%)</label><input type="number" min="0" max="100" step="0.01" value={form.discount_percent} onChange={e => setForm({ ...form, discount_percent: Number(e.target.value) })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
+            <div><label className="block font-medium mb-1">Note / Conditions</label><input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
+          </div>
 
           <label className="inline-flex items-center gap-2">
             <input
@@ -459,8 +503,8 @@ export default function InvoicesPage({ permissions }: { permissions: string[] })
           </label>
 
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setCreateOpen(false)} className="px-3 py-2 border rounded-lg">Annuler</button>
-            <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg font-medium">Enregistrer</button>
+            <button type="button" onClick={() => { setCreateOpen(false); setEditingDoc(null); }} className="px-3 py-2 border rounded-lg">Annuler</button>
+            <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg font-medium">{editingDoc ? "Enregistrer les modifications" : "Enregistrer"}</button>
           </div>
         </form>
       </Modal>
