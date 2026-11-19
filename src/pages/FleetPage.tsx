@@ -484,7 +484,7 @@ export default function FleetPage({
         </form>
       </Modal>
 
-      <Modal open={fuelModal} onClose={() => setFuelModal(false)} title={editingFuel ? "Modifier le plein de carburant" : "Enregistrer un plein de carburant"}>
+      <Modal open={fuelModal} onClose={() => { setFuelModal(false); setEditingFuel(null); }} title={editingFuel ? "Modifier le plein de carburant" : "Enregistrer un plein de carburant"}>
         <form onSubmit={saveFuel} className="space-y-3 text-xs">
           <div className="grid grid-cols-2 gap-3">
             <div>
