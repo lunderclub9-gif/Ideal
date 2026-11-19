@@ -1479,11 +1479,21 @@ router.post('/attendance', requireAuth, requirePermission('attendance:write'), (
   const b = req.body || {};
   const workerId = Number(b.worker_id);
   const attDate = b.attendance_date;
-  const status = b.status || 'present';
+  const status = String(b.status || 'present');
   const dayFraction = status === 'absent' || status === 'unpaid_leave' ? 0 : status === 'half_day' ? 0.5 : Number(b.day_fraction ?? 1);
+  const overtimeHours = Number(b.overtime_hours || 0);
+  const advanceAmount = Number(b.advance_amount || 0);
 
-  if (!workerId || !attDate) {
-    res.status(400).json({ error: 'Employé et date de pointage sont obligatoires.' });
+  if (!workerId || !attDate || !/^\\d{4}-\\d{2}-\\d{2}$/.test(String(attDate)) || Number.isNaN(Date.parse(String(attDate)))) {
+    res.status(400).json({ error: 'Employé et date de pointage valide (AAAA-MM-JJ) sont obligatoires.' });
+    return;
+  }
+  if (!['present', 'absent', 'half_day', 'paid_leave', 'unpaid_leave', 'sick_leave', 'holiday'].includes(status)) {
+    res.status(400).json({ error: 'Statut de présence invalide.' });
+    return;
+  }
+  if (!Number.isFinite(dayFraction) || dayFraction < 0 || dayFraction > 1 || !Number.isFinite(overtimeHours) || overtimeHours < 0 || !Number.isFinite(advanceAmount) || advanceAmount < 0) {
+    res.status(400).json({ error: 'Journée, heures supplémentaires et avance doivent être des valeurs positives valides.' });
     return;
   }
   if ((status === 'present' || status === 'half_day') && !b.project_id) {
@@ -1492,6 +1502,15 @@ router.post('/attendance', requireAuth, requirePermission('attendance:write'), (
   }
 
   const db = getDb();
+  const worker = db.prepare('SELECT status FROM workers WHERE id = ?').get(workerId) as { status: string } | undefined;
+  if (!worker) {
+    res.status(404).json({ error: 'Salarié introuvable.' });
+    return;
+  }
+  if (worker.status === 'terminated' || worker.status === 'suspended') {
+    res.status(400).json({ error: 'Ce salarié est sorti ou suspendu : le pointage est bloqué.' });
+    return;
+  }
   // Verify split-day fraction does not exceed 1.0 full day across projects on same date
   const existingRow = db
     .prepare(
@@ -1530,8 +1549,8 @@ router.post('/attendance', requireAuth, requirePermission('attendance:write'), (
       b.project_id ? Number(b.project_id) : null,
       status,
       dayFraction,
-      Number(b.overtime_hours || 0),
-      Number(b.advance_amount || 0),
+      overtimeHours,
+      advanceAmount,
       b.notes || '',
       req.user!.id
     );
