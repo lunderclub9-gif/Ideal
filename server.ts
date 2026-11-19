@@ -17,7 +17,7 @@ async function startServer() {
     res.status(status).json({ error: message });
   });
   if (process.env.NODE_ENV === 'production') {
-    const distDir = path.resolve(process.cwd(), 'dist');
+    const distDir = path.resolve(process.env.GESTIONPRO_APP_ROOT || process.cwd(), 'dist');
     app.use(express.static(distDir));
     app.get('*', (_req, res) => res.sendFile(path.join(distDir, 'index.html')));
   } else {
