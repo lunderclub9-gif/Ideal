@@ -53,7 +53,8 @@
     "productName": "GestionPro DZ",
     "asar": true,
     "asarUnpack": [
-      "**/*.node"
+      "**/*.node",
+      "dist-server/**/*"
     ],
     "directories": {
       "output": "release"
