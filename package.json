@@ -16,7 +16,8 @@
     "lint": "tsc --noEmit",
     "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never",
     "postinstall": "electron-builder install-app-deps",
-    "test:data-protection": "tsx scripts/test-data-protection.ts"
+    "test:data-protection": "tsx scripts/test-data-protection.ts",
+    "check:french-ui": "node scripts/check-french-ui.cjs"
   },
   "dependencies": {
     "adm-zip": "^0.6.1",
