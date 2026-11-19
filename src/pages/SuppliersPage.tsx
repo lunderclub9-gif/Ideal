@@ -233,6 +233,7 @@ export default function SuppliersPage({ permissions }: { permissions: string[] }
               <input type="text" value={supForm.nif} onChange={(e) => setSupForm({ ...supForm, nif: e.target.value })} className="w-full px-3 py-2 border rounded-lg font-mono" />
             </div>
           </div>
+          {editingSupplier && <div><label className="block font-medium mb-1">Statut du fournisseur</label><select value={supForm.status} onChange={e => setSupForm({ ...supForm, status: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"><option value="active">Actif</option><option value="inactive">Archivé</option></select></div>}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setSupOpen(false)} className="px-3 py-2 border rounded-lg">Annuler</button>
             <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg">Enregistrer</button>
