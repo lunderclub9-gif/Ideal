@@ -26,6 +26,7 @@ Mettre en place les fondations sûres de la modernisation, avec un catalogue des
 - `server/routes.ts`
 - `src/App.tsx`
 - `src/pages/AdminModulesPage.tsx`
+- `src/pages/ProjectsPage.tsx`
 - `src/pages/ServicesPage.tsx` (nouveau)
 
 ## Validation
