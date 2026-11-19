@@ -253,7 +253,7 @@ export function ReportsPage({ permissions }: { permissions: string[] }) {
   if (!data) return <div className="p-6 text-xs text-slate-500">Génération des rapports...</div>;
 
   return (
-    <div className="space-y-5 print-container">
+    <div className="space-y-5 print-area print-container">
       <PageHeader
         title="Rapports de gestion & Rentabilité"
         subtitle="Synthèse des chantiers, de la main-d’œuvre, du parc, des factures et des règlements"
