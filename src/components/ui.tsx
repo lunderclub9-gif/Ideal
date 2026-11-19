@@ -375,7 +375,7 @@ export function PaymentReceiptPrintModal({
           </div>
           <div className="grid grid-cols-2 gap-4 bg-slate-50 border border-slate-200 rounded-lg p-4">
             <div><div className="text-[11px] uppercase text-slate-500">{isInflow ? 'Reçu de' : 'Versé à'}</div><div className="font-bold text-sm mt-1">{payment.client_name || payment.supplier_name || 'Tiers non renseigné'}</div></div>
-            <div className="text-right"><div className="text-[11px] uppercase text-slate-500">Pièce liée</div><div className="font-mono font-semibold mt-1">{payment.doc_number || payment.purchase_id || '—'}</div></div>
+            <div className="text-right"><div className="text-[11px] uppercase text-slate-500">Pièce liée</div><div className="font-mono font-semibold mt-1">{payment.doc_number || payment.purchase_number || '—'}</div></div>
           </div>
           <div className="border border-slate-300 rounded-lg overflow-hidden">
             <div className="flex justify-between p-3 border-b border-slate-200"><span>Mode de paiement</span><strong>{payment.payment_method}</strong></div>
