@@ -12,7 +12,7 @@ export interface AuthUser {
   status: string;
 }
 
-const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(48).toString('hex');
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(48).toString('hex');\nconst SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -36,7 +36,7 @@ export function createSessionToken(user: AuthUser): string {
       id: user.id,
       username: user.username,
       role: user.role,
-      iat: Date.now(),
+      iat: Date.now(),\n      exp: Date.now() + SESSION_TTL_MS,
     })
   ).toString('base64url');
   const sig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
@@ -45,12 +45,20 @@ export function createSessionToken(user: AuthUser): string {
 
 export function verifySessionToken(token: string): { id: number; username: string; role: UserRole } | null {
   try {
-    const [payload, sig] = token.split('.');
-    if (!payload || !sig) return null;
-    const expected = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
-    if (sig !== expected) return null;
+    const parts = token.split('.');
+    if (parts.length !== 2) return null;
+    const [payload, sig] = parts;
+    if (!payload || !sig || payload.length > 4096 || sig.length > 256) return null;
+    const expected = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest();
+    const supplied = Buffer.from(sig, 'base64url');
+    if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) return null;
     const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    return parsed;
+    const issuedAt = Number(parsed?.iat);
+    const expiresAt = Number(parsed?.exp ?? (issuedAt + SESSION_TTL_MS));
+    if (!Number.isFinite(issuedAt) || !Number.isFinite(expiresAt)) return null;
+    if (issuedAt > Date.now() + 5 * 60 * 1000 || expiresAt <= Date.now() || expiresAt - issuedAt > SESSION_TTL_MS) return null;
+    if (!Number.isSafeInteger(Number(parsed?.id)) || Number(parsed.id) <= 0 || typeof parsed?.username !== 'string') return null;
+    return { id: Number(parsed.id), username: parsed.username, role: parsed.role };
   } catch {
     return null;
   }
