@@ -3109,7 +3109,7 @@ router.get('/reports/export/xlsx', requireAuth, requirePermission('reports:expor
             c.name AS Client, p.project_number AS Code_chantier, p.title AS Chantier,
             d.status AS Statut, d.total_ht AS Total_HT_DA, d.total_tva AS TVA_DA,
             d.total_ttc AS Total_TTC_DA, d.amount_paid AS Regle_DA,
-            MAX(0, d.total_ttc-d.amount_paid) AS Reste_DA
+            MAX(0, d.total_ttc-d.amount_paid-COALESCE((SELECT SUM(a.total_ttc) FROM commercial_documents a WHERE a.doc_type='avoir' AND a.linked_doc_id=d.id AND a.status NOT IN ('draft','cancelled')),0)) AS Reste_DA
      FROM commercial_documents d JOIN clients c ON c.id=d.client_id
      LEFT JOIN projects p ON p.id=d.project_id ORDER BY d.issue_date DESC, d.id DESC`
   ).all();
@@ -3128,7 +3128,7 @@ router.get('/reports/export/xlsx', requireAuth, requirePermission('reports:expor
             COUNT(pu.id) AS Nombre_commandes, COALESCE(SUM(pu.total_ttc),0) AS Total_commandes_DA,
             COALESCE(SUM(pu.amount_paid),0) AS Regle_DA,
             COALESCE(SUM(MAX(0,pu.total_ttc-pu.amount_paid)),0) AS Reste_DA
-     FROM suppliers s LEFT JOIN purchases pu ON pu.supplier_id=s.id AND pu.status!='cancelled'
+     FROM suppliers s LEFT JOIN purchases pu ON pu.supplier_id=s.id AND pu.status IN ('ordered','received','partial_paid','paid')
      GROUP BY s.id ORDER BY s.name`
   ).all();
   const workerRows = db.prepare(
