@@ -1255,7 +1255,7 @@ router.get('/payments', requireAuth, requirePermission('invoices:read'), (_req, 
 // ==================== CONFIGURABLE WORK TYPES / SERVICE CATALOGUE ====================
 // Existing quotations and project records remain compatible: service records are
 // maintained as a catalogue and are never hard-deleted.
-router.get('/services', requireAuth, requirePermission('projects:read'), (_req, res) => {
+router.get('/services', requireAuth, requirePermission('settings:read'), (_req, res) => {
   const db = getDb();
   res.json(
     db.prepare('SELECT * FROM services ORDER BY active DESC, category COLLATE NOCASE ASC, name COLLATE NOCASE ASC').all()
