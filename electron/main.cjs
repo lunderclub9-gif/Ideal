@@ -1,4 +1,6 @@
 const { app, BrowserWindow, dialog, shell } = require('electron');
+const fs = require('node:fs');
+const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 
@@ -11,6 +13,7 @@ function waitForServer(child, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
     let output = '';
     const timeout = setTimeout(() => reject(new Error('Le serveur local n’a pas démarré dans le délai prévu.')), timeoutMs);
+    child.once('error', (error) => { clearTimeout(timeout); reject(error); });
     child.stdout.on('data', (chunk) => {
       output += chunk.toString();
       const match = output.match(/GESTIONPRO_SERVER_READY:(\d+)/);
@@ -36,10 +39,19 @@ function waitForServer(child, timeoutMs = 30000) {
 
 function startLocalServer() {
   const serverPath = path.join(app.getAppPath(), 'dist-server', 'server.cjs');
-  const dataPath = path.join(app.getPath('userData'), 'data');
+  const userDataPath = app.getPath('userData');
+  const dataPath = path.join(userDataPath, 'data');
+  const secretPath = path.join(userDataPath, 'session-secret');
+  fs.mkdirSync(userDataPath, { recursive: true });
+  let sessionSecret;
+  if (fs.existsSync(secretPath)) sessionSecret = fs.readFileSync(secretPath, 'utf8').trim();
+  else {
+    sessionSecret = crypto.randomBytes(48).toString('hex');
+    fs.writeFileSync(secretPath, sessionSecret, { encoding: 'utf8', mode: 0o600 });
+  }
   serverProcess = spawn(process.execPath, [serverPath], {
     cwd: app.getAppPath(),
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_ENV: 'production', HOST: APP_URL_HOST, PORT: '0', GESTIONPRO_DATA_DIR: dataPath },
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_ENV: 'production', HOST: APP_URL_HOST, PORT: '0', GESTIONPRO_DATA_DIR: dataPath, SESSION_SECRET: sessionSecret },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true
   });
