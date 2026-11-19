@@ -36,8 +36,8 @@
 
 ## Vérifications restantes
 
-- CI Windows : TypeScript, build, packaging, smoke test et artefact.
-- Tester une sauvegarde contenant plusieurs documents, puis la vérifier et la restaurer.
+- CI Windows : TypeScript, tests automatisés de protection des données, build, packaging, smoke test et artefact.
+- Test automatisé ajouté : création et vérification de sauvegarde, restauration, retour des données et pièces jointes, rejet d’une empreinte SHA-256 falsifiée, rejet d’un chemin ZIP malveillant et vérification de signature de session.\n- Tester une sauvegarde contenant plusieurs documents, puis la vérifier et la restaurer sur un poste Windows réel.
 - Tester une archive corrompue, une empreinte incorrecte, un fichier non déclaré et un chemin malveillant : toutes doivent être refusées sans toucher aux données actives.
 - Simuler un échec pendant le remplacement et confirmer le retour à l’état précédent.
 - Vérifier la sauvegarde à l’heure configurée et la rétention.
