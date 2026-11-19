@@ -12,7 +12,8 @@ export interface AuthUser {
   status: string;
 }
 
-const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(48).toString('hex');\nconst SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(48).toString('hex');
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -36,7 +37,8 @@ export function createSessionToken(user: AuthUser): string {
       id: user.id,
       username: user.username,
       role: user.role,
-      iat: Date.now(),\n      exp: Date.now() + SESSION_TTL_MS,
+      iat: Date.now(),
+      exp: Date.now() + SESSION_TTL_MS,
     })
   ).toString('base64url');
   const sig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
