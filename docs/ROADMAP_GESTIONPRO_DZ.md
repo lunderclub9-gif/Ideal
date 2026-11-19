@@ -56,6 +56,8 @@
 ## État et reprise
 - Phase 1 : implémentée sur `phase-1-foundation`, en attente de validation CI et de revue.
 - Phase 2 : implémentée sur `phase-2-workforce-final`, en attente de validation CI et de revue.
-- Phase 3 : implémentée sur `phase-3-debts-finance`, en attente de validation CI et de revue financière.
+- Phase 3 : implémentée sur `phase-3-debts-finance` ; CI Windows (TypeScript, build, installateur et smoke test) réussie sur la PR #5. Les scénarios comptables sur données réelles restent à vérifier.
+- Phase 4 : en cours sur `phase-4-documents-exports`.
+- Phase 5 : à démarrer après validation de la phase 4.
 - Phase 6 : planifiée comme dernière phase, après les fonctionnalités et le durcissement.
 - Consulter `PHASE_1_STATUS.md`, `PHASE_2_STATUS.md` et `PHASE_3_STATUS.md` pour les points de reprise.
