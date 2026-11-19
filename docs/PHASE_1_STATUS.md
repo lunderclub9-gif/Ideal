@@ -4,6 +4,8 @@
 **Dépôt :** `lunderclub9-gif/Ideal`  
 **Branche de travail :** `phase-1-foundation`  
 **Branche de référence :** `main`  
+**Pull Request :** [#1 — Phase 1](https://github.com/lunderclub9-gif/Ideal/pull/1)  
+**Dernier commit :** `91f3020a242034f14318c64d7f493f0625c35eb1`  
 **Étape :** 1 / 5 — Fondations et référentiels  
 **Dernière mise à jour :** 2026-11-19
 
@@ -27,12 +29,13 @@ Mettre en place les fondations sûres de la modernisation, avec un catalogue des
 - `src/pages/ServicesPage.tsx` (nouveau)
 
 ## Validation
-- À ce point, les changements ont été poussés sur la branche de travail.
-- Le build TypeScript, les tests métier et le workflow Windows doivent encore être vérifiés avant de déclarer la phase terminée.
-- Ne pas installer cette branche sur l'application qui contient des données réelles avant validation et sauvegarde vérifiée.
+- Les changements sont poussés sur `phase-1-foundation` et proposés dans la PR #1.
+- L'inspection statique confirme la présence de la migration v2, des trois routes CRUD, de l'écran et de son branchement dans la navigation.
+- Aucun statut CI n'est encore remonté pour هذه PR. Le workflow Windows est déclenché sur `main` dans النسخة الحالية، وتعديل تفعيل فحوصات PR موجود داخل هذه PR نفسها؛ لذلك لا يمكن اعتبار build TypeScript أو Windows smoke test ناجحاً بعد.
+- لا تدمج PR ولا تثبت هذه النسخة على التطبيق الذي يحتوي على بيانات حقيقية قبل فحص build ونسخة احتياطية مؤكدة.
 
 ## Prochaine action
-Lancer et corriger les contrôles CI/build. Ensuite vérifier les scénarios du catalogue : ajout, doublon, modification, archivage, réactivation, puis confirmer que les anciennes données restent intactes.
+Activer les contrôles CI PR à partir de la branche de base si nécessaire, puis vérifier le build TypeScript et le smoke test Windows. Ensuite tester : ajout, code en doublon, modification, archivage, réactivation et conservation des données existantes.
 
 ## Référence de reprise
 `GESTIONPRO-DZ-PHASE-1-FOUNDATION-2026-11-19`
