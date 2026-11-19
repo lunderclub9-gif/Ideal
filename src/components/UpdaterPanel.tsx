@@ -28,7 +28,7 @@ export default function UpdaterPanel({ canBackup }: { canBackup: boolean }) {
     <span className="hidden xl:inline">v{version}</span>
     {status.state === 'downloading' && <span className="hidden sm:inline">{status.percent}%</span>}
     {status.state === 'downloaded' ? <button type="button" onClick={install} disabled={busy || !canBackup} className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white font-semibold disabled:opacity-50">{busy ? 'Préparation de la mise à jour…' : 'Sauvegarder et installer'}</button> :
-      <button type="button" onClick={check} disabled={busy || status.state === 'checking' || status.state === 'downloading'} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50">{busy || status.state === 'checking' ? 'Vérification…' : status.state === 'downloading' ? 'تحميل ' + status.percent + '%' : 'Vérifier les mises à jour'}</button>}
+      <button type="button" onClick={check} disabled={busy || status.state === 'checking' || status.state === 'downloading'} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50">{busy || status.state === 'checking' ? 'Vérification…' : status.state === 'downloading' ? 'Téléchargement ' + status.percent + '%' : 'Vérifier les mises à jour'}</button>}
     {(status.state === 'error' || notice) && <span className="hidden 2xl:inline text-amber-600">{notice || 'Vérification impossible'}</span>}
   </div>;
 }
