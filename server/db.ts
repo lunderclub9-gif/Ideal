@@ -694,6 +694,26 @@ function runMigrations(db: Database.Database) {
     if (!serviceColumns.includes('updated_at')) {
       db.exec("ALTER TABLE services ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))");
     }
+    // Starter catalogue only when the existing catalogue is genuinely empty.
+    // Existing user-defined services are never overwritten or duplicated.
+    const serviceCount = (db.prepare('SELECT COUNT(*) AS count FROM services').get() as { count: number }).count;
+    if (serviceCount === 0) {
+      const insertService = db.prepare(
+        `INSERT INTO services (code, name, category, description, unit, default_price, cost_rate, tva_rate, active)
+         VALUES (?, ?, ?, ?, ?, 0, 0, 0, 1)`
+      );
+      const seedStarterCatalogue = db.transaction(() => {
+        [
+          ['RESINE', 'Résine', 'Revêtement', 'Travaux de résine et revêtements décoratifs', 'm²'],
+          ['EPOXY', 'Époxy', 'Revêtement', 'Revêtement et finition époxy', 'm²'],
+          ['PLOMBERIE', 'Plomberie', 'Réseaux', 'Installation et réparation de plomberie', 'Forfait'],
+          ['PEINTURE', 'Peinture', 'Finition', 'Travaux de peinture intérieure et extérieure', 'm²'],
+          ['CARRELAGE', 'Carrelage', 'Finition', 'Pose et finition de carrelage', 'm²'],
+          ['ELECTRICITE', 'Électricité', 'Réseaux', 'Installation et maintenance électrique', 'Point'],
+        ].forEach((row) => insertService.run(...row));
+      });
+      seedStarterCatalogue();
+    }
     db.exec('CREATE INDEX IF NOT EXISTS idx_services_active_name ON services(active, name)');
     db.prepare('INSERT INTO schema_migrations (version) VALUES (2)').run();
   }
