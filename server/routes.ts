@@ -2557,20 +2557,35 @@ router.put('/repair-orders/:id', requireAuth, requirePermission('repairs:write')
   const b = req.body || {};
   const db = getDb();
   const old = db.prepare('SELECT * FROM repair_orders WHERE id = ?').get(id) as any;
-  if (!old) {
-    res.status(404).json({ error: 'Ordre de réparation introuvable.' });
-    return;
+  if (!old) { res.status(404).json({ error: 'Ordre de réparation introuvable.' }); return; }
+  const description = String(b.description ?? old.description).trim();
+  const status = String(b.status ?? old.status);
+  const parts = Number(b.parts_cost ?? old.parts_cost ?? 0);
+  const labor = Number(b.labor_cost ?? old.labor_cost ?? 0);
+  const towing = Number(b.towing_cost ?? old.towing_cost ?? 0);
+  const downtime = Number(b.downtime_days ?? old.downtime_days ?? 0);
+  const repairDate = String(b.repair_date ?? old.repair_date);
+  if (!description || !['waiting','in_progress','completed'].includes(status) ||
+      ![parts,labor,towing,downtime].every(Number.isFinite) || [parts,labor,towing,downtime].some(v=>v<0) ||
+      !/^\\d{4}-\\d{2}-\\d{2}$/.test(repairDate) || !Number.isFinite(Date.parse(repairDate+'T00:00:00'))) {
+    res.status(400).json({ error: 'Vérifiez la description, le statut, la date et les coûts de réparation.' }); return;
   }
-  const status = b.status ?? old.status;
+  const total = round2(parts + labor + towing);
   db.transaction(() => {
-    db.prepare('UPDATE repair_orders SET status=?, notes=? WHERE id=?').run(status, b.notes ?? old.notes, id);
-    if (status === 'completed') {
-      db.prepare("UPDATE vehicles SET status='available' WHERE id=? AND status IN ('under_maintenance','broken_down')").run(
-        old.vehicle_id
-      );
+    db.prepare(`UPDATE repair_orders SET repair_date=?, problem_category=?, description=?, priority=?, workshop=?, parts_used=?, parts_cost=?, labor_cost=?, towing_cost=?, total_cost=?, downtime_days=?, status=?, project_id=?, notes=? WHERE id=?`).run(
+      repairDate, b.problem_category ?? old.problem_category, description, b.priority ?? old.priority,
+      b.workshop ?? old.workshop, b.parts_used ?? old.parts_used, parts, labor, towing, total,
+      downtime, status, b.project_id !== undefined ? (b.project_id ? Number(b.project_id) : null) : old.project_id,
+      b.notes ?? old.notes, id
+    );
+    const openOrders = db.prepare("SELECT COUNT(*) AS count FROM repair_orders WHERE vehicle_id=? AND id<>? AND status<>'completed'").get(old.vehicle_id,id) as any;
+    if (status === 'completed' && Number(openOrders.count) === 0) {
+      db.prepare("UPDATE vehicles SET status='available' WHERE id=? AND status IN ('under_maintenance','broken_down')").run(old.vehicle_id);
+    } else {
+      db.prepare("UPDATE vehicles SET status='under_maintenance' WHERE id=? AND status IN ('available','under_maintenance','broken_down')").run(old.vehicle_id);
     }
   })();
-  logAudit(req.user!, 'UPDATE', 'repair_order', old.order_number, old.status, status);
+  logAudit(req.user!, 'UPDATE', 'repair_order', old.order_number, `${old.status}: ${old.total_cost} DA`, `${status}: ${total} DA`);
   res.json(db.prepare('SELECT * FROM repair_orders WHERE id = ?').get(id));
 });
 
