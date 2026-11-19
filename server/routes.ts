@@ -2941,7 +2941,7 @@ router.get('/finance/debts', requireAuth, requirePermission('treasury:read'), (_
                       JOIN payroll_periods pp ON pp.id=ps.payroll_period_id
                       WHERE ps.worker_id=w.id AND pp.status='approved'),0) AS advances_recovered
      FROM workers w
-     LEFT JOIN attendance a ON a.worker_id=w.id
+     LEFT JOIN attendance a ON a.worker_id=w.id AND a.approval_status='approved'
      GROUP BY w.id
      HAVING COALESCE(SUM(a.advance_amount),0) > 0
      ORDER BY w.full_name COLLATE NOCASE`
