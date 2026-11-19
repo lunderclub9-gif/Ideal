@@ -60,6 +60,10 @@ jobs:
           Write-Host "Building GestionPro DZ version $($package.version)"
       - name: TypeScript check
         run: npm run lint
+      - name: Verify French-only application interface
+        run: npm run check:french-ui
+      - name: Test backup, restore and session protection
+        run: npm run test:data-protection
       - name: Build application and Windows installer
         run: npm run dist:win
       - name: Smoke test packaged Windows application

@@ -100,7 +100,7 @@ export function PageHeader({
 
 export function EmptyState({ message }: { message: string }) {
   return (
-    <div className="py-12 text-center text-xs text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
+    <div role="status" className="py-12 px-4 text-center text-xs text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl">
       {message}
     </div>
   );
@@ -130,9 +130,9 @@ export function Modal({
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-[1px] no-print">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-[2px] no-print" role="presentation">
       <div
-        className={`w-full ${maxWidth} max-h-[92vh] flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl overflow-hidden`}
+        role="dialog" aria-modal="true" aria-label={title} className={`w-full ${maxWidth} max-h-[92vh] flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden`}
       >
         <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-4 shrink-0">
           <h3 className="text-sm font-semibold text-slate-900 dark:text-white truncate">{title}</h3>

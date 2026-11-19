@@ -23,10 +23,15 @@ import {
   getTaxRate,
   round2,
 } from './calculations.ts';
-import { createFullBackup, listBackups, restoreFromZip } from './backup.ts';
+import { createFullBackup, listBackups, restoreFromZip, verifyBackupArchive } from './backup.ts';
 import { DOCS_DIR, getDb } from './db.ts';
 
 const router = express.Router();
+
+const loginFailures = new Map<string, { count: number; windowStartedAt: number; lockedUntil: number }>();
+const LOGIN_FAILURE_LIMIT = 5;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_LOCK_MS = 15 * 60 * 1000;
 
 const uploadMemory = multer({
   storage: multer.memoryStorage(),
@@ -96,20 +101,44 @@ router.post('/auth/setup', (req, res) => {
 });
 
 router.post('/auth/login', (req, res) => {
-  const { username, password } = req.body || {};
+  const username = String(req.body?.username || '').trim();
+  const password = String(req.body?.password || '');
   if (!username || !password) {
     res.status(400).json({ error: 'Veuillez saisir votre nom d’utilisateur et mot de passe.' });
     return;
   }
+
+  const key = `${String(req.ip || 'local').slice(0, 80)}:${username.toLowerCase().slice(0, 80)}`;
+  const now = Date.now();
+  const previous = loginFailures.get(key);
+  if (previous?.lockedUntil && previous.lockedUntil > now) {
+    const waitSeconds = Math.ceil((previous.lockedUntil - now) / 1000);
+    res.setHeader('Retry-After', String(waitSeconds));
+    res.status(429).json({ error: `Trop de tentatives. Réessayez dans ${Math.ceil(waitSeconds / 60)} minute(s).` });
+    return;
+  }
+  if (previous && now - previous.windowStartedAt > LOGIN_WINDOW_MS) loginFailures.delete(key);
+
   const db = getDb();
   const userRow = db
     .prepare('SELECT id, name, username, password_hash, role, status FROM users WHERE username = ?')
-    .get(String(username).trim()) as
+    .get(username) as
     | { id: number; name: string; username: string; password_hash: string; role: UserRole; status: string }
     | undefined;
 
-  if (!userRow || !verifyPassword(String(password), userRow.password_hash)) {
-    res.status(401).json({ error: 'Identifiants incorrects. Vérifiez votre nom d’utilisateur et mot de passe.' });
+  if (!userRow || !verifyPassword(password, userRow.password_hash)) {
+    const current = loginFailures.get(key);
+    const entry = current && now - current.windowStartedAt <= LOGIN_WINDOW_MS
+      ? current
+      : { count: 0, windowStartedAt: now, lockedUntil: 0 };
+    entry.count += 1;
+    if (entry.count >= LOGIN_FAILURE_LIMIT) entry.lockedUntil = now + LOGIN_LOCK_MS;
+    loginFailures.set(key, entry);
+    res.status(entry.lockedUntil > now ? 429 : 401).json({
+      error: entry.lockedUntil > now
+        ? 'Trop de tentatives. Le compte est temporairement protégé pendant 15 minutes.'
+        : 'Identifiants incorrects. Vérifiez votre nom d’utilisateur et mot de passe.',
+    });
     return;
   }
   if (userRow.status !== 'active') {
@@ -117,6 +146,7 @@ router.post('/auth/login', (req, res) => {
     return;
   }
 
+  loginFailures.delete(key);
   db.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(userRow.id);
   const user = {
     id: userRow.id,
@@ -1925,6 +1955,26 @@ router.post('/materials', requireAuth, requirePermission('materials:write'), (re
   res.status(201).json(db.prepare('SELECT * FROM materials WHERE id = ?').get(info.lastInsertRowid));
 });
 
+router.put('/materials/:id', requireAuth, requirePermission('materials:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const old = db.prepare('SELECT * FROM materials WHERE id = ?').get(id) as any;
+  if (!old) { res.status(404).json({ error: 'Matériau introuvable.' }); return; }
+  const b = req.body || {};
+  const name = String(b.name ?? old.name).trim();
+  const code = String(b.code ?? old.code).trim();
+  if (!name || !code) { res.status(400).json({ error: 'Désignation et code matériau sont obligatoires.' }); return; }
+  db.prepare(`UPDATE materials SET name=?, code=?, category=?, unit=?, purchase_price=?, selling_price=?, min_stock_level=?, preferred_supplier_id=?, storage_location=? WHERE id=?`).run(
+    name, code, b.category ?? old.category, b.unit ?? old.unit,
+    Number(b.purchase_price ?? old.purchase_price), Number(b.selling_price ?? old.selling_price),
+    Number(b.min_stock_level ?? old.min_stock_level),
+    b.preferred_supplier_id === undefined ? old.preferred_supplier_id : (b.preferred_supplier_id ? Number(b.preferred_supplier_id) : null),
+    b.storage_location ?? old.storage_location, id
+  );
+  logAudit(req.user!, 'UPDATE', 'material', code, old.name, name);
+  res.json(db.prepare('SELECT * FROM materials WHERE id = ?').get(id));
+});
+
 router.get('/stock-movements', requireAuth, requirePermission('materials:read'), (_req, res) => {
   const db = getDb();
   const rows = db
@@ -2046,6 +2096,23 @@ router.post('/suppliers', requireAuth, requirePermission('suppliers:write'), (re
     .run(b.name.trim(), b.contact_name || '', b.phone || '', b.email || '', b.address || '', b.nif || '', b.nis || '', b.rc || '', b.ai || '', b.payment_terms || '30 jours', b.notes || '');
   logAudit(req.user!, 'CREATE', 'supplier', info.lastInsertRowid, '', b.name.trim());
   res.status(201).json(db.prepare('SELECT * FROM suppliers WHERE id = ?').get(info.lastInsertRowid));
+});
+
+router.put('/suppliers/:id', requireAuth, requirePermission('suppliers:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const old = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id) as any;
+  if (!old) { res.status(404).json({ error: 'Fournisseur introuvable.' }); return; }
+  const b = req.body || {};
+  const name = String(b.name ?? old.name).trim();
+  if (!name) { res.status(400).json({ error: 'Le nom du fournisseur est obligatoire.' }); return; }
+  db.prepare(`UPDATE suppliers SET name=?, contact_name=?, phone=?, email=?, address=?, nif=?, nis=?, rc=?, ai=?, payment_terms=?, notes=? WHERE id=?`).run(
+    name, b.contact_name ?? old.contact_name, b.phone ?? old.phone, b.email ?? old.email,
+    b.address ?? old.address, b.nif ?? old.nif, b.nis ?? old.nis, b.rc ?? old.rc,
+    b.ai ?? old.ai, b.payment_terms ?? old.payment_terms, b.notes ?? old.notes, id
+  );
+  logAudit(req.user!, 'UPDATE', 'supplier', id, old.name, name);
+  res.json(db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id));
 });
 
 router.get('/purchases', requireAuth, requirePermission('suppliers:read'), (_req, res) => {
@@ -3337,6 +3404,25 @@ router.get('/backups/:id/download', requireAuth, requirePermission('backup:manag
     return;
   }
   res.download(b.file_path, b.file_name);
+});
+
+router.post('/backups/:id/verify', requireAuth, requirePermission('backup:manage'), (req: AuthedRequest, res) => {
+  const db = getDb();
+  const backup = db.prepare('SELECT * FROM backup_history WHERE id = ?').get(Number(req.params.id)) as any;
+  if (!backup || !fs.existsSync(backup.file_path)) {
+    res.status(404).json({ error: 'Archive de sauvegarde introuvable.' });
+    return;
+  }
+  try {
+    const result = verifyBackupArchive(backup.file_path);
+    db.prepare('UPDATE backup_history SET verified = 1 WHERE id = ?').run(backup.id);
+    logAudit(req.user!, 'VERIFY', 'backup', backup.file_name, '', `${result.documentCount} document(s), SQLite OK`);
+    res.json(result);
+  } catch (error: any) {
+    db.prepare('UPDATE backup_history SET verified = 0 WHERE id = ?').run(backup.id);
+    logAudit(req.user!, 'VERIFY_FAILED', 'backup', backup.file_name, '', error.message || 'Échec de vérification');
+    res.status(422).json({ error: error.message || 'La vérification de cette archive a échoué.' });
+  }
 });
 
 router.post('/backups/restore', requireAuth, requirePermission('backup:manage'), uploadMemory.single('archive'), (req: AuthedRequest, res) => {
