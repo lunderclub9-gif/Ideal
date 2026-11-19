@@ -26,7 +26,10 @@ async function startApp() {
   });
   const deadline = Date.now() + 75000;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) {\n      const diagnostics = fs.existsSync(startupLogFile) ? fs.readFileSync(startupLogFile, 'utf8') : '(startup.log was not created)';\n      throw new Error('Desktop application exited early with code ' + child.exitCode + '. Startup diagnostics: ' + diagnostics);\n    }
+    if (child.exitCode !== null) {
+      const diagnostics = fs.existsSync(startupLogFile) ? fs.readFileSync(startupLogFile, 'utf8') : '(startup.log was not created)';
+      throw new Error('Desktop application exited early with code ' + child.exitCode + '. Startup diagnostics: ' + diagnostics);
+    }
     if (fs.existsSync(portFile)) {
       const port = Number(fs.readFileSync(portFile, 'utf8').trim());
       if (port > 0) return 'http://127.0.0.1:' + port;
