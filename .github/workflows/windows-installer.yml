@@ -1,0 +1,55 @@
+name: Build GestionPro DZ for Windows
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'server/**'
+      - 'server.ts'
+      - 'package.json'
+      - 'electron/**'
+      - 'vite.config.ts'
+      - 'tsconfig.json'
+      - '.github/workflows/windows-installer.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: TypeScript check
+        run: npm run lint
+      - name: Build application and Windows installer
+        run: npm run dist:win
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GestionPro-DZ-Windows-Setup
+          path: release/GestionPro-DZ-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish downloadable GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: windows-build-${{ github.run_number }}
+          name: GestionPro DZ Windows Build ${{ github.run_number }}
+          body: |
+            Automatic Windows x64 installer build for GestionPro DZ.
+            Install on Windows 10/11 x64. Application data is stored locally in the current Windows user's AppData folder.
+            This is an unsigned installer; Windows SmartScreen may display an unknown publisher warning.
+          files: release/GestionPro-DZ-Setup-*.exe
+          make_latest: true
