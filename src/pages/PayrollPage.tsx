@@ -10,8 +10,9 @@ export default function PayrollPage({ permissions }: { permissions: string[] }) 
   const [workers, setWorkers] = useState<any[]>([]);
   const [company, setCompany] = useState<any>(null);
   const [tab, setTab] = useState<'payroll' | 'workers'>('payroll');
-  const [calcMonth, setCalcMonth] = useState(11);
-  const [calcYear, setCalcYear] = useState(2026);
+  const payrollNow = new Date();
+  const [calcMonth, setCalcMonth] = useState(payrollNow.getMonth() + 1);
+  const [calcYear, setCalcYear] = useState(payrollNow.getFullYear());
   const [printSlip, setPrintSlip] = useState<any | null>(null);
   const [workerModal, setWorkerModal] = useState(false);
   const [editingWorker, setEditingWorker] = useState<any | null>(null);
