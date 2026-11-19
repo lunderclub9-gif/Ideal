@@ -2106,10 +2106,10 @@ router.put('/suppliers/:id', requireAuth, requirePermission('suppliers:write'), 
   const b = req.body || {};
   const name = String(b.name ?? old.name).trim();
   if (!name) { res.status(400).json({ error: 'Le nom du fournisseur est obligatoire.' }); return; }
-  db.prepare(`UPDATE suppliers SET name=?, contact_name=?, phone=?, email=?, address=?, nif=?, nis=?, rc=?, ai=?, payment_terms=?, notes=? WHERE id=?`).run(
+  db.prepare(`UPDATE suppliers SET name=?, contact_name=?, phone=?, email=?, address=?, nif=?, nis=?, rc=?, ai=?, payment_terms=?, notes=?, status=? WHERE id=?`).run(
     name, b.contact_name ?? old.contact_name, b.phone ?? old.phone, b.email ?? old.email,
     b.address ?? old.address, b.nif ?? old.nif, b.nis ?? old.nis, b.rc ?? old.rc,
-    b.ai ?? old.ai, b.payment_terms ?? old.payment_terms, b.notes ?? old.notes, id
+    b.ai ?? old.ai, b.payment_terms ?? old.payment_terms, b.notes ?? old.notes, b.status === 'inactive' ? 'inactive' : b.status === 'active' ? 'active' : old.status, id
   );
   logAudit(req.user!, 'UPDATE', 'supplier', id, old.name, name);
   res.json(db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id));
