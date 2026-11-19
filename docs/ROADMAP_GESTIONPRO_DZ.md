@@ -55,7 +55,7 @@
 
 ## État et reprise
 - Phase 1 : implémentée sur `phase-1-foundation`, en attente de validation CI et de revue.
-- Phase 2 : en cours sur `phase-2-workforce-project-costs`.
+- Phase 2 : implémentée sur `phase-2-workforce-final`, en attente de validation CI et de revue.
 - Phase 3 : implémentée sur `phase-3-debts-finance`, en attente de validation CI et de revue financière.
 - Phase 6 : planifiée comme dernière phase, après les fonctionnalités et le durcissement.
 - Consulter `PHASE_1_STATUS.md`, `PHASE_2_STATUS.md` et `PHASE_3_STATUS.md` pour les points de reprise.
