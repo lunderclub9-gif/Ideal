@@ -676,4 +676,25 @@ function runMigrations(db: Database.Database) {
     `);
     db.prepare('INSERT INTO schema_migrations (version) VALUES (1)').run();
   }
+
+  // Version 2: extend the existing service catalogue without replacing or rewriting
+  // any service rows. This catalogue is the configurable "Types de travaux" source.
+  const migration2 = db.prepare('SELECT version FROM schema_migrations WHERE version = 2').get();
+  if (!migration2) {
+    const serviceColumns = (db.pragma('table_info(services)') as Array<{ name: string }>).map((c) => c.name);
+    if (!serviceColumns.includes('category')) {
+      db.exec("ALTER TABLE services ADD COLUMN category TEXT NOT NULL DEFAULT 'Général'");
+    }
+    if (!serviceColumns.includes('description')) {
+      db.exec("ALTER TABLE services ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+    }
+    if (!serviceColumns.includes('created_at')) {
+      db.exec("ALTER TABLE services ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'))");
+    }
+    if (!serviceColumns.includes('updated_at')) {
+      db.exec("ALTER TABLE services ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))");
+    }
+    db.exec('CREATE INDEX IF NOT EXISTS idx_services_active_name ON services(active, name)');
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (2)').run();
+  }
 }
