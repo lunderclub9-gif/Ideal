@@ -125,8 +125,8 @@ export function DocumentsPage({ permissions }: { permissions: string[] }) {
   async function load() {
     try {
       const [d, c, p, s, w] = await Promise.all([
-        apiFetch('/documents'), apiFetch('/clients'), apiFetch('/projects'),
-        apiFetch('/suppliers'), apiFetch('/workers'),
+        apiFetch('/documents'), apiFetch('/clients').catch(() => []), apiFetch('/projects').catch(() => []),
+        apiFetch('/suppliers').catch(() => []), apiFetch('/workers').catch(() => []),
       ]);
       setDocs(d); setClients(c); setProjects(p); setSuppliers(s); setWorkers(w);
     } catch (e: any) { setError(e.message); }
@@ -177,8 +177,6 @@ export function DocumentsPage({ permissions }: { permissions: string[] }) {
       setMessage('Document archivé sans supprimer le fichier.'); await load();
     } catch (err: any) { setError(err.message); }
   }
-
-  const entityOptions = (type: string) => type === 'client' ? clients : type === 'project' ? projects : type === 'supplier' ? suppliers : workers;
 
   return (
     <div className="space-y-5">
