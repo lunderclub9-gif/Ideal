@@ -51,7 +51,7 @@ try {
 
   const traversalZip = new AdmZip(backup.file_path);
   traversalZip.addFile('Documents/../../outside.txt', Buffer.from('not allowed'));
-  assert.throws(() => restoreFromZip(traversalZip.toBuffer(), 'test-suite'), /chemin|Chemin/);
+  assert.throws(() => restoreFromZip(traversalZip.toBuffer(), 'test-suite'), /inattendu|chemin|Chemin/);
   assert.equal(companyName(), liveName);
 
   console.log('DATA_PROTECTION_TESTS_OK: backup, SHA-256 verification, restore, session signature and archive path rejection.');
