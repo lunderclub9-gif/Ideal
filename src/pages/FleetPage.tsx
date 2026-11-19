@@ -18,6 +18,14 @@ export default function FleetPage({
   const [tools, setTools] = useState<any[]>([]);
   const [workers, setWorkers] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
+  const [vehicleModal, setVehicleModal] = useState(false);
+  const [editingVehicle, setEditingVehicle] = useState<any | null>(null);
+  const [vehicleForm, setVehicleForm] = useState({
+    asset_type: 'vehicle', name: '', brand: '', registration: '',
+    driver_worker_id: '', current_mileage: 0, current_engine_hours: 0,
+    usage_rate_per_day: 0, status: 'available', current_project_id: '',
+    insurance_expiry: '', inspection_expiry: '', notes: '',
+  });
   const [fuelModal, setFuelModal] = useState(false);
   const [repairModal, setRepairModal] = useState(false);
   const [checkoutTool, setCheckoutTool] = useState<any | null>(null);
@@ -47,6 +55,7 @@ export default function FleetPage({
   });
   const [coForm, setCoForm] = useState({ worker_id: '', project_id: '', expected_return_date: '' });
 
+  const canVehicles = hasPerm(permissions, 'vehicles:write');
   const canFuel = hasPerm(permissions, 'fuel:write');
   const canRepairs = hasPerm(permissions, 'repairs:write');
   const canMaterials = hasPerm(permissions, 'materials:write');
@@ -81,6 +90,38 @@ export default function FleetPage({
   useEffect(() => {
     load();
   }, []);
+
+  function openNewVehicle() {
+    setEditingVehicle(null);
+    setVehicleForm({ asset_type: 'vehicle', name: '', brand: '', registration: '', driver_worker_id: '', current_mileage: 0, current_engine_hours: 0, usage_rate_per_day: 0, status: 'available', current_project_id: '', insurance_expiry: '', inspection_expiry: '', notes: '' });
+    setVehicleModal(true);
+  }
+
+  function openEditVehicle(vehicle: any) {
+    setEditingVehicle(vehicle);
+    setVehicleForm({
+      asset_type: vehicle.asset_type || 'vehicle', name: vehicle.name || '', brand: vehicle.brand || '',
+      registration: vehicle.registration || '', driver_worker_id: vehicle.driver_worker_id ? String(vehicle.driver_worker_id) : '',
+      current_mileage: Number(vehicle.current_mileage || 0), current_engine_hours: Number(vehicle.current_engine_hours || 0),
+      usage_rate_per_day: Number(vehicle.usage_rate_per_day || 0), status: vehicle.status || 'available',
+      current_project_id: vehicle.current_project_id ? String(vehicle.current_project_id) : '',
+      insurance_expiry: vehicle.insurance_expiry || '', inspection_expiry: vehicle.inspection_expiry || '', notes: vehicle.notes || '',
+    });
+    setVehicleModal(true);
+  }
+
+  async function saveVehicle(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      const payload = { ...vehicleForm, driver_worker_id: vehicleForm.driver_worker_id || null, current_project_id: vehicleForm.current_project_id || null };
+      await apiFetch(editingVehicle ? `/vehicles/${editingVehicle.id}` : '/vehicles', {
+        method: editingVehicle ? 'PUT' : 'POST', body: JSON.stringify(payload),
+      });
+      setVehicleModal(false);
+      setEditingVehicle(null);
+      await load();
+    } catch (err: any) { setError(err.message); }
+  }
 
   async function saveFuel(e: React.FormEvent) {
     e.preventDefault();
@@ -153,6 +194,7 @@ export default function FleetPage({
         subtitle="Suivi kilométrique, maintenance préventive, ordres de réparation, L/100km et affectation d’outillage"
         actions={
           <div className="flex flex-wrap gap-2">
+            {section === 'vehicles' && canVehicles && <button type="button" onClick={openNewVehicle} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-emerald-700 rounded-lg"><Plus className="w-3.5 h-3.5" /> Ajouter un véhicule</button>}
             {canFuel && (
               <button type="button" onClick={() => setFuelModal(true)} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-blue-700 rounded-lg">
                 <Fuel className="w-3.5 h-3.5" /> Saisir plein carburant
@@ -201,6 +243,7 @@ export default function FleetPage({
                 </div>
                 <StatusText status={v.status} />
               </div>
+              {canVehicles && <div className="mt-3 flex justify-end"><button type="button" onClick={() => openEditVehicle(v)} className="px-3 py-1.5 text-xs border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800">Modifier le véhicule</button></div>}
               <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 grid grid-cols-3 gap-2 font-mono tabular-nums">
                 <div>
                   <div className="font-sans text-slate-500">Compteur</div>
@@ -363,6 +406,27 @@ export default function FleetPage({
           </table>
         </div>
       )}
+
+      <Modal open={vehicleModal} onClose={() => { setVehicleModal(false); setEditingVehicle(null); }} title={editingVehicle ? 'Modifier le véhicule / engin' : 'Ajouter un véhicule / engin'} maxWidth="max-w-2xl">
+        <form onSubmit={saveVehicle} className="space-y-3 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div><label className="block font-medium mb-1">Désignation *</label><input required value={vehicleForm.name} onChange={e => setVehicleForm({...vehicleForm,name:e.target.value})} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
+            <div><label className="block font-medium mb-1">Immatriculation / Code *</label><input required value={vehicleForm.registration} onChange={e => setVehicleForm({...vehicleForm,registration:e.target.value})} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
+            <div><label className="block font-medium mb-1">Type</label><select value={vehicleForm.asset_type} onChange={e => setVehicleForm({...vehicleForm,asset_type:e.target.value})} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950">{[['vehicle','Véhicule'],['truck','Camion'],['excavator','Pelle mécanique'],['mixer','Bétonnière'],['compressor','Compresseur'],['pump','Pompe'],['scaffolding','Échafaudage']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div>
+            <div><label className="block font-medium mb-1">Marque / Modèle</label><input value={vehicleForm.brand} onChange={e => setVehicleForm({...vehicleForm,brand:e.target.value})} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
+            <div><label className="block font-medium mb-1">Kilométrage</label><input type="number" min="0" value={vehicleForm.current_mileage} onChange={e => setVehicleForm({...vehicleForm,current_mileage:Number(e.target.value)})} className="w-full px-3 py-2 border rounded-lg" /></div>
+            <div><label className="block font-medium mb-1">Heures moteur</label><input type="number" min="0" value={vehicleForm.current_engine_hours} onChange={e => setVehicleForm({...vehicleForm,current_engine_hours:Number(e.target.value)})} className="w-full px-3 py-2 border rounded-lg" /></div>
+            <div><label className="block font-medium mb-1">Chauffeur</label><select value={vehicleForm.driver_worker_id} onChange={e => setVehicleForm({...vehicleForm,driver_worker_id:e.target.value})} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"><option value="">Non affecté</option>{workers.map(w=><option key={w.id} value={w.id}>{w.full_name}</option>)}</select></div>
+            <div><label className="block font-medium mb-1">Chantier</label><select value={vehicleForm.current_project_id} onChange={e => setVehicleForm({...vehicleForm,current_project_id:e.target.value})} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"><option value="">Dépôt</option>{projects.map(p=><option key={p.id} value={p.id}>{p.project_number} — {p.title}</option>)}</select></div>
+            <div><label className="block font-medium mb-1">Assurance jusqu’au</label><input type="date" value={vehicleForm.insurance_expiry} onChange={e => setVehicleForm({...vehicleForm,insurance_expiry:e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+            <div><label className="block font-medium mb-1">Contrôle technique jusqu’au</label><input type="date" value={vehicleForm.inspection_expiry} onChange={e => setVehicleForm({...vehicleForm,inspection_expiry:e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+            <div><label className="block font-medium mb-1">Statut</label><select value={vehicleForm.status} onChange={e => setVehicleForm({...vehicleForm,status:e.target.value})} className="w-full px-3 py-2 border rounded-lg"><option value="available">Disponible</option><option value="on_project">Sur chantier</option><option value="under_maintenance">En maintenance</option><option value="broken_down">En panne</option></select></div>
+            <div><label className="block font-medium mb-1">Coût d’utilisation / jour (DA)</label><input type="number" min="0" value={vehicleForm.usage_rate_per_day} onChange={e => setVehicleForm({...vehicleForm,usage_rate_per_day:Number(e.target.value)})} className="w-full px-3 py-2 border rounded-lg" /></div>
+          </div>
+          <div><label className="block font-medium mb-1">Notes</label><textarea value={vehicleForm.notes} onChange={e => setVehicleForm({...vehicleForm,notes:e.target.value})} rows={2} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
+          <div className="flex justify-end gap-2"><button type="button" onClick={()=>{setVehicleModal(false);setEditingVehicle(null);}} className="px-3 py-2 border rounded-lg">Annuler</button><button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg">{editingVehicle ? 'Enregistrer les modifications' : 'Ajouter le véhicule'}</button></div>
+        </form>
+      </Modal>
 
       <Modal open={fuelModal} onClose={() => setFuelModal(false)} title="Enregistrer un plein de carburant">
         <form onSubmit={saveFuel} className="space-y-3 text-xs">
