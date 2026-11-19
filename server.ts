@@ -1,6 +1,5 @@
 import express from 'express';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
 import { getDb } from './server/db.ts';
 import { seedIfEmpty } from './server/seed.ts';
 import apiRouter from './server/routes.ts';
@@ -22,6 +21,7 @@ async function startServer() {
     app.use(express.static(distDir));
     app.get('*', (_req, res) => res.sendFile(path.join(distDir, 'index.html')));
   } else {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
     app.use(vite.middlewares);
   }
