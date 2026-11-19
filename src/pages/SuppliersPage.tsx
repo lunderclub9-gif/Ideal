@@ -94,6 +94,16 @@ export default function SuppliersPage({ permissions }: { permissions: string[] }
     }
   }
 
+  async function cancelPo(purchase: any) {
+    if (!window.confirm(`Annuler le bon ${purchase.po_number} ? Cette action est réservée aux commandes non réceptionnées et non réglées.`)) return;
+    try {
+      await apiFetch(`/purchases/${purchase.id}/cancel`, { method: 'POST' });
+      await load();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }
+
   async function receivePo(id: number) {
     try {
       await apiFetch(`/purchases/${id}/receive`, { method: 'POST' });
@@ -187,6 +197,11 @@ export default function SuppliersPage({ permissions }: { permissions: string[] }
                     <td className="p-3 text-right font-mono tabular-nums text-emerald-700">{formatDA(p.amount_paid)}</td>
                     <td className="p-3"><StatusText status={p.status} /></td>
                     <td className="p-3 text-right whitespace-nowrap space-x-2">
+                      {canWrite && ['ordered','requested'].includes(p.status) && Number(p.amount_paid || 0) === 0 && (
+                        <button type="button" onClick={() => cancelPo(p)} className="inline-flex items-center gap-1 px-2.5 py-1 border border-rose-300 text-rose-700 hover:bg-rose-50 rounded" title="Annuler la commande">
+                          Annuler
+                        </button>
+                      )}
                       {canWrite && (p.status === 'ordered' || p.status === 'requested') && (
                         <button type="button" onClick={() => receivePo(p.id)} className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-700 text-white rounded">
                           <PackageCheck className="w-3 h-3" /> Réceptionner
