@@ -690,12 +690,32 @@ router.put('/projects/tasks/:taskId', requireAuth, requirePermission('projects:w
     res.status(400).json({ error: 'Veuillez préciser le motif du retard.' });
     return;
   }
+  const assignedWorkerId = b.assigned_worker_id !== undefined
+    ? (b.assigned_worker_id ? Number(b.assigned_worker_id) : null)
+    : old.assigned_worker_id;
+  if (assignedWorkerId !== null) {
+    const worker = db.prepare("SELECT id, status FROM workers WHERE id = ?").get(assignedWorkerId) as any;
+    if (!worker || worker.status === 'terminated' || worker.status === 'suspended') {
+      res.status(400).json({ error: 'Le salarié sélectionné est introuvable, sorti ou suspendu.' });
+      return;
+    }
+  }
+  const taskStatus = b.status ?? old.status;
+  if (!['planned', 'in_progress', 'delayed', 'completed'].includes(taskStatus)) {
+    res.status(400).json({ error: 'Statut de tâche invalide.' });
+    return;
+  }
   db.prepare(
-    'UPDATE project_tasks SET status=?, delay_reason=?, delay_reported_at=?, notes=? WHERE id=?'
+    'UPDATE project_tasks SET title=?, phase_id=?, assigned_worker_id=?, planned_start=?, due_date=?, status=?, delay_reason=?, delay_reported_at=?, notes=? WHERE id=?'
   ).run(
-    b.status ?? old.status,
+    String(b.title ?? old.title).trim(),
+    b.phase_id !== undefined ? (b.phase_id ? Number(b.phase_id) : null) : old.phase_id,
+    assignedWorkerId,
+    b.planned_start !== undefined ? (b.planned_start || null) : old.planned_start,
+    b.due_date !== undefined ? (b.due_date || null) : old.due_date,
+    taskStatus,
     b.delay_reason ?? old.delay_reason,
-    b.status === 'delayed' ? b.delay_reported_at || new Date().toISOString().slice(0, 10) : old.delay_reported_at,
+    taskStatus === 'delayed' ? b.delay_reported_at || old.delay_reported_at || new Date().toISOString().slice(0, 10) : old.delay_reported_at,
     b.notes ?? old.notes,
     taskId
   );
@@ -1235,7 +1255,7 @@ router.get('/payments', requireAuth, requirePermission('invoices:read'), (_req, 
 // ==================== CONFIGURABLE WORK TYPES / SERVICE CATALOGUE ====================
 // Existing quotations and project records remain compatible: service records are
 // maintained as a catalogue and are never hard-deleted.
-router.get('/services', requireAuth, requirePermission('projects:read'), (_req, res) => {
+router.get('/services', requireAuth, requirePermission('settings:read'), (_req, res) => {
   const db = getDb();
   res.json(
     db.prepare('SELECT * FROM services ORDER BY active DESC, category COLLATE NOCASE ASC, name COLLATE NOCASE ASC').all()
@@ -1332,32 +1352,44 @@ router.get('/workers', requireAuth, requirePermission('attendance:read'), (_req,
 
 router.post('/workers', requireAuth, requirePermission('payroll:write'), (req: AuthedRequest, res) => {
   const b = req.body || {};
-  if (!b.full_name?.trim() || !b.job_title?.trim()) {
+  const fullName = String(b.full_name || '').trim();
+  const jobTitle = String(b.job_title || '').trim();
+  const wageType = String(b.wage_type || 'daily');
+  const amounts = [Number(b.daily_wage || 0), Number(b.hourly_rate || 0), Number(b.monthly_salary || 0)];
+  const allowedStatuses = ['active', 'suspended', 'on_leave', 'terminated'];
+  if (!fullName || !jobTitle) {
     res.status(400).json({ error: 'Le nom complet et le poste sont obligatoires.' });
     return;
   }
+  if (!['daily', 'monthly', 'hourly', 'piecework'].includes(wageType)) {
+    res.status(400).json({ error: 'Type de rémunération invalide.' });
+    return;
+  }
+  if (!amounts.every((value) => Number.isFinite(value) && value >= 0)) {
+    res.status(400).json({ error: 'Les montants de rémunération doivent être positifs ou nuls.' });
+    return;
+  }
+  const status = String(b.status || 'active');
+  if (!allowedStatuses.includes(status)) {
+    res.status(400).json({ error: 'Statut du salarié invalide.' });
+    return;
+  }
+  const hireDate = String(b.hire_date || new Date().toISOString().slice(0, 10));
+  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(hireDate) || Number.isNaN(Date.parse(hireDate))) {
+    res.status(400).json({ error: 'Date d’embauche invalide (AAAA-MM-JJ).' });
+    return;
+  }
   const db = getDb();
-  const info = db
-    .prepare(
-      `INSERT INTO workers (full_name, job_title, wage_type, daily_wage, hourly_rate, monthly_salary, work_schedule, hire_date, cnas_number, phone, address, status, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      b.full_name.trim(),
-      b.job_title.trim(),
-      b.wage_type || 'daily',
-      Number(b.daily_wage || 0),
-      Number(b.hourly_rate || 0),
-      Number(b.monthly_salary || 0),
-      b.work_schedule || '08:00 - 16:30',
-      b.hire_date || new Date().toISOString().slice(0, 10),
-      b.cnas_number || '',
-      b.phone || '',
-      b.address || '',
-      b.status || 'active',
-      b.notes || ''
-    );
-  logAudit(req.user!, 'CREATE', 'worker', info.lastInsertRowid, '', b.full_name.trim());
+  const info = db.prepare(
+    `INSERT INTO workers (full_name, job_title, wage_type, daily_wage, hourly_rate, monthly_salary, work_schedule, hire_date, cnas_number, phone, address, status, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    fullName, jobTitle, wageType, amounts[0], amounts[1], amounts[2],
+    String(b.work_schedule || '08:00 - 16:30'), hireDate,
+    String(b.cnas_number || '').trim(), String(b.phone || '').trim(),
+    String(b.address || '').trim(), status, String(b.notes || '').trim()
+  );
+  logAudit(req.user!, 'CREATE', 'worker', info.lastInsertRowid, '', fullName);
   res.status(201).json(db.prepare('SELECT * FROM workers WHERE id = ?').get(info.lastInsertRowid));
 });
 
@@ -1370,23 +1402,43 @@ router.put('/workers/:id', requireAuth, requirePermission('payroll:write'), (req
     res.status(404).json({ error: 'Employé introuvable.' });
     return;
   }
+  const fullName = String(b.full_name ?? old.full_name).trim();
+  const jobTitle = String(b.job_title ?? old.job_title).trim();
+  const wageType = String(b.wage_type ?? old.wage_type);
+  const dailyWage = Number(b.daily_wage ?? old.daily_wage);
+  const hourlyRate = Number(b.hourly_rate ?? old.hourly_rate);
+  const monthlySalary = Number(b.monthly_salary ?? old.monthly_salary);
+  const status = String(b.status ?? old.status);
+  const hireDate = String(b.hire_date ?? old.hire_date);
+  if (!fullName || !jobTitle) {
+    res.status(400).json({ error: 'Le nom complet et le poste sont obligatoires.' });
+    return;
+  }
+  if (!['daily', 'monthly', 'hourly', 'piecework'].includes(wageType)) {
+    res.status(400).json({ error: 'Type de rémunération invalide.' });
+    return;
+  }
+  if (![dailyWage, hourlyRate, monthlySalary].every((value) => Number.isFinite(value) && value >= 0)) {
+    res.status(400).json({ error: 'Les montants de rémunération doivent être positifs ou nuls.' });
+    return;
+  }
+  if (!['active', 'suspended', 'on_leave', 'terminated'].includes(status)) {
+    res.status(400).json({ error: 'Statut du salarié invalide.' });
+    return;
+  }
+  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(hireDate) || Number.isNaN(Date.parse(hireDate))) {
+    res.status(400).json({ error: 'Date d’embauche invalide (AAAA-MM-JJ).' });
+    return;
+  }
   db.prepare(
-    `UPDATE workers SET full_name=?, job_title=?, wage_type=?, daily_wage=?, hourly_rate=?, monthly_salary=?, cnas_number=?, phone=?, address=?, status=?, notes=? WHERE id=?`
+    `UPDATE workers SET full_name=?, job_title=?, wage_type=?, daily_wage=?, hourly_rate=?, monthly_salary=?, work_schedule=?, hire_date=?, cnas_number=?, phone=?, address=?, status=?, notes=? WHERE id=?`
   ).run(
-    b.full_name ?? old.full_name,
-    b.job_title ?? old.job_title,
-    b.wage_type ?? old.wage_type,
-    b.daily_wage !== undefined ? Number(b.daily_wage) : old.daily_wage,
-    b.hourly_rate !== undefined ? Number(b.hourly_rate) : old.hourly_rate,
-    b.monthly_salary !== undefined ? Number(b.monthly_salary) : old.monthly_salary,
-    b.cnas_number ?? old.cnas_number,
-    b.phone ?? old.phone,
-    b.address ?? old.address,
-    b.status ?? old.status,
-    b.notes ?? old.notes,
-    id
+    fullName, jobTitle, wageType, dailyWage, hourlyRate, monthlySalary,
+    b.work_schedule ?? old.work_schedule, hireDate,
+    b.cnas_number ?? old.cnas_number, b.phone ?? old.phone,
+    b.address ?? old.address, status, b.notes ?? old.notes, id
   );
-  logAudit(req.user!, 'UPDATE', 'worker', id, old.full_name, b.full_name ?? old.full_name);
+  logAudit(req.user!, 'UPDATE', 'worker', id, old.full_name, fullName);
   res.json(db.prepare('SELECT * FROM workers WHERE id = ?').get(id));
 });
 
@@ -1447,11 +1499,21 @@ router.post('/attendance', requireAuth, requirePermission('attendance:write'), (
   const b = req.body || {};
   const workerId = Number(b.worker_id);
   const attDate = b.attendance_date;
-  const status = b.status || 'present';
+  const status = String(b.status || 'present');
   const dayFraction = status === 'absent' || status === 'unpaid_leave' ? 0 : status === 'half_day' ? 0.5 : Number(b.day_fraction ?? 1);
+  const overtimeHours = Number(b.overtime_hours || 0);
+  const advanceAmount = Number(b.advance_amount || 0);
 
-  if (!workerId || !attDate) {
-    res.status(400).json({ error: 'Employé et date de pointage sont obligatoires.' });
+  if (!workerId || !attDate || !/^\\d{4}-\\d{2}-\\d{2}$/.test(String(attDate)) || Number.isNaN(Date.parse(String(attDate)))) {
+    res.status(400).json({ error: 'Employé et date de pointage valide (AAAA-MM-JJ) sont obligatoires.' });
+    return;
+  }
+  if (!['present', 'absent', 'half_day', 'paid_leave', 'unpaid_leave', 'sick_leave', 'holiday'].includes(status)) {
+    res.status(400).json({ error: 'Statut de présence invalide.' });
+    return;
+  }
+  if (!Number.isFinite(dayFraction) || dayFraction < 0 || dayFraction > 1 || !Number.isFinite(overtimeHours) || overtimeHours < 0 || !Number.isFinite(advanceAmount) || advanceAmount < 0) {
+    res.status(400).json({ error: 'Journée, heures supplémentaires et avance doivent être des valeurs positives valides.' });
     return;
   }
   if ((status === 'present' || status === 'half_day') && !b.project_id) {
@@ -1460,6 +1522,15 @@ router.post('/attendance', requireAuth, requirePermission('attendance:write'), (
   }
 
   const db = getDb();
+  const worker = db.prepare('SELECT status FROM workers WHERE id = ?').get(workerId) as { status: string } | undefined;
+  if (!worker) {
+    res.status(404).json({ error: 'Salarié introuvable.' });
+    return;
+  }
+  if (worker.status === 'terminated' || worker.status === 'suspended') {
+    res.status(400).json({ error: 'Ce salarié est sorti ou suspendu : le pointage est bloqué.' });
+    return;
+  }
   // Verify split-day fraction does not exceed 1.0 full day across projects on same date
   const existingRow = db
     .prepare(
@@ -1498,8 +1569,8 @@ router.post('/attendance', requireAuth, requirePermission('attendance:write'), (
       b.project_id ? Number(b.project_id) : null,
       status,
       dayFraction,
-      Number(b.overtime_hours || 0),
-      Number(b.advance_amount || 0),
+      overtimeHours,
+      advanceAmount,
       b.notes || '',
       req.user!.id
     );
