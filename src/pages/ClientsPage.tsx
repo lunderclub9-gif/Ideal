@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Download, Eye, Plus, Search, UserCheck, Trash2 } from 'lucide-react';
+import { Download, Eye, Plus, Search, UserCheck, Trash2, Archive, RotateCcw } from 'lucide-react';
 import { apiFetch, downloadWithAuth, formatDA, formatDateFr, hasPerm } from '../lib/api';
 import { EmptyState, Modal, PageHeader, StatusText } from '../components/ui';
 
@@ -97,6 +97,16 @@ export default function ClientsPage({ permissions }: { permissions: string[] }) 
     } catch (err: any) {
       setError(err.message);
     }
+  }
+
+  async function toggleClientStatus(client: any) {
+    const next = client.status === 'inactive' ? 'active' : 'inactive';
+    const action = next === 'inactive' ? 'archiver' : 'réactiver';
+    if (!window.confirm(`Voulez-vous ${action} le client « ${client.name} » ? Son historique et ses chantiers seront conservés.`)) return;
+    try {
+      await apiFetch(`/clients/${client.id}`, { method: 'PUT', body: JSON.stringify({ status: next }) });
+      await load();
+    } catch (err: any) { setError(err.message); }
   }
 
   async function deleteClient(client: any) {
@@ -241,6 +251,12 @@ export default function ClientsPage({ permissions }: { permissions: string[] }) 
                           className="px-2.5 py-1 text-xs text-blue-700 dark:text-blue-400 hover:underline"
                         >
                           Modifier
+                        </button>
+                      )}
+                      {canWrite && (
+                        <button type="button" onClick={() => toggleClientStatus(c)} title={c.status === 'inactive' ? 'Réactiver le client' : 'Archiver le client'} aria-label={c.status === 'inactive' ? `Réactiver ${c.name}` : `Archiver ${c.name}`} className="inline-flex items-center gap-1 px-2 py-1 text-xs border border-slate-300 dark:border-slate-700 rounded hover:bg-slate-100 dark:hover:bg-slate-800">
+                          {c.status === 'inactive' ? <RotateCcw className="w-3 h-3" /> : <Archive className="w-3 h-3" />}
+                          {c.status === 'inactive' ? 'Réactiver' : 'Archiver'}
                         </button>
                       )}
                       {canDelete && (
