@@ -149,8 +149,8 @@ Les autorisations sont vérifiées côté serveur par des permissions associées
 
 ## Configuration et points de vigilance
 
-- La variable SESSION_SECRET doit être définie avec une valeur aléatoire forte avant tout déploiement. Le code contient actuellement une valeur de secours si cette variable est absente.
-- Le serveur de l'application de bureau écoute sur 127.0.0.1 et utilise un port local attribué automatiquement.
+- L'application de bureau génère et conserve un secret de session aléatoire propre à l'installation dans le dossier utilisateur Windows. En mode développement, définir SESSION_SECRET avec une valeur aléatoire.
+- Le serveur de l'application de bureau écoute uniquement sur 127.0.0.1:3000. Le port stable permet de conserver la session locale du navigateur entre les démarrages.
 - L'interface charge actuellement des polices depuis Google Fonts ; leur chargement dépend d'une connexion Internet, même si le serveur et la base de données sont locaux.
 - Le périmètre fonctionnel de GestionPro DZ ne requiert pas de service d'intelligence artificielle.
 - Les taux et règles fiscales fournis dans les données de démonstration ne remplacent pas une validation par un comptable algérien. Les règles doivent être vérifiées et configurées selon la situation réelle et la législation applicable.
