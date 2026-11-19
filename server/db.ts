@@ -703,14 +703,15 @@ function runMigrations(db: Database.Database) {
          VALUES (?, ?, ?, ?, ?, 0, 0, 0, 1)`
       );
       const seedStarterCatalogue = db.transaction(() => {
-        [
+        const starterServices = [
           ['RESINE', 'Résine', 'Revêtement', 'Travaux de résine et revêtements décoratifs', 'm²'],
           ['EPOXY', 'Époxy', 'Revêtement', 'Revêtement et finition époxy', 'm²'],
           ['PLOMBERIE', 'Plomberie', 'Réseaux', 'Installation et réparation de plomberie', 'Forfait'],
           ['PEINTURE', 'Peinture', 'Finition', 'Travaux de peinture intérieure et extérieure', 'm²'],
           ['CARRELAGE', 'Carrelage', 'Finition', 'Pose et finition de carrelage', 'm²'],
           ['ELECTRICITE', 'Électricité', 'Réseaux', 'Installation et maintenance électrique', 'Point'],
-        ].forEach((row) => insertService.run(...row));
+        ] as const;
+        starterServices.forEach((row) => insertService.run(...row));
       });
       seedStarterCatalogue();
     }
