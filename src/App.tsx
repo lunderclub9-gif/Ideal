@@ -282,7 +282,7 @@ export default function App() {
       case 'documents':
         return <DocumentsPage permissions={permissions} />;
       case 'reports':
-        return <ReportsPage />;
+        return <ReportsPage permissions={permissions} />;
       case 'settings':
         return <SettingsPage permissions={permissions} />;
       case 'backup':
