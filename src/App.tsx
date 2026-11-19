@@ -38,6 +38,7 @@ import {
   saveSession,
 } from './lib/api';
 import LoginPage from './pages/LoginPage';
+import SetupPage from './pages/SetupPage';
 import DashboardPage from './pages/DashboardPage';
 import ClientsPage from './pages/ClientsPage';
 import ProjectsPage from './pages/ProjectsPage';
@@ -97,6 +98,13 @@ export default function App() {
   const [route, setRoute] = useState<string>(getInitialRoute);
   const [dark, setDark] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [setupRequired, setSetupRequired] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    apiFetch<{ setupRequired: boolean }>('/auth/setup-status')
+      .then((result) => setSetupRequired(result.setupRequired))
+      .catch(() => setSetupRequired(false));
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
@@ -183,6 +191,14 @@ export default function App() {
     clearSession();
     setUser(null);
     setPermissions([]);
+  }
+
+  if (setupRequired === null) {
+    return <div className="min-h-screen flex items-center justify-center text-sm text-slate-500">Préparation de GestionPro DZ…</div>;
+  }
+
+  if (setupRequired) {
+    return <SetupPage onSuccess={() => { setSetupRequired(false); setUser(getSavedUser()); setPermissions(getSavedPermissions()); }} />;
   }
 
   if (!user) {
@@ -336,7 +352,7 @@ export default function App() {
               <Menu className="w-4 h-4" />
             </button>
             <span className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">
-              SARL Bâti-Tichy &amp; Services <span className="mx-1.5">/</span>
+              GestionPro DZ <span className="mx-1.5">/</span>
               <span className="text-slate-900 dark:text-slate-100 font-semibold">
                 {currentNav?.label || 'Tableau de bord'}
               </span>
