@@ -486,6 +486,7 @@ export default function FleetPage({
 
       <Modal open={fuelModal} onClose={() => { setFuelModal(false); setEditingFuel(null); }} title={editingFuel ? "Modifier le plein de carburant" : "Enregistrer un plein de carburant"}>
         <form onSubmit={saveFuel} className="space-y-3 text-xs">
+          <div><label className="block font-medium mb-1">Date du plein *</label><input type="date" required value={fuelForm.date} onChange={e => setFuelForm({ ...fuelForm, date: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-medium mb-1">Véhicule / Engin *</label>
@@ -500,6 +501,20 @@ export default function FleetPage({
                 <option value="">Frais parc général</option>
                 {projects.map((p) => <option key={p.id} value={p.id}>{p.project_number} — {p.title}</option>)}
               </select>
+            </div>
+            <div>
+              <label className="block font-medium mb-1">Conducteur</label>
+              <select value={fuelForm.driver_worker_id} onChange={e => setFuelForm({ ...fuelForm, driver_worker_id: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950">
+                <option value="">Non précisé</option>{workers.map(w => <option key={w.id} value={w.id}>{w.full_name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block font-medium mb-1">Station-service</label>
+              <input value={fuelForm.fuel_station} onChange={e => setFuelForm({ ...fuelForm, fuel_station: e.target.value })} className="w-full px-3 py-2 border rounded-lg" />
+            </div>
+            <div className="col-span-2">
+              <label className="block font-medium mb-1">Motif / trajet</label>
+              <input value={fuelForm.trip_purpose} onChange={e => setFuelForm({ ...fuelForm, trip_purpose: e.target.value })} className="w-full px-3 py-2 border rounded-lg" />
             </div>
             <div>
               <label className="block font-medium mb-1">Litres *</label>
