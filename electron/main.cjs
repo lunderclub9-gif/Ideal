@@ -50,8 +50,8 @@ function startLocalServer() {
     fs.writeFileSync(secretPath, sessionSecret, { encoding: 'utf8', mode: 0o600 });
   }
   serverProcess = spawn(process.execPath, [serverPath], {
-    cwd: app.getAppPath(),
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_ENV: 'production', HOST: APP_URL_HOST, PORT: '3000', GESTIONPRO_DATA_DIR: dataPath, SESSION_SECRET: sessionSecret },
+    cwd: process.resourcesPath,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_ENV: 'production', HOST: APP_URL_HOST, PORT: '3000', GESTIONPRO_DATA_DIR: dataPath, GESTIONPRO_APP_ROOT: app.getAppPath(), SESSION_SECRET: sessionSecret },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true
   });
