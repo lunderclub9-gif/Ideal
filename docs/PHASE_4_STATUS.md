@@ -16,6 +16,7 @@
 - Modification des métadonnées des pièces jointes sans modifier ni remplacer le fichier original.
 - Archivage logique conservant les fichiers physiques et les références ; aucune suppression physique introduite.
 - Export Excel du registre des documents, avec métadonnées, taille, type MIME, date et utilisateur ayant déposé le fichier.
+- Reçu de paiement imprimable / Enregistrer en PDF depuis le journal des règlements, avec informations du tiers, référence de facture ou commande fournisseur, mode, date, montant, logo et cachet.
 - Classeur de rapports enrichi en six feuilles : rentabilité des chantiers, état du stock, devis/factures, règlements, soldes fournisseurs et activité des salariés.
 - Page Rapports enrichie avec synthèse main-d’œuvre et coûts véhicules, plus impression navigateur / enregistrement PDF au format A4.
 - Paramètres de l’entreprise : ajout du dépôt local du logo et du cachet (PNG/JPG/WebP, 1,5 Mo maximum chacun), aperçu et retrait ; les images configurées apparaissent sur les documents commerciaux imprimés.
