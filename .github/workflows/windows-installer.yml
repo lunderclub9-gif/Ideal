@@ -10,6 +10,8 @@ on:
       - 'package.json'
       - 'electron/**'
       - 'vite.config.ts'
+      - 'index.html'
+      - 'public/**'
       - 'tsconfig.json'
       - '.github/workflows/windows-installer.yml'
   workflow_dispatch:
