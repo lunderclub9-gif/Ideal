@@ -347,7 +347,7 @@ export function PaymentReceiptPrintModal({
   onClose: () => void;
 }) {
   if (!payment) return null;
-  const isInflow = payment.direction === 'inflow';
+  const isInflow = payment.direction === 'inflow' || Boolean(payment.client_id);
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/70 flex items-center justify-center p-4 overflow-y-auto">
       <div className="w-full max-w-3xl bg-white text-slate-900 rounded-xl shadow-2xl overflow-hidden print-area">
