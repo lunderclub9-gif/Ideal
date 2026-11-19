@@ -8,14 +8,22 @@ let serverProcess = null;
 let mainWindow = null;
 let shuttingDown = false;
 const APP_URL_HOST = '127.0.0.1';
+let startupLogPath = null;
+
+function logStartup(message) {
+  try {
+    if (startupLogPath) fs.appendFileSync(startupLogPath, `[${new Date().toISOString()}] ${message}\n`, 'utf8');
+  } catch {}
+}
 
 function waitForServer(child, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
     let output = '';
     const timeout = setTimeout(() => reject(new Error('Le serveur local n’a pas démarré dans le délai prévu.')), timeoutMs);
-    child.once('error', (error) => { clearTimeout(timeout); reject(error); });
+    child.once('error', (error) => { logStartup(`Server process error: ${error.stack || error}`); clearTimeout(timeout); reject(error); });
     child.stdout.on('data', (chunk) => {
       output += chunk.toString();
+      logStartup(`SERVER STDOUT: ${chunk.toString().trim()}`);
       const match = output.match(/GESTIONPRO_SERVER_READY:(\d+)/);
       if (match) { clearTimeout(timeout); resolve(Number(match[1])); }
       if (output.length > 12000) output = output.slice(-6000);
@@ -23,6 +31,7 @@ function waitForServer(child, timeoutMs = 30000) {
     child.stderr.on('data', (chunk) => {
       const message = chunk.toString();
       console.error(message);
+      logStartup(`SERVER STDERR: ${message.trim()}`);
       if (/GESTIONPRO_STARTUP_ERROR|GESTIONPRO_SERVER_ERROR/.test(message)) {
         clearTimeout(timeout);
         reject(new Error(message));
@@ -30,6 +39,7 @@ function waitForServer(child, timeoutMs = 30000) {
     });
     child.once('exit', (code) => {
       if (!shuttingDown) {
+        logStartup(`Server process exited with code ${code ?? 'unknown'}`);
         clearTimeout(timeout);
         reject(new Error(`Le serveur local s’est arrêté (code ${code ?? 'inconnu'}).`));
       }
@@ -44,6 +54,7 @@ function startLocalServer() {
     ? path.join(process.resourcesPath, 'app.asar.unpacked', 'dist-server', 'server.cjs')
     : path.join(app.getAppPath(), 'dist-server', 'server.cjs');
   const userDataPath = app.getPath('userData');
+  startupLogPath = path.join(userDataPath, 'startup.log');
   const dataPath = path.join(userDataPath, 'data');
   const secretPath = path.join(userDataPath, 'session-secret');
   fs.mkdirSync(userDataPath, { recursive: true });
@@ -53,6 +64,8 @@ function startLocalServer() {
     sessionSecret = crypto.randomBytes(48).toString('hex');
     fs.writeFileSync(secretPath, sessionSecret, { encoding: 'utf8', mode: 0o600 });
   }
+  logStartup(`Starting local server. executable=${process.execPath}; server=${serverPath}; serverExists=${fs.existsSync(serverPath)}; appPath=${app.getAppPath()}; resources=${process.resourcesPath}`);
+  if (!fs.existsSync(serverPath)) throw new Error(`Le serveur intégré est introuvable : ${serverPath}`);
   serverProcess = spawn(process.execPath, [serverPath], {
     cwd: process.resourcesPath,
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_ENV: 'production', HOST: APP_URL_HOST, PORT: '0', GESTIONPRO_DATA_DIR: dataPath, GESTIONPRO_APP_ROOT: app.getAppPath(), NODE_PATH: path.join(app.getAppPath(), 'node_modules'), SESSION_SECRET: sessionSecret },
@@ -95,7 +108,7 @@ else {
     app.setPath('userData', path.join(app.getPath('appData'), 'GestionPro-DZ'));
     app.setAppUserModelId('dz.gestionpro.desktop');
     try { await createMainWindow(); }
-    catch (error) { stopServer(); dialog.showErrorBox('GestionPro DZ', error?.message || 'Impossible de démarrer le serveur local.'); app.quit(); }
+    catch (error) { logStartup(`APPLICATION STARTUP ERROR: ${error?.stack || error}`); stopServer(); dialog.showErrorBox('GestionPro DZ', error?.message || 'Impossible de démarrer le serveur local.'); app.quit(); }
   });
 }
 app.on('before-quit', stopServer);
