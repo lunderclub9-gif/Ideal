@@ -238,7 +238,8 @@ export function CommercialPrintModal({
           {/* Header */}
           <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4">
             <div className="space-y-1">
-              <div className="text-lg font-bold tracking-tight uppercase">{company?.name || 'Bâti-Tichy & Services'} ({company?.legal_form || 'SARL'})</div>
+              {company?.logo_data && <img src={company.logo_data} alt="Logo de l’entreprise" className="max-h-16 max-w-40 object-contain mb-2" />}
+              <div className="text-lg font-bold tracking-tight uppercase">{company?.name || 'Mon entreprise'} ({company?.legal_form || 'Entreprise'})</div>
               <div className="text-slate-600">{company?.header_note}</div>
               <div>{company?.address}</div>
               <div>Tél : {company?.phone} · Email : {company?.email}</div>
@@ -325,6 +326,7 @@ export function CommercialPrintModal({
           <div className="pt-8 flex justify-between items-end border-t border-slate-200">
             <div className="text-[11px] text-slate-500 max-w-md">{company?.footer_note}</div>
             <div className="text-center w-56">
+              {company?.stamp_data && <img src={company.stamp_data} alt="Cachet de l’entreprise" className="max-h-20 max-w-40 object-contain mx-auto mb-2" />}
               <div className="font-semibold mb-12">Cachet & Signature</div>
               <div className="border-t border-slate-400 pt-1 text-[11px] text-slate-500">La Direction</div>
             </div>
