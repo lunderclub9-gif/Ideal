@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CreditCard, PackageCheck, Pencil, Plus } from 'lucide-react';
+import { CreditCard, PackageCheck, Pencil, Plus, Archive, RotateCcw } from 'lucide-react';
 import { apiFetch, formatDA, formatDateFr, hasPerm } from '../lib/api';
 import { Modal, PageHeader, StatusText } from '../components/ui';
 
@@ -16,7 +16,7 @@ export default function SuppliersPage({ permissions }: { permissions: string[] }
   const [payMethod, setPayMethod] = useState('Virement');
   const [error, setError] = useState('');
 
-  const [supForm, setSupForm] = useState({ name: '', contact_name: '', phone: '', address: '', nif: '', payment_terms: '30 jours' });
+  const [supForm, setSupForm] = useState({ name: '', contact_name: '', phone: '', address: '', nif: '', payment_terms: '30 jours', status: 'active' });
   const [poForm, setPoForm] = useState({
     supplier_id: '',
     project_id: '',
@@ -51,13 +51,13 @@ export default function SuppliersPage({ permissions }: { permissions: string[] }
 
   function openNewSupplier() {
     setEditingSupplier(null);
-    setSupForm({ name: '', contact_name: '', phone: '', address: '', nif: '', payment_terms: '30 jours' });
+    setSupForm({ name: '', contact_name: '', phone: '', address: '', nif: '', payment_terms: '30 jours', status: 'active' });
     setSupOpen(true);
   }
 
   function openEditSupplier(supplier: any) {
     setEditingSupplier(supplier);
-    setSupForm({ name: supplier.name || '', contact_name: supplier.contact_name || '', phone: supplier.phone || '', address: supplier.address || '', nif: supplier.nif || '', payment_terms: supplier.payment_terms || '30 jours' });
+    setSupForm({ name: supplier.name || '', contact_name: supplier.contact_name || '', phone: supplier.phone || '', address: supplier.address || '', nif: supplier.nif || '', payment_terms: supplier.payment_terms || '30 jours', status: supplier.status || 'active' });
     setSupOpen(true);
   }
 
@@ -71,6 +71,16 @@ export default function SuppliersPage({ permissions }: { permissions: string[] }
     } catch (err: any) {
       setError(err.message);
     }
+  }
+
+  async function toggleSupplierStatus(supplier: any) {
+    const next = supplier.status === 'inactive' ? 'active' : 'inactive';
+    const action = next === 'inactive' ? 'archiver' : 'réactiver';
+    if (!window.confirm(`Voulez-vous ${action} le fournisseur « ${supplier.name} » ? Les commandes et paiements historiques seront conservés.`)) return;
+    try {
+      await apiFetch(`/suppliers/${supplier.id}`, { method: 'PUT', body: JSON.stringify({ status: next }) });
+      await load();
+    } catch (err: any) { setError(err.message); }
   }
 
   async function savePurchase(e: React.FormEvent) {
@@ -132,7 +142,7 @@ export default function SuppliersPage({ permissions }: { permissions: string[] }
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         {suppliers.map((s) => (
           <div key={s.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 text-xs">
-            <div className="flex items-start justify-between gap-2"><div className="font-bold text-slate-900 dark:text-white">{s.name}</div>{canWrite && <button type="button" onClick={() => openEditSupplier(s)} title="Modifier le fournisseur" aria-label={`Modifier ${s.name}`} className="inline-flex items-center gap-1 px-2 py-1 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><Pencil className="w-3 h-3" /><span>Modifier</span></button>}</div>
+            <div className="flex items-start justify-between gap-2"><div className="font-bold text-slate-900 dark:text-white">{s.name}</div>{canWrite && <div className="flex items-center gap-1"><button type="button" onClick={() => openEditSupplier(s)} title="Modifier le fournisseur" aria-label={`Modifier ${s.name}`} className="inline-flex items-center gap-1 px-2 py-1 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><Pencil className="w-3 h-3" /><span>Modifier</span></button><button type="button" onClick={() => toggleSupplierStatus(s)} title={s.status === 'inactive' ? 'Réactiver' : 'Archiver'} className="p-1.5 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">{s.status === 'inactive' ? <RotateCcw className="w-3 h-3" /> : <Archive className="w-3 h-3" />}</button></div>}</div>
             <div className="text-slate-500 mt-0.5">{s.contact_name} · {s.phone}</div>
             <div className="font-mono text-[11px] text-slate-500 mt-1">NIF : {s.nif || '—'}</div>
             <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
