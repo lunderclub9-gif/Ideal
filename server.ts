@@ -51,7 +51,7 @@ async function startServer() {
       const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
       const today = localDate();
       const hasToday = db.prepare(
-        "SELECT id FROM backup_history WHERE backup_type = 'auto_daily' AND substr(created_at, 1, 10) = ? LIMIT 1"
+        "SELECT id FROM backup_history WHERE backup_type = 'auto_daily' AND date(created_at, 'localtime') = ? LIMIT 1"
       ).get(today);
       if (!hasToday && currentTime >= configuredTime) {
         createFullBackup('auto_daily', 'Sauvegarde automatique quotidienne');
@@ -61,17 +61,8 @@ async function startServer() {
     }
   };
 
-  // Create a startup safety point when today's automatic backup does not exist.
-  try {
-    const db = getDb();
-    const today = localDate();
-    const hasToday = db.prepare("SELECT id FROM backup_history WHERE backup_type = 'auto_daily' AND substr(created_at, 1, 10) = ? LIMIT 1").get(today);
-    if (!hasToday) createFullBackup('auto_daily', 'Sauvegarde automatique quotidienne');
-  } catch (error) {
-    console.error('GESTIONPRO_BACKUP_STARTUP_ERROR', error);
-  }
-
-  // Keep the configured local backup time effective while the desktop app is running.
+  // Apply the configured local time immediately, then check once per minute.
+  runDailyBackupIfDue();
   const backupTimer = setInterval(runDailyBackupIfDue, 60_000);
   backupTimer.unref();
 }
