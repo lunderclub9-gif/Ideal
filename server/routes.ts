@@ -690,12 +690,32 @@ router.put('/projects/tasks/:taskId', requireAuth, requirePermission('projects:w
     res.status(400).json({ error: 'Veuillez préciser le motif du retard.' });
     return;
   }
+  const assignedWorkerId = b.assigned_worker_id !== undefined
+    ? (b.assigned_worker_id ? Number(b.assigned_worker_id) : null)
+    : old.assigned_worker_id;
+  if (assignedWorkerId !== null) {
+    const worker = db.prepare("SELECT id, status FROM workers WHERE id = ?").get(assignedWorkerId) as any;
+    if (!worker || worker.status === 'terminated' || worker.status === 'suspended') {
+      res.status(400).json({ error: 'Le salarié sélectionné est introuvable, sorti ou suspendu.' });
+      return;
+    }
+  }
+  const taskStatus = b.status ?? old.status;
+  if (!['planned', 'in_progress', 'delayed', 'completed'].includes(taskStatus)) {
+    res.status(400).json({ error: 'Statut de tâche invalide.' });
+    return;
+  }
   db.prepare(
-    'UPDATE project_tasks SET status=?, delay_reason=?, delay_reported_at=?, notes=? WHERE id=?'
+    'UPDATE project_tasks SET title=?, phase_id=?, assigned_worker_id=?, planned_start=?, due_date=?, status=?, delay_reason=?, delay_reported_at=?, notes=? WHERE id=?'
   ).run(
-    b.status ?? old.status,
+    String(b.title ?? old.title).trim(),
+    b.phase_id !== undefined ? (b.phase_id ? Number(b.phase_id) : null) : old.phase_id,
+    assignedWorkerId,
+    b.planned_start !== undefined ? (b.planned_start || null) : old.planned_start,
+    b.due_date !== undefined ? (b.due_date || null) : old.due_date,
+    taskStatus,
     b.delay_reason ?? old.delay_reason,
-    b.status === 'delayed' ? b.delay_reported_at || new Date().toISOString().slice(0, 10) : old.delay_reported_at,
+    taskStatus === 'delayed' ? b.delay_reported_at || old.delay_reported_at || new Date().toISOString().slice(0, 10) : old.delay_reported_at,
     b.notes ?? old.notes,
     taskId
   );
