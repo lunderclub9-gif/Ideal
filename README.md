@@ -122,19 +122,9 @@ Les données restent après une mise à jour et ne sont pas supprimées automati
 
 Pour transférer des données depuis une ancienne installation de développement, arrêter l'application et copier le dossier `data` vers le dossier de données GestionPro DZ indiqué ci-dessus, en conservant une sauvegarde originale.
 
-## Comptes de démonstration
+## Première configuration
 
-Le code d'initialisation crée des comptes de démonstration lorsque la table des utilisateurs est vide :
-
-| Rôle | Identifiant | Mot de passe initial |
-|---|---|---|
-| Administrateur | admin | admin123 |
-| Comptable | comptable | compta123 |
-| Chef de chantier | chef | chef123 |
-| Magasinier | magasinier | stock123 |
-| Chauffeur | chauffeur | driver123 |
-
-> **Sécurité :** ces identifiants sont publics et réservés aux essais locaux. Ne les utilisez jamais sur une instance contenant des données réelles. Remplacez-les avant toute démonstration externe ou mise en service. Les mots de passe sont hachés avec scrypt dans le code, mais cela ne rend pas sûrs des mots de passe initiaux connus.
+Au premier lancement, l'assistant vous demande le nom réel de l'entreprise, la forme juridique et les informations du compte propriétaire. Aucun compte, client, fournisseur, employé, chantier, stock ou mouvement fictif n'est créé. Le premier administrateur choisit son identifiant et son mot de passe (10 caractères minimum). Les autres comptes se créent ensuite depuis les paramètres.
 
 ## Rôles et autorisations
 
@@ -150,10 +140,10 @@ Les autorisations sont vérifiées côté serveur par des permissions associées
 ## Configuration et points de vigilance
 
 - L'application de bureau génère et conserve un secret de session aléatoire propre à l'installation dans le dossier utilisateur Windows. En mode développement, définir SESSION_SECRET avec une valeur aléatoire.
-- Le serveur de l'application de bureau écoute uniquement sur 127.0.0.1:3000. Le port stable permet de conserver la session locale du navigateur entre les démarrages.
-- L'interface charge actuellement des polices depuis Google Fonts ; leur chargement dépend d'une connexion Internet, même si le serveur et la base de données sont locaux.
+- Le serveur de l'application de bureau écoute uniquement sur 127.0.0.1 et choisit un port libre à chaque démarrage.
+- L'interface utilise les polices système afin de rester utilisable hors ligne.
 - Le périmètre fonctionnel de GestionPro DZ ne requiert pas de service d'intelligence artificielle.
-- Les taux et règles fiscales fournis dans les données de démonstration ne remplacent pas une validation par un comptable algérien. Les règles doivent être vérifiées et configurées selon la situation réelle et la législation applicable.
+- Les taux et règles fiscales doivent être configurés et validés par un comptable algérien selon la situation réelle et la législation applicable.
 - Le programme Windows est empaqueté avec Electron et utilise SQLite dans le dossier de données utilisateur. Les mises à jour automatiques intégrées ne sont pas configurées : installer une nouvelle version depuis GitHub Releases.
 - Le dépôt ne fournit pas encore de suite de tests automatisés métier clairement identifiée. Le build et la vérification TypeScript ne suffisent pas à prouver que tous les scénarios fonctionnent.
 
