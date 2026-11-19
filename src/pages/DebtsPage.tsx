@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Search, RefreshCw, Wallet, TrendingDown, TrendingUp, Users, Truck } from 'lucide-react';
+import { AlertTriangle, Search, RefreshCw, Wallet, TrendingDown, TrendingUp, Users, Clock3 } from 'lucide-react';
 import { apiFetch, formatDA, formatDateFr } from '../lib/api';
 import { PageHeader } from '../components/ui';
 
@@ -16,6 +16,7 @@ export default function DebtsPage() {
   const [data, setData] = useState<DebtData | null>(null);
   const [tab, setTab] = useState<'receivables' | 'payables' | 'workers'>('receivables');
   const [query, setQuery] = useState('');
+  const [overdueOnly, setOverdueOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -36,13 +37,16 @@ export default function DebtsPage() {
   const rows = useMemo(() => {
     if (!data) return [];
     const source = tab === 'receivables' ? data.receivables : tab === 'payables' ? data.payables : data.worker_advances;
-    const q = query.trim().toLocaleLowerCase();
-    if (!q) return source;
-    return source.filter((row) => [
-      row.party_name, row.doc_number, row.reference, row.supplier_invoice_no,
-      row.project_number, row.project_title, row.job_title,
-    ].some((value) => String(value || '').toLocaleLowerCase().includes(q)));
-  }, [data, tab, query]);
+    const q = query.trim().toLocaleLowerCase('fr');
+    return source.filter((row) => {
+      const matchesSearch = !q || [
+        row.party_name, row.doc_number, row.reference, row.supplier_invoice_no,
+        row.project_number, row.project_title, row.job_title,
+      ].some((value) => String(value || '').toLocaleLowerCase('fr').includes(q));
+      const isOverdue = tab === 'receivables' && Number(row.days_overdue || 0) > 0;
+      return matchesSearch && (!overdueOnly || isOverdue);
+    });
+  }, [data, tab, query, overdueOnly]);
 
   return (
     <div className="space-y-5">
@@ -53,6 +57,9 @@ export default function DebtsPage() {
       />
 
       {error && <div role="alert" className="p-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg">{error}</div>}
+
+      {!data && loading && <div className="p-10 text-center text-xs text-slate-500 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">Chargement des soldes financiers…</div>}
+      {!data && !loading && !error && <div className="p-10 text-center text-xs text-slate-500">Aucune donnée financière disponible.</div>}
 
       {data && (
         <>
@@ -81,9 +88,17 @@ export default function DebtsPage() {
               <button type="button" onClick={() => setTab('payables')} className={`px-3 py-2 border-b-2 ${tab === 'payables' ? 'border-blue-700 text-blue-700 font-semibold' : 'border-transparent text-slate-500'}`}>Fournisseurs ({data.payables.length})</button>
               <button type="button" onClick={() => setTab('workers')} className={`px-3 py-2 border-b-2 ${tab === 'workers' ? 'border-blue-700 text-blue-700 font-semibold' : 'border-transparent text-slate-500'}`}>Avances salariés ({data.worker_advances.length})</button>
             </div>
-            <div className="relative min-w-[220px] flex-1 max-w-sm">
-              <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Rechercher une personne ou référence..." className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900" />
+            <div className="flex flex-wrap items-center gap-3">
+              {tab === 'receivables' && (
+                <label className="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                  <input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} />
+                  <Clock3 className="w-3.5 h-3.5" /> En retard uniquement
+                </label>
+              )}
+              <div className="relative min-w-[220px] flex-1 max-w-sm">
+                <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Rechercher une personne ou référence..." className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900" />
+              </div>
             </div>
           </div>
 
