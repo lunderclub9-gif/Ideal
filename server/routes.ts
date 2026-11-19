@@ -2389,12 +2389,23 @@ router.put('/vehicles/:id', requireAuth, requirePermission('vehicles:write'), (r
   const db = getDb();
   const current = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id) as any;
   if (!current) { res.status(404).json({ error: 'Véhicule introuvable.' }); return; }
+  const mileage = Number(b.current_mileage ?? current.current_mileage ?? 0);
+  const engineHours = Number(b.current_engine_hours ?? current.current_engine_hours ?? 0);
+  const usageRate = Number(b.usage_rate_per_day ?? current.usage_rate_per_day ?? 0);
+  const assetType = String(b.asset_type || current.asset_type || 'vehicle');
+  const status = String(b.status || current.status || 'available');
+  if (![mileage, engineHours, usageRate].every(Number.isFinite) || [mileage, engineHours, usageRate].some(v => v < 0)) {
+    res.status(400).json({ error: 'Les relevés et coûts d’utilisation doivent être des nombres positifs ou nuls.' }); return;
+  }
+  if (!['vehicle','truck','excavator','mixer','compressor','pump','scaffolding'].includes(assetType) ||
+      !['available','on_project','under_maintenance','broken_down'].includes(status)) {
+    res.status(400).json({ error: 'Type ou statut de véhicule invalide.' }); return;
+  }
   try {
     db.prepare(`UPDATE vehicles SET asset_type = ?, name = ?, brand = ?, registration = ?, driver_worker_id = ?, current_mileage = ?, current_engine_hours = ?, usage_rate_per_day = ?, status = ?, current_project_id = ?, insurance_expiry = ?, inspection_expiry = ?, notes = ? WHERE id = ?`).run(
-      b.asset_type || current.asset_type, b.name.trim(), b.brand ?? current.brand, b.registration.trim(),
-      b.driver_worker_id ? Number(b.driver_worker_id) : null, Math.max(0, Number(b.current_mileage ?? current.current_mileage)),
-      Math.max(0, Number(b.current_engine_hours ?? current.current_engine_hours)), Math.max(0, Number(b.usage_rate_per_day ?? current.usage_rate_per_day)),
-      b.status || current.status, b.current_project_id ? Number(b.current_project_id) : null,
+      assetType, b.name.trim(), b.brand ?? current.brand, b.registration.trim(),
+      b.driver_worker_id ? Number(b.driver_worker_id) : null, mileage, engineHours, usageRate,
+      status, b.current_project_id ? Number(b.current_project_id) : null,
       b.insurance_expiry || null, b.inspection_expiry || null, b.notes ?? current.notes, id
     );
   } catch (error: any) {
@@ -2449,7 +2460,7 @@ router.put('/fuel-entries/:id', requireAuth, requirePermission('fuel:write'), (r
   db.transaction(() => {
     db.prepare(`UPDATE fuel_entries SET date=?, liters=?, price_per_liter=?, total_cost=?, odometer_before=?, odometer_after=?, driver_worker_id=?, project_id=?, trip_purpose=?, fuel_station=?, notes=? WHERE id=?`).run(
       entryDate, liters, pricePerLiter, totalCost, odometerBefore, odometerAfter,
-      b.driver_worker_id ? Number(b.driver_worker_id) : old.driver_worker_id,
+      b.driver_worker_id !== undefined ? (b.driver_worker_id ? Number(b.driver_worker_id) : null) : old.driver_worker_id,
       b.project_id ? Number(b.project_id) : null,
       b.trip_purpose ?? old.trip_purpose, b.fuel_station ?? old.fuel_station,
       b.notes ?? old.notes, id
