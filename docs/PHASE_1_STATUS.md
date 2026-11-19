@@ -31,7 +31,7 @@ Mettre en place les fondations sûres de la modernisation, avec un catalogue des
 ## Validation
 - Les changements sont poussés sur `phase-1-foundation` et proposés dans la PR #1.
 - L'inspection statique confirme la présence de la migration v2, des trois routes CRUD, de l'écran et de son branchement dans la navigation.
-- Aucun statut CI n'est encore remonté pour هذه PR. Le workflow Windows est déclenché sur `main` dans النسخة الحالية، وتعديل تفعيل فحوصات PR موجود داخل هذه PR نفسها؛ لذلك لا يمكن اعتبار build TypeScript أو Windows smoke test ناجحاً بعد.
+- Aucun statut CI n'est encore remonté pour هذه PR. Le workflow Windows de la branche de base ne déclenche actuellement que sur `main`. L'activation des vérifications PR est incluse dans cette PR elle-même ; elle ne peut donc pas encore s'auto-déclencher. Le build TypeScript et le smoke test Windows ne sont pas confirmés.
 - لا تدمج PR ولا تثبت هذه النسخة على التطبيق الذي يحتوي على بيانات حقيقية قبل فحص build ونسخة احتياطية مؤكدة.
 
 ## Prochaine action
