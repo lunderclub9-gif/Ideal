@@ -18,7 +18,8 @@ export default function InvoicesPage({ permissions }: { permissions: string[] })
   const [projects, setProjects] = useState<any[]>([]);
   const [company, setCompany] = useState<any>(null);
   const [filterType, setFilterType] = useState('all');
-  const [printDoc, setPrintDoc] = useState<any | null>(null);\n  const [printPayment, setPrintPayment] = useState<any | null>(null);
+  const [printDoc, setPrintDoc] = useState<any | null>(null);
+  const [printPayment, setPrintPayment] = useState<any | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [payDoc, setPayDoc] = useState<any | null>(null);
   const [dupWarning, setDupWarning] = useState('');
@@ -536,7 +537,8 @@ export default function InvoicesPage({ permissions }: { permissions: string[] })
         )}
       </Modal>
 
-      <CommercialPrintModal doc={printDoc} company={company} onClose={() => setPrintDoc(null)} />\n      <PaymentReceiptPrintModal payment={printPayment} company={company} onClose={() => setPrintPayment(null)} />
+      <CommercialPrintModal doc={printDoc} company={company} onClose={() => setPrintDoc(null)} />
+      <PaymentReceiptPrintModal payment={printPayment} company={company} onClose={() => setPrintPayment(null)} />
     </div>
   );
 }
