@@ -15,8 +15,11 @@
 - La quantité en stock d'un matériau reste modifiable uniquement via le journal des mouvements ; le formulaire de modification ne permet pas de modifier directement le stock.
 - Aucun service cloud, package ou coût supplémentaire ajouté.
 
-## Contrôles restant à effectuer
-- CI Windows : réussie sur le commit `f06e6d532dd9cc685ca6066c95c44560df8f8d68` : TypeScript, tests de protection des données, build, installateur, smoke test et upload de l'artefact.
+## Validation automatisée
+- CI Windows réussie sur le commit `f06e6d532dd9cc685ca6066c95c44560df8f8d68` et sur l'arborescence combinée des phases 6–7 : TypeScript, tests de protection des données, build, installateur, smoke test et upload de l'artefact.
+- Phase 6 intégrée à `main` dans le commit `d44e3a758d17228064335a0717c213ac0ce17cfb`.
+
+## Vérifications manuelles restantes
 - Vérification visuelle sur Windows et écran mobile.
 - Parcours CRUD réel de chaque module avec comptes ayant différents rôles.
 - Vérification des flux métier sur une copie de la base locale réelle.
