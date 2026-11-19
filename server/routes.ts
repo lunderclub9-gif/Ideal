@@ -45,7 +45,56 @@ function sendXlsx(res: express.Response, filename: string, sheets: Array<{ name:
   res.send(buf);
 }
 
-// ==================== AUTHENTICATION ====================
+// ==================== FIRST-RUN SETUP & AUTHENTICATION ====================
+router.get('/auth/setup-status', (_req, res) => {
+  const count = (getDb().prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number }).count;
+  res.json({ setupRequired: count === 0 });
+});
+
+router.post('/auth/setup', (req, res) => {
+  const b = req.body || {};
+  const companyName = String(b.companyName || '').trim();
+  const legalForm = String(b.legalForm || 'Entreprise individuelle').trim();
+  const fullName = String(b.fullName || '').trim();
+  const username = String(b.username || '').trim();
+  const password = String(b.password || '');
+  if (!companyName || !fullName || !username || !password) {
+    res.status(400).json({ error: 'Veuillez renseigner le nom de l’entreprise, votre nom, un identifiant et un mot de passe.' });
+    return;
+  }
+  if (!/^[A-Za-z0-9._-]{3,32}$/.test(username)) {
+    res.status(400).json({ error: 'L’identifiant doit contenir 3 à 32 caractères (lettres, chiffres, point, tiret ou underscore).' });
+    return;
+  }
+  if (password.length < 10) {
+    res.status(400).json({ error: 'Le mot de passe doit contenir au moins 10 caractères.' });
+    return;
+  }
+  const db = getDb();
+  try {
+    const createOwner = db.transaction(() => {
+      const count = (db.prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number }).count;
+      if (count !== 0) throw new Error('SETUP_ALREADY_COMPLETED');
+      db.prepare("INSERT INTO company_settings (id, name, legal_form, currency, language, setup_completed) VALUES (1, ?, ?, 'DZD', 'fr', 1)").run(companyName, legalForm);
+      const info = db.prepare("INSERT INTO users (name, username, password_hash, role, status) VALUES (?, ?, ?, 'admin', 'active')").run(fullName, username, hashPassword(password));
+      return Number(info.lastInsertRowid);
+    });
+    const userId = createOwner.immediate();
+    const user = { id: userId, name: fullName, username, role: 'admin' as UserRole, status: 'active' };
+    res.status(201).json({ token: createSessionToken(user), user, permissions: getPermissionsForRole('admin') });
+  } catch (error: any) {
+    if (error?.message === 'SETUP_ALREADY_COMPLETED') {
+      res.status(409).json({ error: 'La configuration initiale est déjà terminée. Connectez-vous.' });
+      return;
+    }
+    if (String(error?.message || '').includes('UNIQUE constraint failed')) {
+      res.status(409).json({ error: 'Cet identifiant existe déjà.' });
+      return;
+    }
+    res.status(500).json({ error: 'Impossible de terminer la configuration initiale.' });
+  }
+});
+
 router.post('/auth/login', (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) {
