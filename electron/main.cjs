@@ -1,4 +1,5 @@
-const { app, BrowserWindow, dialog, shell } = require('electron');
+const { app, BrowserWindow, dialog, shell, ipcMain } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const fs = require('node:fs');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
@@ -9,6 +10,54 @@ let mainWindow = null;
 let shuttingDown = false;
 const APP_URL_HOST = '127.0.0.1';
 let startupLogPath = null;
+let updateStatus = { state: 'idle', version: null, percent: 0, message: 'Les mises à jour seront vérifiées automatiquement.' };
+
+function publishUpdateStatus(patch) {
+  updateStatus = { ...updateStatus, ...patch };
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('gestionpro:update-status', updateStatus);
+}
+
+function configureAutoUpdater() {
+  if (!app.isPackaged || process.env.GESTIONPRO_SMOKE_TEST === '1') return;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.allowPrerelease = false;
+  autoUpdater.allowDowngrade = false;
+  autoUpdater.channel = 'latest';
+  autoUpdater.on('checking-for-update', () => publishUpdateStatus({ state: 'checking', message: 'Recherche de mises à jour…', percent: 0 }));
+  autoUpdater.on('update-available', info => publishUpdateStatus({ state: 'available', version: info.version, message: `Mise à jour ${info.version} disponible. Téléchargement…`, percent: 0 }));
+  autoUpdater.on('update-not-available', info => publishUpdateStatus({ state: 'up-to-date', version: info.version, message: 'Votre application est à jour.', percent: 0 }));
+  autoUpdater.on('download-progress', progress => publishUpdateStatus({ state: 'downloading', percent: Math.round(progress.percent || 0), message: `Téléchargement de la mise à jour : ${Math.round(progress.percent || 0)} %` }));
+  autoUpdater.on('update-downloaded', info => publishUpdateStatus({ state: 'downloaded', version: info.version, percent: 100, message: `La mise à jour ${info.version} est prête à installer.` }));
+  autoUpdater.on('error', error => {
+    logStartup(`AUTO UPDATE ERROR: ${error?.stack || error}`);
+    publishUpdateStatus({ state: 'error', message: 'Impossible de vérifier ou télécharger la mise à jour. Réessayez lorsque la connexion Internet sera disponible.' });
+  });
+  ipcMain.handle('gestionpro:get-version', () => app.getVersion());
+  ipcMain.handle('gestionpro:get-update-status', () => updateStatus);
+  ipcMain.handle('gestionpro:check-updates', async () => {
+    try {
+      if (updateStatus.state === 'checking' || updateStatus.state === 'downloading') return updateStatus;
+      await autoUpdater.checkForUpdates();
+      return updateStatus;
+    } catch (error) {
+      publishUpdateStatus({ state: 'error', message: 'تعذر الاتصال بخادم التحديثات. تحقق من الإنترنت ثم أعد المحاولة.' });
+      return updateStatus;
+    }
+  });
+  ipcMain.handle('gestionpro:install-update', async () => {
+    if (updateStatus.state !== 'downloaded') return false;
+    const choice = await dialog.showMessageBox(mainWindow, {
+      type: 'warning', buttons: ['إنشاء نسخة احتياطية ثم التثبيت', 'إلغاء'], defaultId: 1, cancelId: 1,
+      title: 'تثبيت تحديث GestionPro DZ',
+      message: 'قبل التحديث، تأكد من إنشاء نسخة احتياطية حديثة من قسم «النسخ الاحتياطي والاستعادة».',
+      detail: 'سيتم إغلاق البرنامج وإعادة تشغيله بعد التثبيت. لن يحذف التحديث بيانات الشركة المحفوظة في AppData.'
+    });
+    if (choice.response !== 0) return false;
+    autoUpdater.quitAndInstall(false, true);
+    return true;
+  });
+}
 
 function logStartup(message) {
   try {
@@ -83,7 +132,7 @@ async function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1440, height: 920, minWidth: 1024, minHeight: 680, show: false,
     title: 'GestionPro DZ', autoHideMenuBar: true, backgroundColor: '#f8fafc',
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true }
+    webPreferences: { preload: path.join(app.getAppPath(), 'electron', 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://')) shell.openExternal(url);
@@ -107,7 +156,7 @@ else {
   app.whenReady().then(async () => {
     app.setPath('userData', process.env.GESTIONPRO_SMOKE_USER_DATA || path.join(app.getPath('appData'), 'GestionPro-DZ'));
     app.setAppUserModelId('dz.gestionpro.desktop');
-    try { await createMainWindow(); }
+    try { await createMainWindow(); configureAutoUpdater(); if (app.isPackaged && process.env.GESTIONPRO_SMOKE_TEST !== '1') setTimeout(() => autoUpdater.checkForUpdates().catch(error => { logStartup(`AUTO UPDATE CHECK ERROR: ${error?.stack || error}`); }), 5000); }
     catch (error) { logStartup(`APPLICATION STARTUP ERROR: ${error?.stack || error}`); stopServer(); if (process.env.GESTIONPRO_SMOKE_TEST !== '1') dialog.showErrorBox('GestionPro DZ', error?.message || 'Impossible de démarrer le serveur local.'); app.quit(); }
   });
 }
