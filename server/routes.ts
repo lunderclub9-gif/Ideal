@@ -2333,6 +2333,32 @@ router.post('/vehicles', requireAuth, requirePermission('vehicles:write'), (req:
   res.status(201).json(db.prepare('SELECT * FROM vehicles WHERE id = ?').get(info.lastInsertRowid));
 });
 
+router.put('/vehicles/:id', requireAuth, requirePermission('vehicles:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const b = req.body || {};
+  if (!Number.isInteger(id) || id <= 0 || !b.name?.trim() || !b.registration?.trim()) {
+    res.status(400).json({ error: 'Désignation et immatriculation/code sont obligatoires.' });
+    return;
+  }
+  const db = getDb();
+  const current = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id) as any;
+  if (!current) { res.status(404).json({ error: 'Véhicule introuvable.' }); return; }
+  try {
+    db.prepare(`UPDATE vehicles SET asset_type = ?, name = ?, brand = ?, registration = ?, driver_worker_id = ?, current_mileage = ?, current_engine_hours = ?, usage_rate_per_day = ?, status = ?, current_project_id = ?, insurance_expiry = ?, inspection_expiry = ?, notes = ? WHERE id = ?`).run(
+      b.asset_type || current.asset_type, b.name.trim(), b.brand ?? current.brand, b.registration.trim(),
+      b.driver_worker_id ? Number(b.driver_worker_id) : null, Math.max(0, Number(b.current_mileage ?? current.current_mileage)),
+      Math.max(0, Number(b.current_engine_hours ?? current.current_engine_hours)), Math.max(0, Number(b.usage_rate_per_day ?? current.usage_rate_per_day)),
+      b.status || current.status, b.current_project_id ? Number(b.current_project_id) : null,
+      b.insurance_expiry || null, b.inspection_expiry || null, b.notes ?? current.notes, id
+    );
+  } catch (error: any) {
+    if (String(error?.message || '').includes('UNIQUE')) { res.status(409).json({ error: 'Cette immatriculation existe déjà.' }); return; }
+    throw error;
+  }
+  logAudit(req.user!, 'UPDATE', 'vehicle', id, current.name, b.name.trim());
+  res.json(db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id));
+});
+
 router.get('/fuel-entries', requireAuth, requirePermission('vehicles:read'), (_req, res) => {
   const db = getDb();
   const rows = db
