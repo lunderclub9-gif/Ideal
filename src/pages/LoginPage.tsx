@@ -53,7 +53,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
             </div>
             <div className="flex items-center gap-2">
               <HardDrive className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>Base SQLite locale chiffrée + sauvegarde ZIP sur clé USB</span>
+              <span>Base SQLite locale + sauvegarde ZIP sur clé USB</span>
             </div>
           </div>
         </div>
