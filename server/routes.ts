@@ -23,7 +23,7 @@ import {
   getTaxRate,
   round2,
 } from './calculations.ts';
-import { createFullBackup, listBackups, restoreFromZip } from './backup.ts';
+import { createFullBackup, listBackups, restoreFromZip, verifyBackupArchive } from './backup.ts';
 import { DOCS_DIR, getDb } from './db.ts';
 
 const router = express.Router();
@@ -3337,6 +3337,25 @@ router.get('/backups/:id/download', requireAuth, requirePermission('backup:manag
     return;
   }
   res.download(b.file_path, b.file_name);
+});
+
+router.post('/backups/:id/verify', requireAuth, requirePermission('backup:manage'), (req: AuthedRequest, res) => {
+  const db = getDb();
+  const backup = db.prepare('SELECT * FROM backup_history WHERE id = ?').get(Number(req.params.id)) as any;
+  if (!backup || !fs.existsSync(backup.file_path)) {
+    res.status(404).json({ error: 'Archive de sauvegarde introuvable.' });
+    return;
+  }
+  try {
+    const result = verifyBackupArchive(backup.file_path);
+    db.prepare('UPDATE backup_history SET verified = 1 WHERE id = ?').run(backup.id);
+    logAudit(req.user!, 'VERIFY', 'backup', backup.file_name, '', `${result.documentCount} document(s), SQLite OK`);
+    res.json(result);
+  } catch (error: any) {
+    db.prepare('UPDATE backup_history SET verified = 0 WHERE id = ?').run(backup.id);
+    logAudit(req.user!, 'VERIFY_FAILED', 'backup', backup.file_name, '', error.message || 'Échec de vérification');
+    res.status(422).json({ error: error.message || 'La vérification de cette archive a échoué.' });
+  }
 });
 
 router.post('/backups/restore', requireAuth, requirePermission('backup:manage'), uploadMemory.single('archive'), (req: AuthedRequest, res) => {
