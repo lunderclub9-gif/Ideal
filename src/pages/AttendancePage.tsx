@@ -251,6 +251,8 @@ export default function AttendancePage({ permissions }: { permissions: string[] 
                 <option value="absent">Absent (0 jour)</option>
                 <option value="paid_leave">Congé payé</option>
                 <option value="unpaid_leave">Congé sans solde</option>
+                <option value="sick_leave">Arrêt maladie</option>
+                <option value="holiday">Jour férié</option>
               </select>
             </div>
             <div>
