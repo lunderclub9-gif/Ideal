@@ -12,7 +12,7 @@ export interface AuthUser {
   status: string;
 }
 
-const SESSION_SECRET = process.env.SESSION_SECRET || 'gestionpro-dz-local-offline-key-2026';
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(48).toString('hex');
 
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex');
