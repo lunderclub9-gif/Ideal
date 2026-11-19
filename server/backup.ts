@@ -286,7 +286,16 @@ export function restoreFromZip(
   }
 
   // Keep a verified copy of the current database and documents before any live swap.
-  const safetyBackup = createFullBackup('pre_restore_safety', restoredBy);
+  let safetyBackup: BackupEntry;
+  try {
+    safetyBackup = createFullBackup('pre_restore_safety', restoredBy);
+  } catch (error) {
+    for (const temporary of [tempCheck, stagedDb]) {
+      try { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); } catch {}
+    }
+    try { if (fs.existsSync(stagedDocs)) fs.rmSync(stagedDocs, { recursive: true, force: true }); } catch {}
+    throw error;
+  }
   let oldDbMoved = false;
   let oldDocsMoved = false;
   let newDbInstalled = false;
@@ -327,9 +336,10 @@ export function restoreFromZip(
       `Restauration ZIP vérifiée (${restoredDocs} document(s))`
     );
 
-    // The restored database and document tree are live; remove rollback copies only now.
-    if (oldDbMoved && fs.existsSync(rollbackDb)) fs.unlinkSync(rollbackDb);
-    if (oldDocsMoved && fs.existsSync(rollbackDocs)) fs.rmSync(rollbackDocs, { recursive: true, force: true });
+    // The restored database and document tree are live. Cleanup failures must not
+    // trigger a rollback after the new database has already been accepted.
+    try { if (oldDbMoved && fs.existsSync(rollbackDb)) fs.unlinkSync(rollbackDb); } catch {}
+    try { if (oldDocsMoved && fs.existsSync(rollbackDocs)) fs.rmSync(rollbackDocs, { recursive: true, force: true }); } catch {}
     return { safetyBackup, restoredDocs };
   } catch (error) {
     try { closeDb(); } catch {}
