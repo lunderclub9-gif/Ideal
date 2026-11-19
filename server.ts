@@ -35,14 +35,36 @@ async function startServer() {
     console.error('GESTIONPRO_SERVER_ERROR', error);
     process.exitCode = 1;
   });
-  try {
-    const db = getDb();
-    const today = new Date().toISOString().slice(0, 10);
-    const hasToday = db.prepare("SELECT id FROM backup_history WHERE backup_type = 'auto_daily' AND substr(created_at, 1, 10) = ? LIMIT 1").get(today);
-    if (!hasToday) createFullBackup('auto_daily', 'Sauvegarde automatique quotidienne');
-  } catch {
-    // Non-fatal on startup
-  }
+  const localDate = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  };
+
+  const runDailyBackupIfDue = () => {
+    try {
+      const db = getDb();
+      const settings = db.prepare('SELECT auto_backup_time FROM company_settings WHERE id = 1').get() as { auto_backup_time?: string } | undefined;
+      const configuredTime = /^([01]\\d|2[0-3]):([0-5]\\d)$/.test(String(settings?.auto_backup_time || ''))
+        ? String(settings?.auto_backup_time)
+        : '19:00';
+      const now = new Date();
+      const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const today = localDate();
+      const hasToday = db.prepare(
+        "SELECT id FROM backup_history WHERE backup_type = 'auto_daily' AND date(created_at, 'localtime') = ? LIMIT 1"
+      ).get(today);
+      if (!hasToday && currentTime >= configuredTime) {
+        createFullBackup('auto_daily', 'Sauvegarde automatique quotidienne');
+      }
+    } catch (error) {
+      console.error('GESTIONPRO_BACKUP_ERROR', error);
+    }
+  };
+
+  // Apply the configured local time immediately, then check once per minute.
+  runDailyBackupIfDue();
+  const backupTimer = setInterval(runDailyBackupIfDue, 60_000);
+  backupTimer.unref();
 }
 startServer().catch((error) => {
   console.error('GESTIONPRO_STARTUP_ERROR', error);

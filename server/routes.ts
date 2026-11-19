@@ -23,10 +23,15 @@ import {
   getTaxRate,
   round2,
 } from './calculations.ts';
-import { createFullBackup, listBackups, restoreFromZip } from './backup.ts';
+import { createFullBackup, listBackups, restoreFromZip, verifyBackupArchive } from './backup.ts';
 import { DOCS_DIR, getDb } from './db.ts';
 
 const router = express.Router();
+
+const loginFailures = new Map<string, { count: number; windowStartedAt: number; lockedUntil: number }>();
+const LOGIN_FAILURE_LIMIT = 5;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_LOCK_MS = 15 * 60 * 1000;
 
 const uploadMemory = multer({
   storage: multer.memoryStorage(),
@@ -96,20 +101,44 @@ router.post('/auth/setup', (req, res) => {
 });
 
 router.post('/auth/login', (req, res) => {
-  const { username, password } = req.body || {};
+  const username = String(req.body?.username || '').trim();
+  const password = String(req.body?.password || '');
   if (!username || !password) {
     res.status(400).json({ error: 'Veuillez saisir votre nom d’utilisateur et mot de passe.' });
     return;
   }
+
+  const key = `${String(req.ip || 'local').slice(0, 80)}:${username.toLowerCase().slice(0, 80)}`;
+  const now = Date.now();
+  const previous = loginFailures.get(key);
+  if (previous?.lockedUntil && previous.lockedUntil > now) {
+    const waitSeconds = Math.ceil((previous.lockedUntil - now) / 1000);
+    res.setHeader('Retry-After', String(waitSeconds));
+    res.status(429).json({ error: `Trop de tentatives. Réessayez dans ${Math.ceil(waitSeconds / 60)} minute(s).` });
+    return;
+  }
+  if (previous && now - previous.windowStartedAt > LOGIN_WINDOW_MS) loginFailures.delete(key);
+
   const db = getDb();
   const userRow = db
     .prepare('SELECT id, name, username, password_hash, role, status FROM users WHERE username = ?')
-    .get(String(username).trim()) as
+    .get(username) as
     | { id: number; name: string; username: string; password_hash: string; role: UserRole; status: string }
     | undefined;
 
-  if (!userRow || !verifyPassword(String(password), userRow.password_hash)) {
-    res.status(401).json({ error: 'Identifiants incorrects. Vérifiez votre nom d’utilisateur et mot de passe.' });
+  if (!userRow || !verifyPassword(password, userRow.password_hash)) {
+    const current = loginFailures.get(key);
+    const entry = current && now - current.windowStartedAt <= LOGIN_WINDOW_MS
+      ? current
+      : { count: 0, windowStartedAt: now, lockedUntil: 0 };
+    entry.count += 1;
+    if (entry.count >= LOGIN_FAILURE_LIMIT) entry.lockedUntil = now + LOGIN_LOCK_MS;
+    loginFailures.set(key, entry);
+    res.status(entry.lockedUntil > now ? 429 : 401).json({
+      error: entry.lockedUntil > now
+        ? 'Trop de tentatives. Le compte est temporairement protégé pendant 15 minutes.'
+        : 'Identifiants incorrects. Vérifiez votre nom d’utilisateur et mot de passe.',
+    });
     return;
   }
   if (userRow.status !== 'active') {
@@ -117,6 +146,7 @@ router.post('/auth/login', (req, res) => {
     return;
   }
 
+  loginFailures.delete(key);
   db.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(userRow.id);
   const user = {
     id: userRow.id,
@@ -365,7 +395,12 @@ router.get('/clients', requireAuth, requirePermission('clients:read'), (_req, re
     .prepare(
       `SELECT c.*,
         (SELECT COUNT(*) FROM projects p WHERE p.client_id = c.id) AS project_count,
-        (SELECT COALESCE(SUM(total_ttc - amount_paid), 0) FROM commercial_documents d WHERE d.client_id = c.id AND d.doc_type='facture' AND d.status NOT IN ('draft','cancelled')) AS balance_due
+        (SELECT COALESCE(SUM(MAX(0, d.total_ttc - d.amount_paid -
+          COALESCE((SELECT SUM(a.total_ttc) FROM commercial_documents a
+                    WHERE a.doc_type='avoir' AND a.linked_doc_id=d.id
+                      AND a.status NOT IN ('draft','cancelled')), 0))), 0)
+         FROM commercial_documents d
+         WHERE d.client_id = c.id AND d.doc_type='facture' AND d.status NOT IN ('draft','cancelled')) AS balance_due
        FROM clients c ORDER BY c.id DESC`
     )
     .all();
@@ -398,6 +433,9 @@ router.get('/clients/:id', requireAuth, requirePermission('clients:read'), (req,
   const totalInvoiced = documents
     .filter((d: any) => d.doc_type === 'facture' && !['draft', 'cancelled'].includes(d.status))
     .reduce((s: number, d: any) => s + Number(d.total_ttc || 0), 0);
+  const totalCredits = documents
+    .filter((d: any) => d.doc_type === 'avoir' && !['draft', 'cancelled'].includes(d.status))
+    .reduce((s: number, d: any) => s + Number(d.total_ttc || 0), 0);
   const totalPaid = payments.reduce((s: number, p: any) => s + Number(p.amount || 0), 0);
   res.json({
     client,
@@ -406,8 +444,9 @@ router.get('/clients/:id', requireAuth, requirePermission('clients:read'), (req,
     payments,
     totals: {
       totalInvoiced: round2(totalInvoiced),
+      totalCredits: round2(totalCredits),
       totalPaid: round2(totalPaid),
-      balanceDue: round2(Math.max(0, totalInvoiced - totalPaid)),
+      balanceDue: round2(Math.max(0, totalInvoiced - totalCredits - totalPaid)),
     },
   });
 });
@@ -690,12 +729,32 @@ router.put('/projects/tasks/:taskId', requireAuth, requirePermission('projects:w
     res.status(400).json({ error: 'Veuillez préciser le motif du retard.' });
     return;
   }
+  const assignedWorkerId = b.assigned_worker_id !== undefined
+    ? (b.assigned_worker_id ? Number(b.assigned_worker_id) : null)
+    : old.assigned_worker_id;
+  if (assignedWorkerId !== null) {
+    const worker = db.prepare("SELECT id, status FROM workers WHERE id = ?").get(assignedWorkerId) as any;
+    if (!worker || worker.status === 'terminated' || worker.status === 'suspended') {
+      res.status(400).json({ error: 'Le salarié sélectionné est introuvable, sorti ou suspendu.' });
+      return;
+    }
+  }
+  const taskStatus = b.status ?? old.status;
+  if (!['planned', 'in_progress', 'delayed', 'completed'].includes(taskStatus)) {
+    res.status(400).json({ error: 'Statut de tâche invalide.' });
+    return;
+  }
   db.prepare(
-    'UPDATE project_tasks SET status=?, delay_reason=?, delay_reported_at=?, notes=? WHERE id=?'
+    'UPDATE project_tasks SET title=?, phase_id=?, assigned_worker_id=?, planned_start=?, due_date=?, status=?, delay_reason=?, delay_reported_at=?, notes=? WHERE id=?'
   ).run(
-    b.status ?? old.status,
+    String(b.title ?? old.title).trim(),
+    b.phase_id !== undefined ? (b.phase_id ? Number(b.phase_id) : null) : old.phase_id,
+    assignedWorkerId,
+    b.planned_start !== undefined ? (b.planned_start || null) : old.planned_start,
+    b.due_date !== undefined ? (b.due_date || null) : old.due_date,
+    taskStatus,
     b.delay_reason ?? old.delay_reason,
-    b.status === 'delayed' ? b.delay_reported_at || new Date().toISOString().slice(0, 10) : old.delay_reported_at,
+    taskStatus === 'delayed' ? b.delay_reported_at || old.delay_reported_at || new Date().toISOString().slice(0, 10) : old.delay_reported_at,
     b.notes ?? old.notes,
     taskId
   );
@@ -1200,17 +1259,37 @@ router.post('/payments/:id/reverse', requireAuth, requirePermission('invoices:ap
       const doc = db.prepare('SELECT * FROM commercial_documents WHERE id = ?').get(orig.document_id) as any;
       if (doc) {
         const newPaid = Math.max(0, round2(doc.amount_paid - orig.amount));
-        const newStatus = newPaid <= 0 ? 'issued' : newPaid >= doc.total_ttc ? 'paid' : 'partial';
+        const newStatus = newPaid <= 0 ? 'issued' : newPaid >= doc.total_ttc - 0.01 ? 'paid' : 'partial';
         db.prepare('UPDATE commercial_documents SET amount_paid=?, status=? WHERE id=?').run(newPaid, newStatus, doc.id);
+      }
+    }
+
+    // Supplier payment reversals must restore the purchase balance and its
+    // operational status as well as reverse the corresponding treasury flow.
+    if (orig.purchase_id) {
+      const purchase = db.prepare('SELECT * FROM purchases WHERE id = ?').get(orig.purchase_id) as any;
+      if (purchase) {
+        const newPaid = Math.max(0, round2(Number(purchase.amount_paid || 0) - Number(orig.amount || 0)));
+        const hasReceivedStock = !!db.prepare(
+          "SELECT id FROM stock_movements WHERE reference = ? AND movement_type = 'entry' LIMIT 1"
+        ).get(purchase.po_number);
+        const newStatus = newPaid >= purchase.total_ttc - 0.01
+          ? 'paid'
+          : newPaid > 0
+            ? 'partial_paid'
+            : hasReceivedStock
+              ? 'received'
+              : 'ordered';
+        db.prepare('UPDATE purchases SET amount_paid=?, status=? WHERE id=?').run(newPaid, newStatus, purchase.id);
       }
     }
 
     const account = orig.payment_method === 'Espèces' ? 'Caisse' : 'Banque';
     const txType = orig.direction === 'inflow' ? (account === 'Caisse' ? 'cash_outflow' : 'bank_outflow') : (account === 'Caisse' ? 'cash_inflow' : 'bank_inflow');
     db.prepare(
-      `INSERT INTO treasury_transactions (tx_date, tx_type, account, category, amount, payment_method, client_id, linked_payment_id, notes, user_id)
-       VALUES (?, ?, ?, 'Annulation règlement', ?, ?, ?, ?, ?, ?)`
-    ).run(new Date().toISOString().slice(0, 10), txType, account, orig.amount, orig.payment_method, orig.client_id, revInfo.lastInsertRowid, reason || revNumber, req.user!.id);
+      `INSERT INTO treasury_transactions (tx_date, tx_type, account, category, amount, payment_method, client_id, supplier_id, linked_payment_id, notes, user_id)
+       VALUES (?, ?, ?, 'Annulation règlement', ?, ?, ?, ?, ?, ?, ?)`
+    ).run(new Date().toISOString().slice(0, 10), txType, account, orig.amount, orig.payment_method, orig.client_id, orig.supplier_id, revInfo.lastInsertRowid, reason || revNumber, req.user!.id);
   })();
 
   logAudit(req.user!, 'REVERSE', 'payment', orig.receipt_number, `${orig.amount} DA`, reason || 'Contre-passation');
@@ -1221,11 +1300,12 @@ router.get('/payments', requireAuth, requirePermission('invoices:read'), (_req, 
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT p.*, c.name AS client_name, s.name AS supplier_name, d.doc_number
+      `SELECT p.*, c.name AS client_name, s.name AS supplier_name, d.doc_number, pu.po_number AS purchase_number
        FROM payments p
        LEFT JOIN clients c ON c.id = p.client_id
        LEFT JOIN suppliers s ON s.id = p.supplier_id
        LEFT JOIN commercial_documents d ON d.id = p.document_id
+       LEFT JOIN purchases pu ON pu.id = p.purchase_id
        ORDER BY p.payment_date DESC, p.id DESC`
     )
     .all();
@@ -1235,7 +1315,7 @@ router.get('/payments', requireAuth, requirePermission('invoices:read'), (_req, 
 // ==================== CONFIGURABLE WORK TYPES / SERVICE CATALOGUE ====================
 // Existing quotations and project records remain compatible: service records are
 // maintained as a catalogue and are never hard-deleted.
-router.get('/services', requireAuth, requirePermission('projects:read'), (_req, res) => {
+router.get('/services', requireAuth, requirePermission('settings:read'), (_req, res) => {
   const db = getDb();
   res.json(
     db.prepare('SELECT * FROM services ORDER BY active DESC, category COLLATE NOCASE ASC, name COLLATE NOCASE ASC').all()
@@ -1332,32 +1412,44 @@ router.get('/workers', requireAuth, requirePermission('attendance:read'), (_req,
 
 router.post('/workers', requireAuth, requirePermission('payroll:write'), (req: AuthedRequest, res) => {
   const b = req.body || {};
-  if (!b.full_name?.trim() || !b.job_title?.trim()) {
+  const fullName = String(b.full_name || '').trim();
+  const jobTitle = String(b.job_title || '').trim();
+  const wageType = String(b.wage_type || 'daily');
+  const amounts = [Number(b.daily_wage || 0), Number(b.hourly_rate || 0), Number(b.monthly_salary || 0)];
+  const allowedStatuses = ['active', 'suspended', 'on_leave', 'terminated'];
+  if (!fullName || !jobTitle) {
     res.status(400).json({ error: 'Le nom complet et le poste sont obligatoires.' });
     return;
   }
+  if (!['daily', 'monthly', 'hourly', 'piecework'].includes(wageType)) {
+    res.status(400).json({ error: 'Type de rémunération invalide.' });
+    return;
+  }
+  if (!amounts.every((value) => Number.isFinite(value) && value >= 0)) {
+    res.status(400).json({ error: 'Les montants de rémunération doivent être positifs ou nuls.' });
+    return;
+  }
+  const status = String(b.status || 'active');
+  if (!allowedStatuses.includes(status)) {
+    res.status(400).json({ error: 'Statut du salarié invalide.' });
+    return;
+  }
+  const hireDate = String(b.hire_date || new Date().toISOString().slice(0, 10));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(hireDate) || Number.isNaN(Date.parse(hireDate))) {
+    res.status(400).json({ error: 'Date d’embauche invalide (AAAA-MM-JJ).' });
+    return;
+  }
   const db = getDb();
-  const info = db
-    .prepare(
-      `INSERT INTO workers (full_name, job_title, wage_type, daily_wage, hourly_rate, monthly_salary, work_schedule, hire_date, cnas_number, phone, address, status, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      b.full_name.trim(),
-      b.job_title.trim(),
-      b.wage_type || 'daily',
-      Number(b.daily_wage || 0),
-      Number(b.hourly_rate || 0),
-      Number(b.monthly_salary || 0),
-      b.work_schedule || '08:00 - 16:30',
-      b.hire_date || new Date().toISOString().slice(0, 10),
-      b.cnas_number || '',
-      b.phone || '',
-      b.address || '',
-      b.status || 'active',
-      b.notes || ''
-    );
-  logAudit(req.user!, 'CREATE', 'worker', info.lastInsertRowid, '', b.full_name.trim());
+  const info = db.prepare(
+    `INSERT INTO workers (full_name, job_title, wage_type, daily_wage, hourly_rate, monthly_salary, work_schedule, hire_date, cnas_number, phone, address, status, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    fullName, jobTitle, wageType, amounts[0], amounts[1], amounts[2],
+    String(b.work_schedule || '08:00 - 16:30'), hireDate,
+    String(b.cnas_number || '').trim(), String(b.phone || '').trim(),
+    String(b.address || '').trim(), status, String(b.notes || '').trim()
+  );
+  logAudit(req.user!, 'CREATE', 'worker', info.lastInsertRowid, '', fullName);
   res.status(201).json(db.prepare('SELECT * FROM workers WHERE id = ?').get(info.lastInsertRowid));
 });
 
@@ -1370,23 +1462,43 @@ router.put('/workers/:id', requireAuth, requirePermission('payroll:write'), (req
     res.status(404).json({ error: 'Employé introuvable.' });
     return;
   }
+  const fullName = String(b.full_name ?? old.full_name).trim();
+  const jobTitle = String(b.job_title ?? old.job_title).trim();
+  const wageType = String(b.wage_type ?? old.wage_type);
+  const dailyWage = Number(b.daily_wage ?? old.daily_wage);
+  const hourlyRate = Number(b.hourly_rate ?? old.hourly_rate);
+  const monthlySalary = Number(b.monthly_salary ?? old.monthly_salary);
+  const status = String(b.status ?? old.status);
+  const hireDate = String(b.hire_date ?? old.hire_date);
+  if (!fullName || !jobTitle) {
+    res.status(400).json({ error: 'Le nom complet et le poste sont obligatoires.' });
+    return;
+  }
+  if (!['daily', 'monthly', 'hourly', 'piecework'].includes(wageType)) {
+    res.status(400).json({ error: 'Type de rémunération invalide.' });
+    return;
+  }
+  if (![dailyWage, hourlyRate, monthlySalary].every((value) => Number.isFinite(value) && value >= 0)) {
+    res.status(400).json({ error: 'Les montants de rémunération doivent être positifs ou nuls.' });
+    return;
+  }
+  if (!['active', 'suspended', 'on_leave', 'terminated'].includes(status)) {
+    res.status(400).json({ error: 'Statut du salarié invalide.' });
+    return;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(hireDate) || Number.isNaN(Date.parse(hireDate))) {
+    res.status(400).json({ error: 'Date d’embauche invalide (AAAA-MM-JJ).' });
+    return;
+  }
   db.prepare(
-    `UPDATE workers SET full_name=?, job_title=?, wage_type=?, daily_wage=?, hourly_rate=?, monthly_salary=?, cnas_number=?, phone=?, address=?, status=?, notes=? WHERE id=?`
+    `UPDATE workers SET full_name=?, job_title=?, wage_type=?, daily_wage=?, hourly_rate=?, monthly_salary=?, work_schedule=?, hire_date=?, cnas_number=?, phone=?, address=?, status=?, notes=? WHERE id=?`
   ).run(
-    b.full_name ?? old.full_name,
-    b.job_title ?? old.job_title,
-    b.wage_type ?? old.wage_type,
-    b.daily_wage !== undefined ? Number(b.daily_wage) : old.daily_wage,
-    b.hourly_rate !== undefined ? Number(b.hourly_rate) : old.hourly_rate,
-    b.monthly_salary !== undefined ? Number(b.monthly_salary) : old.monthly_salary,
-    b.cnas_number ?? old.cnas_number,
-    b.phone ?? old.phone,
-    b.address ?? old.address,
-    b.status ?? old.status,
-    b.notes ?? old.notes,
-    id
+    fullName, jobTitle, wageType, dailyWage, hourlyRate, monthlySalary,
+    b.work_schedule ?? old.work_schedule, hireDate,
+    b.cnas_number ?? old.cnas_number, b.phone ?? old.phone,
+    b.address ?? old.address, status, b.notes ?? old.notes, id
   );
-  logAudit(req.user!, 'UPDATE', 'worker', id, old.full_name, b.full_name ?? old.full_name);
+  logAudit(req.user!, 'UPDATE', 'worker', id, old.full_name, fullName);
   res.json(db.prepare('SELECT * FROM workers WHERE id = ?').get(id));
 });
 
@@ -1447,11 +1559,21 @@ router.post('/attendance', requireAuth, requirePermission('attendance:write'), (
   const b = req.body || {};
   const workerId = Number(b.worker_id);
   const attDate = b.attendance_date;
-  const status = b.status || 'present';
+  const status = String(b.status || 'present');
   const dayFraction = status === 'absent' || status === 'unpaid_leave' ? 0 : status === 'half_day' ? 0.5 : Number(b.day_fraction ?? 1);
+  const overtimeHours = Number(b.overtime_hours || 0);
+  const advanceAmount = Number(b.advance_amount || 0);
 
-  if (!workerId || !attDate) {
-    res.status(400).json({ error: 'Employé et date de pointage sont obligatoires.' });
+  if (!workerId || !attDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(attDate)) || Number.isNaN(Date.parse(String(attDate)))) {
+    res.status(400).json({ error: 'Employé et date de pointage valide (AAAA-MM-JJ) sont obligatoires.' });
+    return;
+  }
+  if (!['present', 'absent', 'half_day', 'paid_leave', 'unpaid_leave', 'sick_leave', 'holiday'].includes(status)) {
+    res.status(400).json({ error: 'Statut de présence invalide.' });
+    return;
+  }
+  if (!Number.isFinite(dayFraction) || dayFraction < 0 || dayFraction > 1 || !Number.isFinite(overtimeHours) || overtimeHours < 0 || !Number.isFinite(advanceAmount) || advanceAmount < 0) {
+    res.status(400).json({ error: 'Journée, heures supplémentaires et avance doivent être des valeurs positives valides.' });
     return;
   }
   if ((status === 'present' || status === 'half_day') && !b.project_id) {
@@ -1460,6 +1582,15 @@ router.post('/attendance', requireAuth, requirePermission('attendance:write'), (
   }
 
   const db = getDb();
+  const worker = db.prepare('SELECT status FROM workers WHERE id = ?').get(workerId) as { status: string } | undefined;
+  if (!worker) {
+    res.status(404).json({ error: 'Salarié introuvable.' });
+    return;
+  }
+  if (worker.status === 'terminated' || worker.status === 'suspended') {
+    res.status(400).json({ error: 'Ce salarié est sorti ou suspendu : le pointage est bloqué.' });
+    return;
+  }
   // Verify split-day fraction does not exceed 1.0 full day across projects on same date
   const existingRow = db
     .prepare(
@@ -1498,8 +1629,8 @@ router.post('/attendance', requireAuth, requirePermission('attendance:write'), (
       b.project_id ? Number(b.project_id) : null,
       status,
       dayFraction,
-      Number(b.overtime_hours || 0),
-      Number(b.advance_amount || 0),
+      overtimeHours,
+      advanceAmount,
       b.notes || '',
       req.user!.id
     );
@@ -1824,6 +1955,26 @@ router.post('/materials', requireAuth, requirePermission('materials:write'), (re
   res.status(201).json(db.prepare('SELECT * FROM materials WHERE id = ?').get(info.lastInsertRowid));
 });
 
+router.put('/materials/:id', requireAuth, requirePermission('materials:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const old = db.prepare('SELECT * FROM materials WHERE id = ?').get(id) as any;
+  if (!old) { res.status(404).json({ error: 'Matériau introuvable.' }); return; }
+  const b = req.body || {};
+  const name = String(b.name ?? old.name).trim();
+  const code = String(b.code ?? old.code).trim();
+  if (!name || !code) { res.status(400).json({ error: 'Désignation et code matériau sont obligatoires.' }); return; }
+  db.prepare(`UPDATE materials SET name=?, code=?, category=?, unit=?, purchase_price=?, selling_price=?, min_stock_level=?, preferred_supplier_id=?, storage_location=? WHERE id=?`).run(
+    name, code, b.category ?? old.category, b.unit ?? old.unit,
+    Number(b.purchase_price ?? old.purchase_price), Number(b.selling_price ?? old.selling_price),
+    Number(b.min_stock_level ?? old.min_stock_level),
+    b.preferred_supplier_id === undefined ? old.preferred_supplier_id : (b.preferred_supplier_id ? Number(b.preferred_supplier_id) : null),
+    b.storage_location ?? old.storage_location, id
+  );
+  logAudit(req.user!, 'UPDATE', 'material', code, old.name, name);
+  res.json(db.prepare('SELECT * FROM materials WHERE id = ?').get(id));
+});
+
 router.get('/stock-movements', requireAuth, requirePermission('materials:read'), (_req, res) => {
   const db = getDb();
   const rows = db
@@ -1945,6 +2096,23 @@ router.post('/suppliers', requireAuth, requirePermission('suppliers:write'), (re
     .run(b.name.trim(), b.contact_name || '', b.phone || '', b.email || '', b.address || '', b.nif || '', b.nis || '', b.rc || '', b.ai || '', b.payment_terms || '30 jours', b.notes || '');
   logAudit(req.user!, 'CREATE', 'supplier', info.lastInsertRowid, '', b.name.trim());
   res.status(201).json(db.prepare('SELECT * FROM suppliers WHERE id = ?').get(info.lastInsertRowid));
+});
+
+router.put('/suppliers/:id', requireAuth, requirePermission('suppliers:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const old = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id) as any;
+  if (!old) { res.status(404).json({ error: 'Fournisseur introuvable.' }); return; }
+  const b = req.body || {};
+  const name = String(b.name ?? old.name).trim();
+  if (!name) { res.status(400).json({ error: 'Le nom du fournisseur est obligatoire.' }); return; }
+  db.prepare(`UPDATE suppliers SET name=?, contact_name=?, phone=?, email=?, address=?, nif=?, nis=?, rc=?, ai=?, payment_terms=?, notes=? WHERE id=?`).run(
+    name, b.contact_name ?? old.contact_name, b.phone ?? old.phone, b.email ?? old.email,
+    b.address ?? old.address, b.nif ?? old.nif, b.nis ?? old.nis, b.rc ?? old.rc,
+    b.ai ?? old.ai, b.payment_terms ?? old.payment_terms, b.notes ?? old.notes, id
+  );
+  logAudit(req.user!, 'UPDATE', 'supplier', id, old.name, name);
+  res.json(db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id));
 });
 
 router.get('/purchases', requireAuth, requirePermission('suppliers:read'), (_req, res) => {
@@ -2714,6 +2882,19 @@ router.put('/taxes/rules/:id', requireAuth, requirePermission('taxes:write'), (r
   res.json(db.prepare('SELECT * FROM tax_rules WHERE id = ?').get(id));
 });
 
+// Validate optional document links against an explicit allow-list of local entities.
+function resolveDocumentRelation(typeValue: unknown, idValue: unknown) {
+  const type = String(typeValue || '').trim();
+  const id = idValue === '' || idValue === null || idValue === undefined ? null : Number(idValue);
+  if (!type && id === null) return { type: '', id: null as number | null };
+  const tables: Record<string, string> = { client: 'clients', project: 'projects', supplier: 'suppliers', worker: 'workers' };
+  const table = tables[type];
+  if (!table || !Number.isSafeInteger(id) || Number(id) <= 0) throw new Error('La fiche associée est invalide.');
+  const exists = getDb().prepare(`SELECT id FROM ${table} WHERE id = ?`).get(Number(id));
+  if (!exists) throw new Error('La fiche associée est introuvable.');
+  return { type, id: Number(id) };
+}
+
 // ==================== DOCUMENTS CENTER ====================
 router.get('/documents', requireAuth, requirePermission('documents:read'), (_req, res) => {
   const db = getDb();
@@ -2730,11 +2911,21 @@ router.get('/documents', requireAuth, requirePermission('documents:read'), (_req
 router.post('/documents', requireAuth, requirePermission('documents:write'), uploadMemory.single('file'), (req: AuthedRequest, res) => {
   const file = req.file;
   const b = req.body || {};
-  if (!file || !b.title?.trim()) {
-    res.status(400).json({ error: 'Fichier et intitulé du document sont obligatoires.' });
+  const title = String(b.title || '').trim();
+  const cat = String(b.category || 'General').trim();
+  const docDate = String(b.doc_date || new Date().toISOString().slice(0, 10));
+  const notes = String(b.notes || '');
+  if (!file || !title || title.length > 180 || cat.length > 40 || notes.length > 1000 || !/^\d{4}-\d{2}-\d{2}$/.test(docDate)) {
+    res.status(400).json({ error: 'Fichier, intitulé, catégorie, date ou notes invalides.' });
     return;
   }
-  const cat = String(b.category || 'General');
+  let relation: { type: string; id: number | null };
+  try {
+    relation = resolveDocumentRelation(b.related_type, b.related_id);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+    return;
+  }
   const folderMap: Record<string, string> = {
     invoices: 'Invoices',
     projects: 'Projects',
@@ -2759,20 +2950,63 @@ router.post('/documents', requireAuth, requirePermission('documents:write'), upl
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
-      b.title.trim(),
+      title,
       cat,
       file.originalname,
       relPath,
       file.mimetype,
       file.size,
-      b.doc_date || new Date().toISOString().slice(0, 10),
-      b.related_type || '',
-      b.related_id ? Number(b.related_id) : null,
+      docDate,
+      relation.type,
+      relation.id,
       b.notes || '',
       req.user!.id
     );
   logAudit(req.user!, 'UPLOAD', 'document', info.lastInsertRowid, '', file.originalname);
   res.status(201).json(db.prepare('SELECT * FROM documents WHERE id = ?').get(info.lastInsertRowid));
+});
+
+router.put('/documents/:id', requireAuth, requirePermission('documents:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const b = req.body || {};
+  const db = getDb();
+  const old = db.prepare('SELECT * FROM documents WHERE id = ?').get(id) as any;
+  if (!old) {
+    res.status(404).json({ error: 'Document introuvable.' });
+    return;
+  }
+  const title = String(b.title ?? old.title).trim();
+  const category = String(b.category ?? old.category).trim();
+  const docDate = String(b.doc_date ?? old.doc_date);
+  const notes = String(b.notes ?? old.notes ?? '');
+  let relation: { type: string; id: number | null };
+  try {
+    relation = resolveDocumentRelation(b.related_type ?? old.related_type, b.related_id ?? old.related_id);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+    return;
+  }
+  if (!title || title.length > 180 || !/^\d{4}-\d{2}-\d{2}$/.test(docDate) || notes.length > 1000 || !category || category.length > 40) {
+    res.status(400).json({ error: 'Intitulé, catégorie, date ou notes invalides.' });
+    return;
+  }
+  db.prepare('UPDATE documents SET title=?, category=?, doc_date=?, related_type=?, related_id=?, notes=? WHERE id=?')
+    .run(title, category, docDate, relation.type, relation.id, notes, id);
+  logAudit(req.user!, 'UPDATE', 'document', id, old.title, title);
+  res.json(db.prepare('SELECT * FROM documents WHERE id = ?').get(id));
+});
+
+router.get('/documents/export/xlsx', requireAuth, requirePermission('documents:read'), (_req, res) => {
+  const db = getDb();
+  const rows = db.prepare(
+    `SELECT d.title AS Intitule, d.category AS Categorie, d.file_name AS Fichier,
+            d.mime_type AS Type_MIME, d.file_size AS Taille_octets, d.doc_date AS Date_document,
+            d.related_type AS Type_fiche, d.related_id AS ID_fiche, d.notes AS Notes,
+            u.name AS Depose_par, d.created_at AS Date_archivage
+     FROM documents d LEFT JOIN users u ON u.id=d.uploaded_by
+     WHERE d.archived=0 ORDER BY d.doc_date DESC, d.id DESC`
+  ).all();
+  sendXlsx(res, 'registre_documents_gestionpro.xlsx', [{ name: 'Documents', rows }]);
 });
 
 router.get('/documents/:id/download', requireAuth, requirePermission('documents:read'), (req, res) => {
@@ -2796,6 +3030,94 @@ router.delete('/documents/:id', requireAuth, requirePermission('documents:delete
   db.prepare('UPDATE documents SET archived = 1 WHERE id = ?').run(id);
   logAudit(req.user!, 'ARCHIVE', 'document', id, '', 'Archivé');
   res.json({ ok: true });
+});
+
+// ==================== DEBTS & RECEIVABLES CONTROL ====================
+router.get('/finance/debts', requireAuth, requirePermission('treasury:read'), (_req, res) => {
+  const db = getDb();
+
+  // Receivables are computed from issued invoices, net of recorded receipts
+  // and linked credit notes. Draft/cancelled documents never create a debt.
+  const receivables = db.prepare(
+    `SELECT d.id, d.doc_number, d.client_id, c.name AS party_name,
+            d.issue_date, d.due_date, d.total_ttc, d.amount_paid, d.status,
+            COALESCE((SELECT SUM(a.total_ttc) FROM commercial_documents a
+                      WHERE a.doc_type='avoir' AND a.linked_doc_id=d.id
+                        AND a.status NOT IN ('draft','cancelled')), 0) AS credits_applied,
+            MAX(0, d.total_ttc - d.amount_paid -
+              COALESCE((SELECT SUM(a.total_ttc) FROM commercial_documents a
+                        WHERE a.doc_type='avoir' AND a.linked_doc_id=d.id
+                          AND a.status NOT IN ('draft','cancelled')), 0)) AS balance_due
+     FROM commercial_documents d
+     JOIN clients c ON c.id=d.client_id
+     WHERE d.doc_type='facture' AND d.status NOT IN ('draft','cancelled')
+     ORDER BY COALESCE(d.due_date,d.issue_date) ASC, d.id ASC`
+  ).all() as any[];
+
+  const payables = db.prepare(
+    `SELECT pu.id, pu.po_number AS reference, pu.supplier_invoice_no, pu.supplier_id,
+            s.name AS party_name, pu.order_date AS issue_date, pu.total_ttc,
+            pu.amount_paid, pu.status,
+            MAX(0, pu.total_ttc - pu.amount_paid) AS balance_due,
+            pu.project_id, pr.project_number, pr.title AS project_title
+     FROM purchases pu
+     JOIN suppliers s ON s.id=pu.supplier_id
+     LEFT JOIN projects pr ON pr.id=pu.project_id
+     WHERE pu.status IN ('ordered','received','partial_paid','paid')
+     ORDER BY pu.order_date ASC, pu.id ASC`
+  ).all() as any[];
+
+  const workerAdvances = db.prepare(
+    `SELECT w.id AS worker_id, w.full_name AS party_name, w.job_title,
+            COALESCE(SUM(a.advance_amount),0) AS advances_issued,
+            COALESCE((SELECT SUM(ps.advances_deducted)
+                      FROM payslips ps
+                      JOIN payroll_periods pp ON pp.id=ps.payroll_period_id
+                      WHERE ps.worker_id=w.id AND pp.status='approved'),0) AS advances_recovered
+     FROM workers w
+     LEFT JOIN attendance a ON a.worker_id=w.id AND a.approval_status='approved'
+     GROUP BY w.id
+     HAVING COALESCE(SUM(a.advance_amount),0) > 0
+     ORDER BY w.full_name COLLATE NOCASE`
+  ).all() as any[];
+
+  const now = new Date();
+  const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0,10);
+  const ageDays = (date: string | null) => {
+    if (!date) return 0;
+    const parsed = Date.parse(String(date).slice(0,10) + 'T00:00:00Z');
+    return Number.isFinite(parsed) ? Math.max(0, Math.floor((Date.parse(today + 'T00:00:00Z') - parsed) / 86400000)) : 0;
+  };
+  for (const row of receivables) {
+    row.balance_due = round2(Number(row.balance_due || 0));
+    row.days_overdue = row.due_date && row.balance_due > 0 ? Math.max(0, ageDays(row.due_date) - 0) : 0;
+    row.age_days = ageDays(row.issue_date);
+  }
+  for (const row of payables) {
+    row.balance_due = round2(Number(row.balance_due || 0));
+    row.age_days = ageDays(row.issue_date);
+  }
+  for (const row of workerAdvances) {
+    row.advances_issued = round2(Number(row.advances_issued || 0));
+    row.advances_recovered = round2(Number(row.advances_recovered || 0));
+    row.balance_due = round2(Math.max(0, row.advances_issued - row.advances_recovered));
+  }
+
+  const totalReceivable = round2(receivables.reduce((sum, row) => sum + row.balance_due, 0));
+  const totalPayable = round2(payables.reduce((sum, row) => sum + row.balance_due, 0));
+  const totalWorkerAdvances = round2(workerAdvances.reduce((sum, row) => sum + row.balance_due, 0));
+  res.json({
+    as_of: today,
+    summary: {
+      receivables: totalReceivable,
+      supplier_payables: totalPayable,
+      worker_advances: totalWorkerAdvances,
+      net_position: round2(totalReceivable - totalPayable - totalWorkerAdvances),
+    },
+    receivables: receivables.filter((row) => row.balance_due > 0),
+    payables: payables.filter((row) => row.balance_due > 0),
+    worker_advances: workerAdvances.filter((row) => row.balance_due > 0),
+  });
 });
 
 // ==================== REPORTS ====================
@@ -2844,23 +3166,56 @@ router.get('/reports/export/xlsx', requireAuth, requirePermission('reports:expor
   const projectRows = projects.map((p) => {
     const f = calculateProjectFinancials(p.id);
     return {
-      Code: p.project_number,
-      Chantier: p.title,
-      Statut: p.status,
-      Facturé_HT_DA: f.invoiced_ht,
-      Matériaux_DA: f.materials_cost,
-      Main_Oeuvre_DA: f.labor_cost,
-      Carburant_DA: f.fuel_cost,
-      Réparations_DA: f.repairs_cost,
-      Frais_Généraux_DA: f.overhead_cost,
-      Coût_Réel_Total_DA: f.total_actual_cost,
-      Bénéfice_Net_DA: f.net_profit,
+      Code: p.project_number, Chantier: p.title, Statut: p.status,
+      Facturé_HT_DA: f.invoiced_ht, Matériaux_DA: f.materials_cost,
+      Main_Oeuvre_DA: f.labor_cost, Carburant_DA: f.fuel_cost,
+      Réparations_DA: f.repairs_cost, Frais_Généraux_DA: f.overhead_cost,
+      Coût_Réel_Total_DA: f.total_actual_cost, Bénéfice_Net_DA: f.net_profit,
+      Écart_Budget_DA: f.budget_variance,
     };
   });
-  const stockRows = db.prepare('SELECT code AS Code, name AS Matériau, current_quantity AS Stock, unit AS Unité, purchase_price AS Prix_Achat FROM materials').all();
+  const stockRows = db.prepare('SELECT code AS Code, name AS Matériau, category AS Catégorie, current_quantity AS Stock, unit AS Unité, purchase_price AS Prix_Achat_DA, min_stock_level AS Seuil_alerte FROM materials').all();
+  const invoiceRows = db.prepare(
+    `SELECT d.doc_number AS Reference, d.doc_type AS Type, d.issue_date AS Date, d.due_date AS Echeance,
+            c.name AS Client, p.project_number AS Code_chantier, p.title AS Chantier,
+            d.status AS Statut, d.total_ht AS Total_HT_DA, d.total_tva AS TVA_DA,
+            d.total_ttc AS Total_TTC_DA, d.amount_paid AS Regle_DA,
+            MAX(0, d.total_ttc-d.amount_paid-COALESCE((SELECT SUM(a.total_ttc) FROM commercial_documents a WHERE a.doc_type='avoir' AND a.linked_doc_id=d.id AND a.status NOT IN ('draft','cancelled')),0)) AS Reste_DA
+     FROM commercial_documents d JOIN clients c ON c.id=d.client_id
+     LEFT JOIN projects p ON p.id=d.project_id ORDER BY d.issue_date DESC, d.id DESC`
+  ).all();
+  const paymentRows = db.prepare(
+    `SELECT p.payment_date AS Date, p.receipt_number AS Recu, p.payment_method AS Mode,
+            p.reference AS Reference_paiement, p.amount AS Montant_DA,
+            c.name AS Client, s.name AS Fournisseur, d.doc_number AS Piece,
+            p.is_reversal AS Contre_passation
+     FROM payments p LEFT JOIN clients c ON c.id=p.client_id
+     LEFT JOIN suppliers s ON s.id=p.supplier_id
+     LEFT JOIN commercial_documents d ON d.id=p.document_id
+     ORDER BY p.payment_date DESC, p.id DESC`
+  ).all();
+  const supplierRows = db.prepare(
+    `SELECT s.name AS Fournisseur, s.phone AS Telephone, s.address AS Adresse,
+            COUNT(pu.id) AS Nombre_commandes, COALESCE(SUM(pu.total_ttc),0) AS Total_commandes_DA,
+            COALESCE(SUM(pu.amount_paid),0) AS Regle_DA,
+            COALESCE(SUM(MAX(0,pu.total_ttc-pu.amount_paid)),0) AS Reste_DA
+     FROM suppliers s LEFT JOIN purchases pu ON pu.supplier_id=s.id AND pu.status IN ('ordered','received','partial_paid','paid')
+     GROUP BY s.id ORDER BY s.name`
+  ).all();
+  const workerRows = db.prepare(
+    `SELECT w.full_name AS Salarie, w.job_title AS Poste, w.status AS Statut,
+            COALESCE(SUM(a.day_fraction),0) AS Jours_approuves,
+            COALESCE(SUM(a.advance_amount),0) AS Avances_DA
+     FROM workers w LEFT JOIN attendance a ON a.worker_id=w.id AND a.approval_status='approved'
+     GROUP BY w.id ORDER BY w.full_name`
+  ).all();
   sendXlsx(res, 'rapport_complet_gestionpro_dz.xlsx', [
     { name: 'Rentabilité_Chantiers', rows: projectRows },
     { name: 'État_Stock', rows: stockRows },
+    { name: 'Devis_Factures', rows: invoiceRows },
+    { name: 'Règlements', rows: paymentRows },
+    { name: 'Soldes_Fournisseurs', rows: supplierRows },
+    { name: 'Activité_Salariés', rows: workerRows },
   ]);
 });
 
@@ -2875,7 +3230,7 @@ router.put('/settings', requireAuth, requirePermission('settings:write'), (req: 
   const db = getDb();
   const old = db.prepare('SELECT * FROM company_settings WHERE id = 1').get() as any;
   db.prepare(
-    `UPDATE company_settings SET name=?, legal_form=?, address=?, phone=?, email=?, nif=?, nis=?, rc=?, ai=?, header_note=?, footer_note=?, overhead_rate_percent=?, auto_backup_time=?, auto_backup_keep_daily=?, updated_at=datetime('now') WHERE id = 1`
+    `UPDATE company_settings SET name=?, legal_form=?, address=?, phone=?, email=?, nif=?, nis=?, rc=?, ai=?, header_note=?, footer_note=?, logo_data=?, stamp_data=?, overhead_rate_percent=?, auto_backup_time=?, auto_backup_keep_daily=?, updated_at=datetime('now') WHERE id = 1`
   ).run(
     b.name ?? old.name,
     b.legal_form ?? old.legal_form,
@@ -2888,6 +3243,8 @@ router.put('/settings', requireAuth, requirePermission('settings:write'), (req: 
     b.ai ?? old.ai,
     b.header_note ?? old.header_note,
     b.footer_note ?? old.footer_note,
+    b.logo_data ?? old.logo_data,
+    b.stamp_data ?? old.stamp_data,
     b.overhead_rate_percent !== undefined ? Number(b.overhead_rate_percent) : old.overhead_rate_percent,
     b.auto_backup_time ?? old.auto_backup_time,
     b.auto_backup_keep_daily !== undefined ? Number(b.auto_backup_keep_daily) : old.auto_backup_keep_daily
@@ -3047,6 +3404,25 @@ router.get('/backups/:id/download', requireAuth, requirePermission('backup:manag
     return;
   }
   res.download(b.file_path, b.file_name);
+});
+
+router.post('/backups/:id/verify', requireAuth, requirePermission('backup:manage'), (req: AuthedRequest, res) => {
+  const db = getDb();
+  const backup = db.prepare('SELECT * FROM backup_history WHERE id = ?').get(Number(req.params.id)) as any;
+  if (!backup || !fs.existsSync(backup.file_path)) {
+    res.status(404).json({ error: 'Archive de sauvegarde introuvable.' });
+    return;
+  }
+  try {
+    const result = verifyBackupArchive(backup.file_path);
+    db.prepare('UPDATE backup_history SET verified = 1 WHERE id = ?').run(backup.id);
+    logAudit(req.user!, 'VERIFY', 'backup', backup.file_name, '', `${result.documentCount} document(s), SQLite OK`);
+    res.json(result);
+  } catch (error: any) {
+    db.prepare('UPDATE backup_history SET verified = 0 WHERE id = ?').run(backup.id);
+    logAudit(req.user!, 'VERIFY_FAILED', 'backup', backup.file_name, '', error.message || 'Échec de vérification');
+    res.status(422).json({ error: error.message || 'La vérification de cette archive a échoué.' });
+  }
 });
 
 router.post('/backups/restore', requireAuth, requirePermission('backup:manage'), uploadMemory.single('archive'), (req: AuthedRequest, res) => {
