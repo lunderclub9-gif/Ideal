@@ -28,6 +28,11 @@ import { DOCS_DIR, getDb } from './db.ts';
 
 const router = express.Router();
 
+const loginFailures = new Map<string, { count: number; windowStartedAt: number; lockedUntil: number }>();
+const LOGIN_FAILURE_LIMIT = 5;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_LOCK_MS = 15 * 60 * 1000;
+
 const uploadMemory = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 },
@@ -96,20 +101,44 @@ router.post('/auth/setup', (req, res) => {
 });
 
 router.post('/auth/login', (req, res) => {
-  const { username, password } = req.body || {};
+  const username = String(req.body?.username || '').trim();
+  const password = String(req.body?.password || '');
   if (!username || !password) {
     res.status(400).json({ error: 'Veuillez saisir votre nom d’utilisateur et mot de passe.' });
     return;
   }
+
+  const key = `${String(req.ip || 'local').slice(0, 80)}:${username.toLowerCase().slice(0, 80)}`;
+  const now = Date.now();
+  const previous = loginFailures.get(key);
+  if (previous?.lockedUntil && previous.lockedUntil > now) {
+    const waitSeconds = Math.ceil((previous.lockedUntil - now) / 1000);
+    res.setHeader('Retry-After', String(waitSeconds));
+    res.status(429).json({ error: `Trop de tentatives. Réessayez dans ${Math.ceil(waitSeconds / 60)} minute(s).` });
+    return;
+  }
+  if (previous && now - previous.windowStartedAt > LOGIN_WINDOW_MS) loginFailures.delete(key);
+
   const db = getDb();
   const userRow = db
     .prepare('SELECT id, name, username, password_hash, role, status FROM users WHERE username = ?')
-    .get(String(username).trim()) as
+    .get(username) as
     | { id: number; name: string; username: string; password_hash: string; role: UserRole; status: string }
     | undefined;
 
-  if (!userRow || !verifyPassword(String(password), userRow.password_hash)) {
-    res.status(401).json({ error: 'Identifiants incorrects. Vérifiez votre nom d’utilisateur et mot de passe.' });
+  if (!userRow || !verifyPassword(password, userRow.password_hash)) {
+    const current = loginFailures.get(key);
+    const entry = current && now - current.windowStartedAt <= LOGIN_WINDOW_MS
+      ? current
+      : { count: 0, windowStartedAt: now, lockedUntil: 0 };
+    entry.count += 1;
+    if (entry.count >= LOGIN_FAILURE_LIMIT) entry.lockedUntil = now + LOGIN_LOCK_MS;
+    loginFailures.set(key, entry);
+    res.status(entry.lockedUntil > now ? 429 : 401).json({
+      error: entry.lockedUntil > now
+        ? 'Trop de tentatives. Le compte est temporairement protégé pendant 15 minutes.'
+        : 'Identifiants incorrects. Vérifiez votre nom d’utilisateur et mot de passe.',
+    });
     return;
   }
   if (userRow.status !== 'active') {
@@ -117,6 +146,7 @@ router.post('/auth/login', (req, res) => {
     return;
   }
 
+  loginFailures.delete(key);
   db.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(userRow.id);
   const user = {
     id: userRow.id,
