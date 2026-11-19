@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowDownLeft, ArrowUpRight, Download, Pencil, Plus } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Download, Pencil, Plus, Archive, RotateCcw } from 'lucide-react';
 import { apiFetch, downloadWithAuth, formatDA, formatDateFr, hasPerm } from '../lib/api';
 import { Modal, PageHeader, StatusText } from '../components/ui';
 
@@ -77,6 +77,20 @@ export default function MaterialsPage({ permissions }: { permissions: string[] }
     } catch (err: any) {
       setError(err.message);
     }
+  }
+
+  async function toggleMaterialStatus(material: any) {
+    const next = material.status === 'inactive' ? 'active' : 'inactive';
+    if (next === 'inactive' && Number(material.current_quantity) > 0) {
+      setError('Impossible d’archiver un matériau avec un stock disponible. Enregistrez d’abord les mouvements de sortie ou de retour nécessaires.');
+      return;
+    }
+    const verb = next === 'inactive' ? 'archiver' : 'réactiver';
+    if (!window.confirm(`Voulez-vous ${verb} « ${material.name} » ? L’historique des mouvements sera conservé.`)) return;
+    try {
+      await apiFetch(`/materials/${material.id}`, { method: 'PUT', body: JSON.stringify({ name: material.name, code: material.code, status: next }) });
+      await load();
+    } catch (err: any) { setError(err.message); }
   }
 
   async function saveMovement(e: React.FormEvent) {
@@ -165,7 +179,7 @@ export default function MaterialsPage({ permissions }: { permissions: string[] }
                     <td className="p-3">
                       <StatusText status={isLow ? 'delayed' : 'available'} label={isLow ? 'Stock bas' : 'Normal'} />
                     </td>
-                    {canWrite && <td className="p-3 text-right"><button type="button" onClick={() => openEditMaterial(m)} title="Modifier le matériau" aria-label={`Modifier ${m.name}`} className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><Pencil className="w-3.5 h-3.5" /> Modifier</button></td>}
+                    {canWrite && <td className="p-3 text-right whitespace-nowrap"><button type="button" onClick={() => openEditMaterial(m)} title="Modifier le matériau" aria-label={`Modifier ${m.name}`} className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><Pencil className="w-3.5 h-3.5" /> Modifier</button><button type="button" onClick={() => toggleMaterialStatus(m)} disabled={m.status !== 'inactive' && Number(m.current_quantity) > 0} title={m.status === 'inactive' ? 'Réactiver' : Number(m.current_quantity) > 0 ? 'Stock restant : impossible d’archiver' : 'Archiver'} className="ml-1 inline-flex items-center p-2 border border-slate-300 dark:border-slate-700 rounded-lg disabled:opacity-40">{m.status === 'inactive' ? <RotateCcw className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}</button></td>}
                   </tr>
                 );
               })}
