@@ -1964,12 +1964,13 @@ router.put('/materials/:id', requireAuth, requirePermission('materials:write'), 
   const name = String(b.name ?? old.name).trim();
   const code = String(b.code ?? old.code).trim();
   if (!name || !code) { res.status(400).json({ error: 'Désignation et code matériau sont obligatoires.' }); return; }
-  db.prepare(`UPDATE materials SET name=?, code=?, category=?, unit=?, purchase_price=?, selling_price=?, min_stock_level=?, preferred_supplier_id=?, storage_location=? WHERE id=?`).run(
+  if (b.status === 'inactive' && Number(old.current_quantity) > 0) { res.status(400).json({ error: 'Impossible d’archiver un matériau tant qu’un stock positif est disponible.' }); return; }
+  db.prepare(`UPDATE materials SET name=?, code=?, category=?, unit=?, purchase_price=?, selling_price=?, min_stock_level=?, preferred_supplier_id=?, storage_location=?, status=? WHERE id=?`).run(
     name, code, b.category ?? old.category, b.unit ?? old.unit,
     Number(b.purchase_price ?? old.purchase_price), Number(b.selling_price ?? old.selling_price),
     Number(b.min_stock_level ?? old.min_stock_level),
     b.preferred_supplier_id === undefined ? old.preferred_supplier_id : (b.preferred_supplier_id ? Number(b.preferred_supplier_id) : null),
-    b.storage_location ?? old.storage_location, id
+    b.storage_location ?? old.storage_location, b.status === 'inactive' ? 'inactive' : b.status === 'active' ? 'active' : old.status, id
   );
   logAudit(req.user!, 'UPDATE', 'material', code, old.name, name);
   res.json(db.prepare('SELECT * FROM materials WHERE id = ?').get(id));
