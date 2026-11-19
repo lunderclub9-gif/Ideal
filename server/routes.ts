@@ -1638,6 +1638,38 @@ router.post('/attendance', requireAuth, requirePermission('attendance:write'), (
   res.status(201).json(db.prepare('SELECT * FROM attendance WHERE id = ?').get(info.lastInsertRowid));
 });
 
+
+router.put('/attendance/:id', requireAuth, requirePermission('attendance:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const b = req.body || {};
+  const db = getDb();
+  const old = db.prepare('SELECT * FROM attendance WHERE id = ?').get(id) as any;
+  if (!old) { res.status(404).json({ error: 'Pointage introuvable.' }); return; }
+  if (old.approval_status !== 'pending') { res.status(400).json({ error: 'Seuls les pointages en attente peuvent être modifiés. Un pointage validé reste protégé pour la paie.' }); return; }
+  const workerId = Number(b.worker_id);
+  const attDate = String(b.attendance_date || '');
+  const status = String(b.status || 'present');
+  const dayFraction = status === 'absent' || status === 'unpaid_leave' ? 0 : status === 'half_day' ? 0.5 : Number(b.day_fraction ?? 1);
+  const overtimeHours = Number(b.overtime_hours || 0);
+  const advanceAmount = Number(b.advance_amount || 0);
+  if (!workerId || !/^\\d{4}-\\d{2}-\\d{2}$/.test(attDate) || !['present','absent','half_day','paid_leave','unpaid_leave','sick_leave','holiday'].includes(status) ||
+      !Number.isFinite(dayFraction) || dayFraction < 0 || dayFraction > 1 || !Number.isFinite(overtimeHours) || overtimeHours < 0 || !Number.isFinite(advanceAmount) || advanceAmount < 0) {
+    res.status(400).json({ error: 'Vérifiez le salarié, la date, le statut et les montants du pointage.' }); return;
+  }
+  if ((status === 'present' || status === 'half_day') && !b.project_id) { res.status(400).json({ error: 'Veuillez sélectionner le chantier d’affectation.' }); return; }
+  const worker = db.prepare('SELECT status FROM workers WHERE id=?').get(workerId) as any;
+  if (!worker || ['terminated','suspended'].includes(worker.status)) { res.status(400).json({ error: 'Ce salarié ne peut pas être pointé.' }); return; }
+  const existing = db.prepare('SELECT COALESCE(SUM(day_fraction),0) AS total FROM attendance WHERE worker_id=? AND attendance_date=? AND id<>?').get(workerId,attDate,id) as any;
+  if (existing.total + dayFraction > 1.001) { res.status(400).json({ error: 'Le cumul journalier de cet employé dépasserait une journée.' }); return; }
+  const [year,month] = attDate.slice(0,7).split('-').map(Number);
+  if (db.prepare("SELECT id FROM payroll_periods WHERE month=? AND year=? AND status='approved'").get(month,year)) { res.status(400).json({ error: 'La paie de cette période est verrouillée.' }); return; }
+  db.prepare('UPDATE attendance SET attendance_date=?, worker_id=?, project_id=?, status=?, day_fraction=?, overtime_hours=?, advance_amount=?, notes=? WHERE id=?').run(
+    attDate, workerId, b.project_id ? Number(b.project_id) : null, status, dayFraction, overtimeHours, advanceAmount, b.notes || '', id
+  );
+  logAudit(req.user!, 'UPDATE', 'attendance', id, old.attendance_date, attDate);
+  res.json(db.prepare('SELECT * FROM attendance WHERE id=?').get(id));
+});
+
 router.delete('/attendance/:id', requireAuth, requirePermission('attendance:write'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
