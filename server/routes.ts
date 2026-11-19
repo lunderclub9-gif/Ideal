@@ -2414,6 +2414,39 @@ router.get('/fuel-entries', requireAuth, requirePermission('vehicles:read'), (_r
   res.json(enriched);
 });
 
+router.put('/fuel-entries/:id', requireAuth, requirePermission('fuel:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const b = req.body || {};
+  const db = getDb();
+  const old = db.prepare('SELECT * FROM fuel_entries WHERE id=?').get(id) as any;
+  if (!old) { res.status(404).json({ error: 'Enregistrement carburant introuvable.' }); return; }
+  const liters = Number(b.liters ?? old.liters);
+  const pricePerLiter = Number(b.price_per_liter ?? old.price_per_liter);
+  const odometerBefore = Number(b.odometer_before ?? old.odometer_before);
+  const odometerAfter = Number(b.odometer_after ?? old.odometer_after);
+  const entryDate = String(b.date || old.date);
+  if (!Number.isFinite(liters) || liters <= 0 || !Number.isFinite(pricePerLiter) || pricePerLiter <= 0 ||
+      !Number.isFinite(odometerBefore) || odometerBefore < 0 || !Number.isFinite(odometerAfter) || odometerAfter < 0 ||
+      (odometerBefore > 0 && odometerAfter > 0 && odometerAfter < odometerBefore) ||
+      !/^\\d{4}-\\d{2}-\\d{2}$/.test(entryDate) || !Number.isFinite(Date.parse(entryDate + 'T00:00:00'))) {
+    res.status(400).json({ error: 'Vérifiez la date, les litres, le prix et les relevés kilométriques.' }); return;
+  }
+  const vehicleId = Number(old.vehicle_id);
+  const totalCost = round2(liters * pricePerLiter);
+  db.transaction(() => {
+    db.prepare(`UPDATE fuel_entries SET date=?, liters=?, price_per_liter=?, total_cost=?, odometer_before=?, odometer_after=?, driver_worker_id=?, project_id=?, trip_purpose=?, fuel_station=?, notes=? WHERE id=?`).run(
+      entryDate, liters, pricePerLiter, totalCost, odometerBefore, odometerAfter,
+      b.driver_worker_id ? Number(b.driver_worker_id) : old.driver_worker_id,
+      b.project_id ? Number(b.project_id) : null,
+      b.trip_purpose ?? old.trip_purpose, b.fuel_station ?? old.fuel_station,
+      b.notes ?? old.notes, id
+    );
+    if (odometerAfter > 0) db.prepare('UPDATE vehicles SET current_mileage=MAX(current_mileage,?) WHERE id=?').run(odometerAfter, vehicleId);
+  })();
+  logAudit(req.user!, 'UPDATE', 'fuel_entry', id, `${old.liters} L / ${old.total_cost} DA`, `${liters} L / ${totalCost} DA`);
+  res.json(db.prepare('SELECT * FROM fuel_entries WHERE id=?').get(id));
+});
+
 router.post('/fuel-entries', requireAuth, requirePermission('fuel:write'), (req: AuthedRequest, res) => {
   const b = req.body || {};
   const vehicleId = Number(b.vehicle_id);
