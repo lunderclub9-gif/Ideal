@@ -2875,6 +2875,42 @@ router.post('/documents', requireAuth, requirePermission('documents:write'), upl
   res.status(201).json(db.prepare('SELECT * FROM documents WHERE id = ?').get(info.lastInsertRowid));
 });
 
+router.put('/documents/:id', requireAuth, requirePermission('documents:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const b = req.body || {};
+  const db = getDb();
+  const old = db.prepare('SELECT * FROM documents WHERE id = ?').get(id) as any;
+  if (!old) {
+    res.status(404).json({ error: 'Document introuvable.' });
+    return;
+  }
+  const title = String(b.title ?? old.title).trim();
+  const category = String(b.category ?? old.category).trim();
+  const docDate = String(b.doc_date ?? old.doc_date);
+  const notes = String(b.notes ?? old.notes ?? '');
+  if (!title || title.length > 180 || !/^\\d{4}-\\d{2}-\\d{2}$/.test(docDate) || notes.length > 1000) {
+    res.status(400).json({ error: 'Intitulé, date ou notes invalides.' });
+    return;
+  }
+  db.prepare('UPDATE documents SET title=?, category=?, doc_date=?, notes=? WHERE id=?')
+    .run(title, category, docDate, notes, id);
+  logAudit(req.user!, 'UPDATE', 'document', id, old.title, title);
+  res.json(db.prepare('SELECT * FROM documents WHERE id = ?').get(id));
+});
+
+router.get('/documents/export/xlsx', requireAuth, requirePermission('documents:read'), (_req, res) => {
+  const db = getDb();
+  const rows = db.prepare(
+    `SELECT d.title AS Intitule, d.category AS Categorie, d.file_name AS Fichier,
+            d.mime_type AS Type_MIME, d.file_size AS Taille_octets, d.doc_date AS Date_document,
+            d.related_type AS Type_fiche, d.related_id AS ID_fiche, d.notes AS Notes,
+            u.name AS Depose_par, d.created_at AS Date_archivage
+     FROM documents d LEFT JOIN users u ON u.id=d.uploaded_by
+     WHERE d.archived=0 ORDER BY d.doc_date DESC, d.id DESC`
+  ).all();
+  sendXlsx(res, 'registre_documents_gestionpro.xlsx', [{ name: 'Documents', rows }]);
+});
+
 router.get('/documents/:id/download', requireAuth, requirePermission('documents:read'), (req, res) => {
   const db = getDb();
   const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(Number(req.params.id)) as any;
@@ -3032,23 +3068,56 @@ router.get('/reports/export/xlsx', requireAuth, requirePermission('reports:expor
   const projectRows = projects.map((p) => {
     const f = calculateProjectFinancials(p.id);
     return {
-      Code: p.project_number,
-      Chantier: p.title,
-      Statut: p.status,
-      Facturé_HT_DA: f.invoiced_ht,
-      Matériaux_DA: f.materials_cost,
-      Main_Oeuvre_DA: f.labor_cost,
-      Carburant_DA: f.fuel_cost,
-      Réparations_DA: f.repairs_cost,
-      Frais_Généraux_DA: f.overhead_cost,
-      Coût_Réel_Total_DA: f.total_actual_cost,
-      Bénéfice_Net_DA: f.net_profit,
+      Code: p.project_number, Chantier: p.title, Statut: p.status,
+      Facturé_HT_DA: f.invoiced_ht, Matériaux_DA: f.materials_cost,
+      Main_Oeuvre_DA: f.labor_cost, Carburant_DA: f.fuel_cost,
+      Réparations_DA: f.repairs_cost, Frais_Généraux_DA: f.overhead_cost,
+      Coût_Réel_Total_DA: f.total_actual_cost, Bénéfice_Net_DA: f.net_profit,
+      Écart_Budget_DA: f.budget_variance,
     };
   });
-  const stockRows = db.prepare('SELECT code AS Code, name AS Matériau, current_quantity AS Stock, unit AS Unité, purchase_price AS Prix_Achat FROM materials').all();
+  const stockRows = db.prepare('SELECT code AS Code, name AS Matériau, category AS Catégorie, current_quantity AS Stock, unit AS Unité, purchase_price AS Prix_Achat_DA, min_stock_level AS Seuil_alerte FROM materials').all();
+  const invoiceRows = db.prepare(
+    `SELECT d.doc_number AS Reference, d.doc_type AS Type, d.issue_date AS Date, d.due_date AS Echeance,
+            c.name AS Client, p.project_number AS Code_chantier, p.title AS Chantier,
+            d.status AS Statut, d.total_ht AS Total_HT_DA, d.total_tva AS TVA_DA,
+            d.total_ttc AS Total_TTC_DA, d.amount_paid AS Regle_DA,
+            MAX(0, d.total_ttc-d.amount_paid) AS Reste_DA
+     FROM commercial_documents d JOIN clients c ON c.id=d.client_id
+     LEFT JOIN projects p ON p.id=d.project_id ORDER BY d.issue_date DESC, d.id DESC`
+  ).all();
+  const paymentRows = db.prepare(
+    `SELECT p.payment_date AS Date, p.receipt_number AS Recu, p.payment_method AS Mode,
+            p.reference AS Reference_paiement, p.amount AS Montant_DA,
+            c.name AS Client, s.name AS Fournisseur, d.doc_number AS Piece,
+            p.is_reversal AS Contre_passation
+     FROM payments p LEFT JOIN clients c ON c.id=p.client_id
+     LEFT JOIN suppliers s ON s.id=p.supplier_id
+     LEFT JOIN commercial_documents d ON d.id=p.document_id
+     ORDER BY p.payment_date DESC, p.id DESC`
+  ).all();
+  const supplierRows = db.prepare(
+    `SELECT s.name AS Fournisseur, s.phone AS Telephone, s.address AS Adresse,
+            COUNT(pu.id) AS Nombre_commandes, COALESCE(SUM(pu.total_ttc),0) AS Total_commandes_DA,
+            COALESCE(SUM(pu.amount_paid),0) AS Regle_DA,
+            COALESCE(SUM(MAX(0,pu.total_ttc-pu.amount_paid)),0) AS Reste_DA
+     FROM suppliers s LEFT JOIN purchases pu ON pu.supplier_id=s.id AND pu.status!='cancelled'
+     GROUP BY s.id ORDER BY s.name`
+  ).all();
+  const workerRows = db.prepare(
+    `SELECT w.full_name AS Salarie, w.job_title AS Poste, w.status AS Statut,
+            COALESCE(SUM(a.day_fraction),0) AS Jours_approuves,
+            COALESCE(SUM(a.advance_amount),0) AS Avances_DA
+     FROM workers w LEFT JOIN attendance a ON a.worker_id=w.id AND a.approval_status='approved'
+     GROUP BY w.id ORDER BY w.full_name`
+  ).all();
   sendXlsx(res, 'rapport_complet_gestionpro_dz.xlsx', [
     { name: 'Rentabilité_Chantiers', rows: projectRows },
     { name: 'État_Stock', rows: stockRows },
+    { name: 'Devis_Factures', rows: invoiceRows },
+    { name: 'Règlements', rows: paymentRows },
+    { name: 'Soldes_Fournisseurs', rows: supplierRows },
+    { name: 'Activité_Salariés', rows: workerRows },
   ]);
 });
 
