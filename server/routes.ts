@@ -2929,7 +2929,7 @@ router.get('/finance/debts', requireAuth, requirePermission('reports:read'), (_r
      FROM purchases pu
      JOIN suppliers s ON s.id=pu.supplier_id
      LEFT JOIN projects pr ON pr.id=pu.project_id
-     WHERE pu.status != 'cancelled'
+     WHERE pu.status IN ('ordered','received','partial_paid','paid')
      ORDER BY pu.order_date ASC, pu.id ASC`
   ).all() as any[];
 
@@ -2947,7 +2947,7 @@ router.get('/finance/debts', requireAuth, requirePermission('reports:read'), (_r
      ORDER BY w.full_name COLLATE NOCASE`
   ).all() as any[];
 
-  const today = new Date().toISOString().slice(0,10);
+  const now = new Date();\n  const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0,10);
   const ageDays = (date: string | null) => {
     if (!date) return 0;
     const parsed = Date.parse(String(date).slice(0,10) + 'T00:00:00Z');
