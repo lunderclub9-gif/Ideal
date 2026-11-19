@@ -116,7 +116,7 @@ Dans la version installée, les données sont stockées dans le dossier utilisat
 └── backups/
 ~~~
 
-Le chemin exact dépend du profil Windows. La base SQLite n'est pas envoyée vers un service cloud par l'architecture du programme. Le serveur écoute uniquement sur `127.0.0.1:3000` ; ce port fixe permet de conserver les sessions locales entre les lancements.
+Le chemin exact dépend du profil Windows. La base SQLite n'est pas envoyée vers un service cloud par l'architecture du programme. Le serveur écoute uniquement sur `127.0.0.1` et choisit automatiquement un port libre à chaque démarrage.
 
 Les données restent après une mise à jour et ne sont pas supprimées automatiquement par le désinstallateur. Effectuer régulièrement des sauvegardes externes (par exemple sur une clé USB). Avant d'utiliser des données réelles, tester une restauration de sauvegarde.
 
