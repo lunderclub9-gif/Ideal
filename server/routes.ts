@@ -2899,7 +2899,7 @@ router.delete('/documents/:id', requireAuth, requirePermission('documents:delete
 });
 
 // ==================== DEBTS & RECEIVABLES CONTROL ====================
-router.get('/finance/debts', requireAuth, requirePermission('reports:read'), (_req, res) => {
+router.get('/finance/debts', requireAuth, requirePermission('treasury:read'), (_req, res) => {
   const db = getDb();
 
   // Receivables are computed from issued invoices, net of recorded receipts
