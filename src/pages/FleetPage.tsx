@@ -167,7 +167,7 @@ export default function FleetPage({
 
   function openNewRepair() {
     setEditingRepair(null);
-    setRepForm({ vehicle_id: '', problem_category: 'engine', description: '', priority: 'normal', workshop: '', parts_cost: 0, labor_cost: 0, towing_cost: 0, project_id: '', repair_date: new Date().toISOString().slice(0, 10), parts_used: '', downtime_days: 0, status: 'waiting' });
+    setRepForm({ vehicle_id: '', problem_category: 'engine', description: '', priority: 'normal', workshop: '', parts_cost: 0, labor_cost: 0, towing_cost: 0, project_id: '', repair_date: new Date().toISOString().slice(0, 10), parts_used: '', downtime_days: 0, status: 'waiting', notes: '' });
     setRepairModal(true);
   }
 
@@ -187,6 +187,7 @@ export default function FleetPage({
       parts_used: order.parts_used || '',
       downtime_days: Number(order.downtime_days || 0),
       status: order.status || 'waiting',
+      notes: order.notes || '',
     });
     setRepairModal(true);
   }
@@ -588,6 +589,7 @@ export default function FleetPage({
           </div>
           {editingRepair && <div><label className="block font-medium mb-1">Statut de l’ordre</label><select value={repForm.status} onChange={e => setRepForm({ ...repForm, status: e.target.value })} className="w-full px-3 py-2 border rounded-lg"><option value="waiting">En attente</option><option value="in_progress">En cours</option><option value="completed">Terminé</option></select></div>}
           <div><label className="block font-medium mb-1">Chantier imputé</label><select value={repForm.project_id || ''} onChange={e => setRepForm({ ...repForm, project_id: e.target.value })} className="w-full px-3 py-2 border rounded-lg"><option value="">Parc général</option>{projects.map(pr => <option key={pr.id} value={pr.id}>{pr.project_number} — {pr.title}</option>)}</select></div>
+          <div><label className="block font-medium mb-1">Notes complémentaires</label><textarea rows={2} value={repForm.notes || ''} onChange={e => setRepForm({ ...repForm, notes: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => { setRepairModal(false); setEditingRepair(null); }} className="px-3 py-2 border rounded-lg">Annuler</button>
             <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg">{editingRepair ? "Enregistrer les modifications" : "Créer l’OR"}</button>
