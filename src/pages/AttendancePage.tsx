@@ -129,7 +129,7 @@ export default function AttendancePage({ permissions }: { permissions: string[] 
             {canWrite && (
               <button
                 type="button"
-                onClick={() => setCreateOpen(true)}
+                onClick={() => { setEditingEntry(null); setForm({ attendance_date: todayLocal, worker_id: '', project_id: '', status: 'present', day_fraction: 1, overtime_hours: 0, advance_amount: 0, notes: '' }); setCreateOpen(true); }}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg"
               >
                 <Plus className="w-3.5 h-3.5" /> Saisir pointage
@@ -225,7 +225,7 @@ export default function AttendancePage({ permissions }: { permissions: string[] 
         </div>
       </div>
 
-      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Nouvelle saisie de pointage">
+      <Modal open={createOpen} onClose={() => { setCreateOpen(false); setEditingEntry(null); }} title={editingEntry ? "Modifier le pointage" : "Nouvelle saisie de pointage"}>
         <form onSubmit={handleAdd} className="space-y-3 text-xs">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
