@@ -2,7 +2,7 @@
 
 **Projet :** GestionPro DZ  
 **Dépôt :** `lunderclub9-gif/Ideal`  
-**Branche de travail :** `phase-2-workforce-project-costs`  
+**Branche de travail :** `phase-2-workforce-final`  
 **Branche de base :** `phase-1-foundation`  
 **Étape :** 2 / 6 — Personnel et exécution des chantiers  
 **Date :** 2026-11-19  
