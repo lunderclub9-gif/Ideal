@@ -137,7 +137,16 @@ export function DocumentsPage({ permissions }: { permissions: string[] }) {
     : relatedType === 'project' ? projects
     : relatedType === 'supplier' ? suppliers
     : relatedType === 'worker' ? workers : [];
+  const editingRelatedOptions = editing?.related_type === 'client' ? clients
+    : editing?.related_type === 'project' ? projects
+    : editing?.related_type === 'supplier' ? suppliers
+    : editing?.related_type === 'worker' ? workers : [];
   const relatedLabel = (item: any) => item.name || item.title || item.full_name || item.project_number || String(item.id);
+  const getRelatedName = (doc: any) => {
+    const source = doc.related_type === 'client' ? clients : doc.related_type === 'project' ? projects : doc.related_type === 'supplier' ? suppliers : workers;
+    const item = source.find((entry: any) => Number(entry.id) === Number(doc.related_id));
+    return item ? relatedLabel(item) : (doc.related_type ? `${doc.related_type} #${doc.related_id}` : 'Non associé');
+  };
   const visibleDocs = docs.filter((d) => {
     const q = search.trim().toLowerCase();
     return !q || [d.title, d.file_name, d.category, d.notes, d.related_type].some((v) => String(v || '').toLowerCase().includes(q));
@@ -210,7 +219,7 @@ export function DocumentsPage({ permissions }: { permissions: string[] }) {
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
             {visibleDocs.map((d) => <tr key={d.id}>
               <td className="p-3"><div className="font-semibold">{d.title}</div><div className="font-mono text-[11px] text-slate-500">{d.file_name} · {(Number(d.file_size || 0) / 1024).toFixed(1)} Ko</div>{d.notes && <div className="text-[11px] text-slate-500 mt-1">{d.notes}</div>}</td>
-              <td className="p-3"><div>{d.category}</div><div className="text-[11px] text-slate-500">{d.related_type ? `${d.related_type} #${d.related_id}` : 'Non associé'}</div></td>
+              <td className="p-3"><div>{d.category}</div><div className="text-[11px] text-slate-500">{getRelatedName(d)}</div></td>
               <td className="p-3 font-mono">{formatDateFr(d.doc_date)}</td>
               <td className="p-3 text-right whitespace-nowrap space-x-3">
                 <button type="button" onClick={() => downloadWithAuth(`/documents/${d.id}/download`, d.file_name)} className="inline-flex items-center gap-1 text-blue-700 hover:underline"><Download className="w-3.5 h-3.5" /> Télécharger</button>
@@ -226,6 +235,7 @@ export function DocumentsPage({ permissions }: { permissions: string[] }) {
       {editing && <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4"><form onSubmit={saveMetadata} className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-xl p-5 space-y-3 text-xs"><div className="flex justify-between items-center"><h2 className="font-semibold text-sm">Modifier les informations</h2><button type="button" onClick={() => setEditing(null)} className="text-slate-500">Fermer</button></div>
         <label className="block">Intitulé<input required value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></label>
         <div className="grid grid-cols-2 gap-3"><label>Catégorie<select value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"><option value="projects">Chantiers</option><option value="contracts">Contrats</option><option value="invoices">Factures</option><option value="vehicles">Véhicules</option><option value="payroll">Paie</option><option value="suppliers">Fournisseurs</option><option value="clients">Clients</option><option value="general">Général</option></select></label><label>Date<input type="date" value={editing.doc_date} onChange={(e) => setEditing({ ...editing, doc_date: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></label></div>
+        <div className="grid grid-cols-2 gap-3"><label>Type de fiche<select value={editing.related_type} onChange={(e) => setEditing({ ...editing, related_type: e.target.value, related_id: '' })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"><option value="">Aucun lien</option><option value="client">Client</option><option value="project">Chantier</option><option value="supplier">Fournisseur</option><option value="worker">Salarié</option></select></label>{editing.related_type && <label>Fiche<select required value={editing.related_id} onChange={(e) => setEditing({ ...editing, related_id: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"><option value="">Sélectionner...</option>{editingRelatedOptions.map((item: any) => <option key={item.id} value={item.id}>{relatedLabel(item)}</option>)}</select></label>}</div>
         <label className="block">Notes<textarea value={editing.notes} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} maxLength={1000} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></label>
         <div className="flex justify-end gap-2"><button type="button" onClick={() => setEditing(null)} className="px-3 py-2 border rounded-lg">Annuler</button><button className="px-4 py-2 bg-blue-700 text-white rounded-lg">Enregistrer</button></div>
       </form></div>}
