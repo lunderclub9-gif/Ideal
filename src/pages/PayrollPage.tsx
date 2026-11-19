@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Calculator, CheckCircle2, Download, Lock, Plus, Printer } from 'lucide-react';
+import { Calculator, CheckCircle2, Download, Lock, Plus, Printer, Pencil, Search, UserRound } from 'lucide-react';
 import { apiFetch, downloadWithAuth, formatDA, hasPerm } from '../lib/api';
 import { Modal, PageHeader, PayslipPrintModal, StatusText } from '../components/ui';
 
@@ -14,19 +14,29 @@ export default function PayrollPage({ permissions }: { permissions: string[] }) 
   const [calcYear, setCalcYear] = useState(2026);
   const [printSlip, setPrintSlip] = useState<any | null>(null);
   const [workerModal, setWorkerModal] = useState(false);
+  const [editingWorker, setEditingWorker] = useState<any | null>(null);
+  const [workerQuery, setWorkerQuery] = useState('');
+  const [workerStatusFilter, setWorkerStatusFilter] = useState('all');
+  const [savingWorker, setSavingWorker] = useState(false);
   const [editSlip, setEditSlip] = useState<any | null>(null);
   const [error, setError] = useState('');
 
-  const [wForm, setWForm] = useState({
+  const emptyWorkerForm = {
     full_name: '',
-    job_title: 'Maçon',
+    job_title: '',
     wage_type: 'daily',
-    daily_wage: 3500,
+    daily_wage: 0,
+    hourly_rate: 0,
     monthly_salary: 0,
+    work_schedule: '08:00 - 16:30',
     cnas_number: '',
     phone: '',
+    address: '',
     hire_date: new Date().toISOString().slice(0, 10),
-  });
+    status: 'active',
+    notes: '',
+  };
+  const [wForm, setWForm] = useState<any>(emptyWorkerForm);
 
   const canWrite = hasPerm(permissions, 'payroll:write');
   const canApprove = hasPerm(permissions, 'payroll:approve');
@@ -105,16 +115,60 @@ export default function PayrollPage({ permissions }: { permissions: string[] }) 
     }
   }
 
+  function openNewWorker() {
+    setEditingWorker(null);
+    setWForm({ ...emptyWorkerForm });
+    setError('');
+    setWorkerModal(true);
+  }
+
+  function openEditWorker(worker: any) {
+    setEditingWorker(worker);
+    setWForm({
+      ...emptyWorkerForm,
+      ...worker,
+      daily_wage: Number(worker.daily_wage || 0),
+      hourly_rate: Number(worker.hourly_rate || 0),
+      monthly_salary: Number(worker.monthly_salary || 0),
+    });
+    setError('');
+    setWorkerModal(true);
+  }
+
   async function saveWorker(e: React.FormEvent) {
     e.preventDefault();
+    if (savingWorker) return;
+    setSavingWorker(true);
+    setError('');
     try {
-      await apiFetch('/workers', { method: 'POST', body: JSON.stringify(wForm) });
+      const payload = {
+        ...wForm,
+        full_name: String(wForm.full_name || '').trim(),
+        job_title: String(wForm.job_title || '').trim(),
+        daily_wage: Number(wForm.daily_wage || 0),
+        hourly_rate: Number(wForm.hourly_rate || 0),
+        monthly_salary: Number(wForm.monthly_salary || 0),
+      };
+      await apiFetch(editingWorker ? `/workers/${editingWorker.id}` : '/workers', {
+        method: editingWorker ? 'PUT' : 'POST',
+        body: JSON.stringify(payload),
+      });
       setWorkerModal(false);
+      setEditingWorker(null);
       await load();
     } catch (err: any) {
       setError(err.message);
+    } finally {
+      setSavingWorker(false);
     }
   }
+
+  const visibleWorkers = workers.filter((worker) => {
+    const term = workerQuery.trim().toLocaleLowerCase();
+    const matchesText = !term || [worker.full_name, worker.job_title, worker.phone, worker.cnas_number]
+      .some((value) => String(value || '').toLocaleLowerCase().includes(term));
+    return matchesText && (workerStatusFilter === 'all' || worker.status === workerStatusFilter);
+  });
 
   return (
     <div className="space-y-5">
@@ -140,7 +194,7 @@ export default function PayrollPage({ permissions }: { permissions: string[] }) 
             {canWrite && (
               <button
                 type="button"
-                onClick={() => setWorkerModal(true)}
+                onClick={openNewWorker}
                 className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-blue-700 rounded-lg"
               >
                 <Plus className="w-3.5 h-3.5" /> Nouvel ouvrier
@@ -303,31 +357,59 @@ export default function PayrollPage({ permissions }: { permissions: string[] }) 
       )}
 
       {tab === 'workers' && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-          <table className="w-full text-xs">
-            <thead className="bg-slate-50 dark:bg-slate-800/60">
-              <tr>
-                <th className="p-3 text-left">Nom complet</th>
-                <th className="p-3 text-left">Poste</th>
-                <th className="p-3 text-left">N° CNAS</th>
-                <th className="p-3 text-right">Taux journalier / mensuel</th>
-                <th className="p-3 text-left">Statut</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {workers.map((w) => (
-                <tr key={w.id}>
-                  <td className="p-3 font-semibold">{w.full_name}</td>
-                  <td className="p-3">{w.job_title}</td>
-                  <td className="p-3 font-mono">{w.cnas_number || '—'}</td>
-                  <td className="p-3 text-right font-mono tabular-nums">
-                    {w.wage_type === 'monthly' ? `${formatDA(w.monthly_salary)} / mois` : `${formatDA(w.daily_wage)} / jour`}
-                  </td>
-                  <td className="p-3"><StatusText status={w.status} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2 items-center">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+              <input value={workerQuery} onChange={(e) => setWorkerQuery(e.target.value)} placeholder="Rechercher nom, métier, téléphone, CNAS..." className="w-full pl-9 pr-3 py-2 text-xs border rounded-lg bg-white dark:bg-slate-900" />
+            </div>
+            <select value={workerStatusFilter} onChange={(e) => setWorkerStatusFilter(e.target.value)} className="px-3 py-2 text-xs border rounded-lg bg-white dark:bg-slate-900">
+              <option value="all">Tous les statuts</option>
+              <option value="active">Actifs</option>
+              <option value="suspended">Suspendus</option>
+              <option value="on_leave">En congé</option>
+              <option value="terminated">Sortis</option>
+            </select>
+            {canWrite && <button type="button" onClick={openNewWorker} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs text-white bg-blue-700 rounded-lg"><Plus className="w-3.5 h-3.5" /> Ajouter un salarié</button>}
+          </div>
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs min-w-[850px]">
+                <thead className="bg-slate-50 dark:bg-slate-800/60">
+                  <tr>
+                    <th className="p-3 text-left">Salarié / métier</th>
+                    <th className="p-3 text-left">Contact / CNAS</th>
+                    <th className="p-3 text-left">Embauche</th>
+                    <th className="p-3 text-right">Rémunération</th>
+                    <th className="p-3 text-left">Statut</th>
+                    {canWrite && <th className="p-3 text-right">Actions</th>}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {visibleWorkers.map((w) => (
+                    <tr key={w.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
+                      <td className="p-3">
+                        <div className="font-semibold">{w.full_name}</div>
+                        <div className="text-[11px] text-slate-500">{w.job_title}</div>
+                      </td>
+                      <td className="p-3">
+                        <div>{w.phone || '—'}</div>
+                        <div className="text-[11px] text-slate-500 font-mono">CNAS: {w.cnas_number || '—'}</div>
+                      </td>
+                      <td className="p-3 font-mono">{w.hire_date || '—'}</td>
+                      <td className="p-3 text-right font-mono tabular-nums">
+                        {w.wage_type === 'monthly' ? `${formatDA(w.monthly_salary)} / mois` : w.wage_type === 'hourly' ? `${formatDA(w.hourly_rate)} / heure` : `${formatDA(w.daily_wage)} / jour`}
+                      </td>
+                      <td className="p-3"><StatusText status={w.status} /></td>
+                      {canWrite && <td className="p-3 text-right"><button type="button" onClick={() => openEditWorker(w)} className="inline-flex items-center gap-1 px-2 py-1.5 text-blue-700 hover:bg-blue-50 rounded"><Pencil className="w-3.5 h-3.5" /> Modifier</button></td>}
+                    </tr>
+                  ))}
+                  {visibleWorkers.length === 0 && <tr><td colSpan={canWrite ? 6 : 5} className="p-8 text-center text-slate-500">Aucun salarié correspondant.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-500">Les salariés sortis ou suspendus sont conservés pour préserver les pointages et bulletins historiques. Utilisez le statut au lieu de supprimer un dossier.</p>
         </div>
       )}
 
@@ -360,51 +442,56 @@ export default function PayrollPage({ permissions }: { permissions: string[] }) 
         )}
       </Modal>
 
-      <Modal open={workerModal} onClose={() => setWorkerModal(false)} title="Ajouter un ouvrier / salarié">
+      <Modal open={workerModal} onClose={() => setWorkerModal(false)} title={editingWorker ? `Modifier le dossier — ${editingWorker.full_name}` : "Ajouter un ouvrier / salarié"} maxWidth="max-w-2xl">
         <form onSubmit={saveWorker} className="space-y-3 text-xs">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block font-medium mb-1">Nom complet *</label>
-              <input
-                type="text"
-                required
-                value={wForm.full_name}
-                onChange={(e) => setWForm({ ...wForm, full_name: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"
-              />
-            </div>
-            <div>
-              <label className="block font-medium mb-1">Poste / Métier *</label>
-              <input
-                type="text"
-                required
-                value={wForm.job_title}
-                onChange={(e) => setWForm({ ...wForm, job_title: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"
-              />
-            </div>
-            <div>
-              <label className="block font-medium mb-1">Salaire journalier (DA)</label>
-              <input
-                type="number"
-                value={wForm.daily_wage}
-                onChange={(e) => setWForm({ ...wForm, daily_wage: Number(e.target.value) })}
-                className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950 font-mono"
-              />
-            </div>
-            <div>
-              <label className="block font-medium mb-1">N° Sécurité Sociale CNAS</label>
-              <input
-                type="text"
-                value={wForm.cnas_number}
-                onChange={(e) => setWForm({ ...wForm, cnas_number: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950 font-mono"
-              />
-            </div>
+            <label className="block font-medium mb-1">Nom complet *
+              <input required maxLength={120} value={wForm.full_name} onChange={(e) => setWForm({ ...wForm, full_name: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" />
+            </label>
+            <label className="block font-medium mb-1">Poste / Métier *
+              <input required maxLength={100} value={wForm.job_title} onChange={(e) => setWForm({ ...wForm, job_title: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" />
+            </label>
+            <label className="block font-medium mb-1">Type de rémunération
+              <select value={wForm.wage_type} onChange={(e) => setWForm({ ...wForm, wage_type: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950">
+                <option value="daily">Journalier</option><option value="monthly">Mensuel</option><option value="hourly">Horaire</option><option value="piecework">À la tâche</option>
+              </select>
+            </label>
+            <label className="block font-medium mb-1">Date d'embauche
+              <input type="date" value={wForm.hire_date || ''} onChange={(e) => setWForm({ ...wForm, hire_date: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" />
+            </label>
+            <label className="block font-medium mb-1">Salaire journalier (DA)
+              <input type="number" min="0" step="0.01" value={wForm.daily_wage} onChange={(e) => setWForm({ ...wForm, daily_wage: Number(e.target.value) })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950 font-mono" />
+            </label>
+            <label className="block font-medium mb-1">Salaire horaire (DA)
+              <input type="number" min="0" step="0.01" value={wForm.hourly_rate} onChange={(e) => setWForm({ ...wForm, hourly_rate: Number(e.target.value) })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950 font-mono" />
+            </label>
+            <label className="block font-medium mb-1">Salaire mensuel (DA)
+              <input type="number" min="0" step="0.01" value={wForm.monthly_salary} onChange={(e) => setWForm({ ...wForm, monthly_salary: Number(e.target.value) })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950 font-mono" />
+            </label>
+            <label className="block font-medium mb-1">N° Sécurité Sociale CNAS
+              <input value={wForm.cnas_number} onChange={(e) => setWForm({ ...wForm, cnas_number: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950 font-mono" />
+            </label>
+            <label className="block font-medium mb-1">Téléphone
+              <input type="tel" value={wForm.phone} onChange={(e) => setWForm({ ...wForm, phone: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" />
+            </label>
+            <label className="block font-medium mb-1">Horaires habituels
+              <input value={wForm.work_schedule || ''} onChange={(e) => setWForm({ ...wForm, work_schedule: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" />
+            </label>
+            <label className="block font-medium mb-1">Statut
+              <select value={wForm.status} onChange={(e) => setWForm({ ...wForm, status: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950">
+                <option value="active">Actif</option><option value="suspended">Suspendu</option><option value="on_leave">En congé</option><option value="terminated">Sorti de l'entreprise</option>
+              </select>
+            </label>
+            <label className="block font-medium mb-1 sm:col-span-2">Adresse
+              <input value={wForm.address} onChange={(e) => setWForm({ ...wForm, address: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" />
+            </label>
+            <label className="block font-medium mb-1 sm:col-span-2">Notes du dossier
+              <textarea rows={3} value={wForm.notes} onChange={(e) => setWForm({ ...wForm, notes: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" />
+            </label>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setWorkerModal(false)} className="px-3 py-2 border rounded-lg">Annuler</button>
-            <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg">Enregistrer</button>
+            <button type="submit" disabled={savingWorker} className="px-4 py-2 text-white bg-blue-700 rounded-lg disabled:opacity-50">{savingWorker ? "Enregistrement..." : "Enregistrer le dossier"}</button>
           </div>
         </form>
       </Modal>
