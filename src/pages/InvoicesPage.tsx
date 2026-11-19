@@ -369,6 +369,7 @@ export default function InvoicesPage({ permissions }: { permissions: string[] })
             <div>
               <label className="block font-medium mb-1">Type de document</label>
               <select
+                disabled={!!editingDoc}
                 value={form.doc_type}
                 onChange={(e) => setForm({ ...form, doc_type: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"
@@ -493,14 +494,14 @@ export default function InvoicesPage({ permissions }: { permissions: string[] })
             <div><label className="block font-medium mb-1">Note / Conditions</label><input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
           </div>
 
-          <label className="inline-flex items-center gap-2">
+          {!editingDoc && <label className="inline-flex items-center gap-2">
             <input
               type="checkbox"
               checked={form.issue_immediately}
               onChange={(e) => setForm({ ...form, issue_immediately: e.target.checked })}
             />
             Émettre et verrouiller immédiatement le document
-          </label>
+          </label>}
 
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => { setCreateOpen(false); setEditingDoc(null); }} className="px-3 py-2 border rounded-lg">Annuler</button>
