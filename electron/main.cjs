@@ -48,9 +48,9 @@ function configureAutoUpdater() {
   ipcMain.handle('gestionpro:install-update', async () => {
     if (updateStatus.state !== 'downloaded') return false;
     const choice = await dialog.showMessageBox(mainWindow, {
-      type: 'warning', buttons: ['إنشاء نسخة احتياطية ثم التثبيت', 'إلغاء'], defaultId: 1, cancelId: 1,
+      type: 'warning', buttons: ['إعادة التشغيل والتثبيت', 'إلغاء'], defaultId: 1, cancelId: 1,
       title: 'تثبيت تحديث GestionPro DZ',
-      message: 'قبل التحديث، تأكد من إنشاء نسخة احتياطية حديثة من قسم «النسخ الاحتياطي والاستعادة».',
+      message: 'تم إنشاء نسخة احتياطية موثقة بنجاح. هل تريد إعادة تشغيل GestionPro DZ وتثبيت التحديث الآن؟',
       detail: 'سيتم إغلاق البرنامج وإعادة تشغيله بعد التثبيت. لن يحذف التحديث بيانات الشركة المحفوظة في AppData.'
     });
     if (choice.response !== 0) return false;
