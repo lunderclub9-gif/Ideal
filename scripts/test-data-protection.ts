@@ -37,7 +37,7 @@ try {
   const restored = restoreFromZip(fs.readFileSync(backup.file_path), 'test-suite');
   assert.ok(restored.safetyBackup.file_name, 'restore must create a pre-restore safety archive');
   assert.equal(restored.restoredDocs, 1);
-  assert.equal(getDb().prepare('SELECT name FROM company_settings WHERE id = 1').get()?.name, 'Entreprise de test');
+  assert.equal(getDb().prepare('SELECT name FROM company_settings WHERE id = 1').get() as { name: string } | undefined)?.name, 'Entreprise de test');
   assert.equal(fs.readFileSync(path.join(DOCS_DIR, 'General', 'test-document.txt'), 'utf8'), 'original document content');
 
   const liveName = getDb().prepare('SELECT name FROM company_settings WHERE id = 1').get()?.name;
@@ -46,7 +46,7 @@ try {
   manifest.db_sha256 = '0'.repeat(64);
   corruptZip.updateFile('manifest.json', Buffer.from(JSON.stringify(manifest), 'utf8'));
   assert.throws(() => restoreFromZip(corruptZip.toBuffer(), 'test-suite'), /SHA-256/);
-  assert.equal(getDb().prepare('SELECT name FROM company_settings WHERE id = 1').get()?.name, liveName);
+  assert.equal(getDb().prepare('SELECT name FROM company_settings WHERE id = 1').get() as { name: string } | undefined)?.name, liveName);
 
   const traversalZip = new AdmZip(backup.file_path);
   traversalZip.addFile('Documents/../../outside.txt', Buffer.from('not allowed'));
