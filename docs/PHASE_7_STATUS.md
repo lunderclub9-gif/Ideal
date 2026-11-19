@@ -15,7 +15,10 @@
 - Audit des fichiers d'interface React, des composants partagés, des pages de connexion/configuration et du code Electron.
 - Les seuls textes arabes codés en dur trouvés étaient dans le panneau et les dialogues de mise à jour ; ils ont été traduits.
 
-## Contrôles restant à effectuer
-- CI Windows complète : TypeScript, contrôle français uniquement, tests de protection des données, build, installateur et smoke test.
+## Validation automatisée
+- CI Windows complète réussie sur l'arborescence combinée : TypeScript, contrôle français uniquement, tests de protection des données, build, installateur, smoke test et upload de l'artefact.
+- Phase 7 intégrée à `main` dans le commit `d44e3a758d17228064335a0717c213ac0ce17cfb`.
+
+## Vérifications manuelles restantes
 - Vérification visuelle de toutes les vues dans l'application installée.
 - Contrôle final des messages natifs et des états de mise à jour sur Windows.
