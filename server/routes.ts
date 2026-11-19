@@ -2814,6 +2814,19 @@ router.put('/taxes/rules/:id', requireAuth, requirePermission('taxes:write'), (r
   res.json(db.prepare('SELECT * FROM tax_rules WHERE id = ?').get(id));
 });
 
+// Validate optional document links against an explicit allow-list of local entities.
+function resolveDocumentRelation(typeValue: unknown, idValue: unknown) {
+  const type = String(typeValue || '').trim();
+  const id = idValue === '' || idValue === null || idValue === undefined ? null : Number(idValue);
+  if (!type && id === null) return { type: '', id: null as number | null };
+  const tables: Record<string, string> = { client: 'clients', project: 'projects', supplier: 'suppliers', worker: 'workers' };
+  const table = tables[type];
+  if (!table || !Number.isSafeInteger(id) || Number(id) <= 0) throw new Error('La fiche associée est invalide.');
+  const exists = getDb().prepare(`SELECT id FROM ${table} WHERE id = ?`).get(Number(id));
+  if (!exists) throw new Error('La fiche associée est introuvable.');
+  return { type, id: Number(id) };
+}
+
 // ==================== DOCUMENTS CENTER ====================
 router.get('/documents', requireAuth, requirePermission('documents:read'), (_req, res) => {
   const db = getDb();
@@ -2835,6 +2848,13 @@ router.post('/documents', requireAuth, requirePermission('documents:write'), upl
     return;
   }
   const cat = String(b.category || 'General');
+  let relation: { type: string; id: number | null };
+  try {
+    relation = resolveDocumentRelation(b.related_type, b.related_id);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+    return;
+  }
   const folderMap: Record<string, string> = {
     invoices: 'Invoices',
     projects: 'Projects',
@@ -2866,8 +2886,8 @@ router.post('/documents', requireAuth, requirePermission('documents:write'), upl
       file.mimetype,
       file.size,
       b.doc_date || new Date().toISOString().slice(0, 10),
-      b.related_type || '',
-      b.related_id ? Number(b.related_id) : null,
+      relation.type,
+      relation.id,
       b.notes || '',
       req.user!.id
     );
@@ -2888,12 +2908,19 @@ router.put('/documents/:id', requireAuth, requirePermission('documents:write'), 
   const category = String(b.category ?? old.category).trim();
   const docDate = String(b.doc_date ?? old.doc_date);
   const notes = String(b.notes ?? old.notes ?? '');
-  if (!title || title.length > 180 || !/^\\d{4}-\\d{2}-\\d{2}$/.test(docDate) || notes.length > 1000) {
-    res.status(400).json({ error: 'Intitulé, date ou notes invalides.' });
+  let relation: { type: string; id: number | null };
+  try {
+    relation = resolveDocumentRelation(b.related_type ?? old.related_type, b.related_id ?? old.related_id);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
     return;
   }
-  db.prepare('UPDATE documents SET title=?, category=?, doc_date=?, notes=? WHERE id=?')
-    .run(title, category, docDate, notes, id);
+  if (!title || title.length > 180 || !/^\\d{4}-\\d{2}-\\d{2}$/.test(docDate) || notes.length > 1000 || !category || category.length > 40) {
+    res.status(400).json({ error: 'Intitulé, catégorie, date ou notes invalides.' });
+    return;
+  }
+  db.prepare('UPDATE documents SET title=?, category=?, doc_date=?, related_type=?, related_id=?, notes=? WHERE id=?')
+    .run(title, category, docDate, relation.type, relation.id, notes, id);
   logAudit(req.user!, 'UPDATE', 'document', id, old.title, title);
   res.json(db.prepare('SELECT * FROM documents WHERE id = ?').get(id));
 });
