@@ -46,7 +46,7 @@ export default function TreasuryPage({
         hasPerm(permissions, 'treasury:read') ? apiFetch('/treasury') : Promise.resolve(null),
         hasPerm(permissions, 'expenses:read') ? apiFetch('/expenses') : Promise.resolve([]),
         apiFetch('/projects'),
-        apiFetch('/vehicles'),
+        hasPerm(permissions, 'vehicles:read') ? apiFetch('/vehicles') : Promise.resolve([]),
       ]);
       setTreasury(tr);
       setExpenses(ex);
@@ -246,6 +246,7 @@ export default function TreasuryPage({
                 <th className="p-3 text-left">Catégorie</th>
                 <th className="p-3 text-left">Libellé</th>
                 <th className="p-3 text-left">Imputation</th>
+                <th className="p-3 text-left">Véhicule / Paiement</th>
                 <th className="p-3 text-right">Montant</th>
               </tr>
             </thead>
@@ -256,6 +257,7 @@ export default function TreasuryPage({
                   <td className="p-3">{e.category}</td>
                   <td className="p-3 font-medium">{e.description}</td>
                   <td className="p-3">{e.project_number ? `${e.project_number} — ${e.project_title}` : 'Frais généraux'}</td>
+                  <td className="p-3"><div>{e.vehicle_name || '—'}</div><div className="text-[10px] text-slate-500">{e.payment_method || 'Espèces'}</div></td>
                   <td className="p-3 text-right font-mono tabular-nums font-bold">{formatDA(e.amount)}</td>
                   {canWriteExpenses && <td className="p-3 text-right"><button type="button" onClick={() => openEditExpense(e)} className="inline-flex items-center gap-1 px-2 py-1.5 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><Pencil className="w-3.5 h-3.5" /> Modifier</button></td>}
                 </tr>
