@@ -18,7 +18,7 @@
 - Export Excel du registre des documents, avec métadonnées, taille, type MIME, date et utilisateur ayant déposé le fichier.
 - Classeur de rapports enrichi en six feuilles : rentabilité des chantiers, état du stock, devis/factures, règlements, soldes fournisseurs et activité des salariés.
 - Page Rapports enrichie avec synthèse main-d’œuvre et coûts véhicules, plus impression navigateur / enregistrement PDF au format A4.
-- Modèles commerciaux imprimables : affichage du logo et du cachet configurés dans les paramètres de l’entreprise lorsqu’ils existent.
+- Paramètres de l’entreprise : ajout du dépôt local du logo et du cachet (PNG/JPG/WebP, 1,5 Mo maximum chacun), aperçu et retrait ; les images configurées apparaissent sur les documents commerciaux imprimés.
 - Styles d’impression A4 améliorés pour éviter autant que possible la coupure des tableaux et sections.
 - Aucun nouveau package, service cloud, abonnement ou module IA ajouté.
 
