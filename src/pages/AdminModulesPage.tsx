@@ -372,6 +372,22 @@ export function SettingsPage({ permissions }: { permissions: string[] }) {
               <label className="block font-medium mb-1">Adresse complète</label>
               <input type="text" value={company.address} onChange={(e) => setCompany({ ...company, address: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" />
             </div>
+            <div>
+              <label className="block font-medium mb-1">Téléphone</label>
+              <input type="tel" value={company.phone || ''} onChange={(e) => setCompany({ ...company, phone: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" />
+            </div>
+            <div>
+              <label className="block font-medium mb-1">E-mail</label>
+              <input type="email" value={company.email || ''} onChange={(e) => setCompany({ ...company, email: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block font-medium mb-1">Mention d’en-tête des documents</label>
+              <input type="text" maxLength={250} value={company.header_note || ''} onChange={(e) => setCompany({ ...company, header_note: e.target.value })} placeholder="Informations complémentaires à afficher sur les documents" className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block font-medium mb-1">Mention de pied de page</label>
+              <input type="text" maxLength={250} value={company.footer_note || ''} onChange={(e) => setCompany({ ...company, footer_note: e.target.value })} placeholder="Conditions ou message de fin de document" className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" />
+            </div>
           </div>
           {canWrite && (
             <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg font-medium">
