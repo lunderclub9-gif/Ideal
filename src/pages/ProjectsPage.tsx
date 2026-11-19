@@ -98,6 +98,18 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
     }
   }
 
+  async function updateTaskAssignee(task: any, workerId: string) {
+    try {
+      await apiFetch(`/projects/tasks/${task.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ assigned_worker_id: workerId || null }),
+      });
+      await openDetail(selected.project.id);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }
+
   async function handleAddAvenant(e: React.FormEvent) {
     e.preventDefault();
     if (!selected) return;
@@ -303,23 +315,38 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <StatusText status={t.status} />
                     {canWrite && (
-                      <select
-                        value={t.status}
-                        onChange={(e) => updateTaskStatus(t, e.target.value)}
-                        className="px-2 py-1 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-950"
-                      >
-                        <option value="planned">Planifié</option>
-                        <option value="in_progress">En cours</option>
-                        <option value="delayed">En retard</option>
-                        <option value="completed">Terminé</option>
-                      </select>
+                      <>
+                        <select
+                          aria-label={`Responsable de ${t.title}`}
+                          value={t.assigned_worker_id || ''}
+                          onChange={(e) => updateTaskAssignee(t, e.target.value)}
+                          className="max-w-[190px] px-2 py-1 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-950"
+                        >
+                          <option value="">Non assigné</option>
+                          {workers.filter((w) => w.status === 'active' || w.id === t.assigned_worker_id).map((w) => (
+                            <option key={w.id} value={w.id}>{w.full_name}</option>
+                          ))}
+                        </select>
+                        <select
+                          aria-label={`Statut de ${t.title}`}
+                          value={t.status}
+                          onChange={(e) => updateTaskStatus(t, e.target.value)}
+                          className="px-2 py-1 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-950"
+                        >
+                          <option value="planned">Planifié</option>
+                          <option value="in_progress">En cours</option>
+                          <option value="delayed">En retard</option>
+                          <option value="completed">Terminé</option>
+                        </select>
+                      </>
                     )}
                   </div>
                 </div>
               ))}
+              {selected.tasks.length === 0 && <div className="p-8 text-center text-slate-500">Aucune tâche. Ajoutez une tâche puis affectez un salarié.</div>}
             </div>
           </div>
         )}
