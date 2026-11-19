@@ -12,6 +12,7 @@ const { createFullBackup, verifyBackupArchive, restoreFromZip } = await import('
 const { hashPassword, createSessionToken, verifySessionToken } = await import('../server/auth.ts');
 
 try {
+  const companyName = () => (getDb().prepare('SELECT name FROM company_settings WHERE id = 1').get() as { name: string } | undefined)?.name;
   const db = getDb();
   db.prepare("INSERT INTO company_settings (id, name, legal_form) VALUES (1, 'Entreprise de test', 'SARL')").run();
   const userId = Number(db.prepare(
@@ -37,21 +38,21 @@ try {
   const restored = restoreFromZip(fs.readFileSync(backup.file_path), 'test-suite');
   assert.ok(restored.safetyBackup.file_name, 'restore must create a pre-restore safety archive');
   assert.equal(restored.restoredDocs, 1);
-  assert.equal(getDb().prepare('SELECT name FROM company_settings WHERE id = 1').get() as { name: string } | undefined)?.name, 'Entreprise de test');
+  assert.equal(companyName(), 'Entreprise de test');
   assert.equal(fs.readFileSync(path.join(DOCS_DIR, 'General', 'test-document.txt'), 'utf8'), 'original document content');
 
-  const liveName = getDb().prepare('SELECT name FROM company_settings WHERE id = 1').get()?.name;
+  const liveName = companyName();
   const corruptZip = new AdmZip(backup.file_path);
   const manifest = JSON.parse(corruptZip.getEntry('manifest.json')!.getData().toString('utf8'));
   manifest.db_sha256 = '0'.repeat(64);
   corruptZip.updateFile('manifest.json', Buffer.from(JSON.stringify(manifest), 'utf8'));
   assert.throws(() => restoreFromZip(corruptZip.toBuffer(), 'test-suite'), /SHA-256/);
-  assert.equal(getDb().prepare('SELECT name FROM company_settings WHERE id = 1').get() as { name: string } | undefined)?.name, liveName);
+  assert.equal(companyName(), liveName);
 
   const traversalZip = new AdmZip(backup.file_path);
   traversalZip.addFile('Documents/../../outside.txt', Buffer.from('not allowed'));
   assert.throws(() => restoreFromZip(traversalZip.toBuffer(), 'test-suite'), /chemin|Chemin/);
-  assert.equal(getDb().prepare('SELECT name FROM company_settings WHERE id = 1').get()?.name, liveName);
+  assert.equal(companyName(), liveName);
 
   console.log('DATA_PROTECTION_TESTS_OK: backup, SHA-256 verification, restore, session signature and archive path rejection.');
 } finally {
