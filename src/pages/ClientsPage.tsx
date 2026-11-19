@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Download, Eye, Plus, Search, UserCheck } from 'lucide-react';
+import { Download, Eye, Plus, Search, UserCheck, Trash2 } from 'lucide-react';
 import { apiFetch, downloadWithAuth, formatDA, formatDateFr, hasPerm } from '../lib/api';
 import { EmptyState, Modal, PageHeader, StatusText } from '../components/ui';
 
@@ -29,6 +29,7 @@ export default function ClientsPage({ permissions }: { permissions: string[] }) 
   });
 
   const canWrite = hasPerm(permissions, 'clients:write');
+  const canDelete = hasPerm(permissions, 'clients:delete');
 
   async function load() {
     try {
@@ -92,6 +93,18 @@ export default function ClientsPage({ permissions }: { permissions: string[] }) 
         await apiFetch('/clients', { method: 'POST', body: JSON.stringify(form) });
       }
       setModalOpen(false);
+      await load();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }
+
+  async function deleteClient(client: any) {
+    const confirmed = window.confirm(`Supprimer le client « ${client.name} » ? Cette action est réservée aux clients sans chantier associé. Pour les autres, utilisez le statut Inactif.`);
+    if (!confirmed) return;
+    setError('');
+    try {
+      await apiFetch(`/clients/${client.id}`, { method: 'DELETE' });
       await load();
     } catch (err: any) {
       setError(err.message);
@@ -228,6 +241,17 @@ export default function ClientsPage({ permissions }: { permissions: string[] }) 
                           className="px-2.5 py-1 text-xs text-blue-700 dark:text-blue-400 hover:underline"
                         >
                           Modifier
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={() => deleteClient(c)}
+                          title="Supprimer le client (si aucun chantier n’y est lié)"
+                          aria-label={`Supprimer ${c.name}`}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded"
+                        >
+                          <Trash2 className="w-3 h-3" /> Supprimer
                         </button>
                       )}
                     </td>
