@@ -45,7 +45,7 @@ export default function TreasuryPage({
       const [tr, ex, pr, vh] = await Promise.all([
         hasPerm(permissions, 'treasury:read') ? apiFetch('/treasury') : Promise.resolve(null),
         hasPerm(permissions, 'expenses:read') ? apiFetch('/expenses') : Promise.resolve([]),
-        apiFetch('/projects'),
+        hasPerm(permissions, 'projects:read') ? apiFetch('/projects') : Promise.resolve([]),
         hasPerm(permissions, 'vehicles:read') ? apiFetch('/vehicles') : Promise.resolve([]),
       ]);
       setTreasury(tr);
@@ -195,7 +195,6 @@ export default function TreasuryPage({
                     <th className="p-3 text-left">Compte</th>
                     <th className="p-3 text-left">Catégorie / Libellé</th>
                     <th className="p-3 text-right">Montant</th>
-                {canWriteExpenses && <th className="p-3 text-right">Actions</th>}
                     <th className="p-3 text-left">Rapprochement</th>
                   </tr>
                 </thead>
@@ -248,6 +247,7 @@ export default function TreasuryPage({
                 <th className="p-3 text-left">Imputation</th>
                 <th className="p-3 text-left">Véhicule / Paiement</th>
                 <th className="p-3 text-right">Montant</th>
+                {canWriteExpenses && <th className="p-3 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
