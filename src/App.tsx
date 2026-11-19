@@ -155,6 +155,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const active = NAV_ITEMS.find((item) => item.id === route);
+    if (active) setCollapsedGroups((current) => current.filter((group) => group !== active.group));
+  }, [route]);
+
+  useEffect(() => {
     if (!user) return;
     const onKey = (e: KeyboardEvent) => {
       if (!e.altKey) return;
@@ -345,6 +350,7 @@ export default function App() {
                         key={item.id}
                         type="button"
                         onClick={() => navigate(item.id)}
+                        aria-current={active ? 'page' : undefined}
                         className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
                           active
                             ? 'bg-blue-700 text-white'
