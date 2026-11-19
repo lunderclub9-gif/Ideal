@@ -90,7 +90,7 @@ export function createFullBackup(
     String(now.getHours()).padStart(2, '0'),
     String(now.getMinutes()).padStart(2, '0'),
     String(now.getSeconds()).padStart(2, '0'),
-    '-', process.pid,
+    '-', process.pid, '-', crypto.randomBytes(3).toString('hex'),
   ].join('');
 
   const tempSnapshot = path.join(BACKUPS_DIR, `.snapshot-${stamp}.db`);
@@ -210,7 +210,7 @@ export function verifyBackupArchive(filePath: string): { verified: true; documen
     const relative = safeArchivePath(normalized.slice('Documents/'.length));
     const bytes = entry.getData();
     const declared = expected.get(relative);
-    if (declared && (declared.size !== bytes.length || declared.sha256 !== sha256Buffer(bytes))) {
+    if (manifest.files && !declared) throw new Error(`Le document ${relative} ne figure pas dans le manifeste.`);\n    if (declared && (declared.size !== bytes.length || declared.sha256 !== sha256Buffer(bytes))) {
       throw new Error(`Intégrité du document ${relative} incorrecte.`);
     }
     documentCount++;
@@ -301,7 +301,7 @@ export function restoreFromZip(
       if (!target.startsWith(stagedDocs + path.sep)) throw new Error('Chemin de fichier non autorisé dans l’archive.');
       const bytes = entry.getData();
       if (bytes.length !== size) throw new Error('Un fichier de l’archive est incomplet.');
-      if (declared && (declared.size !== bytes.length || declared.sha256 !== sha256Buffer(bytes))) {
+      if (manifest?.files && !declared) throw new Error(`Le document ${rel} ne figure pas dans le manifeste.`);\n      if (declared && (declared.size !== bytes.length || declared.sha256 !== sha256Buffer(bytes))) {
         throw new Error(`La vérification du fichier ${rel} a échoué.`);
       }
       if (fs.existsSync(target)) throw new Error('L’archive contient des chemins de fichiers en double.');
