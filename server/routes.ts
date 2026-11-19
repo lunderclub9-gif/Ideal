@@ -1332,32 +1332,44 @@ router.get('/workers', requireAuth, requirePermission('attendance:read'), (_req,
 
 router.post('/workers', requireAuth, requirePermission('payroll:write'), (req: AuthedRequest, res) => {
   const b = req.body || {};
-  if (!b.full_name?.trim() || !b.job_title?.trim()) {
+  const fullName = String(b.full_name || '').trim();
+  const jobTitle = String(b.job_title || '').trim();
+  const wageType = String(b.wage_type || 'daily');
+  const amounts = [Number(b.daily_wage || 0), Number(b.hourly_rate || 0), Number(b.monthly_salary || 0)];
+  const allowedStatuses = ['active', 'suspended', 'on_leave', 'terminated'];
+  if (!fullName || !jobTitle) {
     res.status(400).json({ error: 'Le nom complet et le poste sont obligatoires.' });
     return;
   }
+  if (!['daily', 'monthly', 'hourly', 'piecework'].includes(wageType)) {
+    res.status(400).json({ error: 'Type de rémunération invalide.' });
+    return;
+  }
+  if (!amounts.every((value) => Number.isFinite(value) && value >= 0)) {
+    res.status(400).json({ error: 'Les montants de rémunération doivent être positifs ou nuls.' });
+    return;
+  }
+  const status = String(b.status || 'active');
+  if (!allowedStatuses.includes(status)) {
+    res.status(400).json({ error: 'Statut du salarié invalide.' });
+    return;
+  }
+  const hireDate = String(b.hire_date || new Date().toISOString().slice(0, 10));
+  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(hireDate) || Number.isNaN(Date.parse(hireDate))) {
+    res.status(400).json({ error: 'Date d’embauche invalide (AAAA-MM-JJ).' });
+    return;
+  }
   const db = getDb();
-  const info = db
-    .prepare(
-      `INSERT INTO workers (full_name, job_title, wage_type, daily_wage, hourly_rate, monthly_salary, work_schedule, hire_date, cnas_number, phone, address, status, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      b.full_name.trim(),
-      b.job_title.trim(),
-      b.wage_type || 'daily',
-      Number(b.daily_wage || 0),
-      Number(b.hourly_rate || 0),
-      Number(b.monthly_salary || 0),
-      b.work_schedule || '08:00 - 16:30',
-      b.hire_date || new Date().toISOString().slice(0, 10),
-      b.cnas_number || '',
-      b.phone || '',
-      b.address || '',
-      b.status || 'active',
-      b.notes || ''
-    );
-  logAudit(req.user!, 'CREATE', 'worker', info.lastInsertRowid, '', b.full_name.trim());
+  const info = db.prepare(
+    `INSERT INTO workers (full_name, job_title, wage_type, daily_wage, hourly_rate, monthly_salary, work_schedule, hire_date, cnas_number, phone, address, status, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    fullName, jobTitle, wageType, amounts[0], amounts[1], amounts[2],
+    String(b.work_schedule || '08:00 - 16:30'), hireDate,
+    String(b.cnas_number || '').trim(), String(b.phone || '').trim(),
+    String(b.address || '').trim(), status, String(b.notes || '').trim()
+  );
+  logAudit(req.user!, 'CREATE', 'worker', info.lastInsertRowid, '', fullName);
   res.status(201).json(db.prepare('SELECT * FROM workers WHERE id = ?').get(info.lastInsertRowid));
 });
 
@@ -1370,23 +1382,43 @@ router.put('/workers/:id', requireAuth, requirePermission('payroll:write'), (req
     res.status(404).json({ error: 'Employé introuvable.' });
     return;
   }
+  const fullName = String(b.full_name ?? old.full_name).trim();
+  const jobTitle = String(b.job_title ?? old.job_title).trim();
+  const wageType = String(b.wage_type ?? old.wage_type);
+  const dailyWage = Number(b.daily_wage ?? old.daily_wage);
+  const hourlyRate = Number(b.hourly_rate ?? old.hourly_rate);
+  const monthlySalary = Number(b.monthly_salary ?? old.monthly_salary);
+  const status = String(b.status ?? old.status);
+  const hireDate = String(b.hire_date ?? old.hire_date);
+  if (!fullName || !jobTitle) {
+    res.status(400).json({ error: 'Le nom complet et le poste sont obligatoires.' });
+    return;
+  }
+  if (!['daily', 'monthly', 'hourly', 'piecework'].includes(wageType)) {
+    res.status(400).json({ error: 'Type de rémunération invalide.' });
+    return;
+  }
+  if (![dailyWage, hourlyRate, monthlySalary].every((value) => Number.isFinite(value) && value >= 0)) {
+    res.status(400).json({ error: 'Les montants de rémunération doivent être positifs ou nuls.' });
+    return;
+  }
+  if (!['active', 'suspended', 'on_leave', 'terminated'].includes(status)) {
+    res.status(400).json({ error: 'Statut du salarié invalide.' });
+    return;
+  }
+  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(hireDate) || Number.isNaN(Date.parse(hireDate))) {
+    res.status(400).json({ error: 'Date d’embauche invalide (AAAA-MM-JJ).' });
+    return;
+  }
   db.prepare(
-    `UPDATE workers SET full_name=?, job_title=?, wage_type=?, daily_wage=?, hourly_rate=?, monthly_salary=?, cnas_number=?, phone=?, address=?, status=?, notes=? WHERE id=?`
+    `UPDATE workers SET full_name=?, job_title=?, wage_type=?, daily_wage=?, hourly_rate=?, monthly_salary=?, work_schedule=?, hire_date=?, cnas_number=?, phone=?, address=?, status=?, notes=? WHERE id=?`
   ).run(
-    b.full_name ?? old.full_name,
-    b.job_title ?? old.job_title,
-    b.wage_type ?? old.wage_type,
-    b.daily_wage !== undefined ? Number(b.daily_wage) : old.daily_wage,
-    b.hourly_rate !== undefined ? Number(b.hourly_rate) : old.hourly_rate,
-    b.monthly_salary !== undefined ? Number(b.monthly_salary) : old.monthly_salary,
-    b.cnas_number ?? old.cnas_number,
-    b.phone ?? old.phone,
-    b.address ?? old.address,
-    b.status ?? old.status,
-    b.notes ?? old.notes,
-    id
+    fullName, jobTitle, wageType, dailyWage, hourlyRate, monthlySalary,
+    b.work_schedule ?? old.work_schedule, hireDate,
+    b.cnas_number ?? old.cnas_number, b.phone ?? old.phone,
+    b.address ?? old.address, status, b.notes ?? old.notes, id
   );
-  logAudit(req.user!, 'UPDATE', 'worker', id, old.full_name, b.full_name ?? old.full_name);
+  logAudit(req.user!, 'UPDATE', 'worker', id, old.full_name, fullName);
   res.json(db.prepare('SELECT * FROM workers WHERE id = ?').get(id));
 });
 
