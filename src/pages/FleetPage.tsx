@@ -54,6 +54,11 @@ export default function FleetPage({
     parts_cost: 0,
     labor_cost: 0,
     project_id: '',
+    repair_date: new Date().toISOString().slice(0, 10),
+    parts_used: '',
+    towing_cost: 0,
+    downtime_days: 0,
+    status: 'waiting',
   });
   const [coForm, setCoForm] = useState({ worker_id: '', project_id: '', expected_return_date: '' });
 
@@ -162,7 +167,7 @@ export default function FleetPage({
 
   function openNewRepair() {
     setEditingRepair(null);
-    setRepForm({ vehicle_id: '', problem_category: 'engine', description: '', priority: 'normal', workshop: '', parts_cost: 0, labor_cost: 0, towing_cost: 0, project_id: '' });
+    setRepForm({ vehicle_id: '', problem_category: 'engine', description: '', priority: 'normal', workshop: '', parts_cost: 0, labor_cost: 0, towing_cost: 0, project_id: '', repair_date: new Date().toISOString().slice(0, 10), parts_used: '', downtime_days: 0, status: 'waiting' });
     setRepairModal(true);
   }
 
@@ -178,6 +183,10 @@ export default function FleetPage({
       labor_cost: Number(order.labor_cost || 0),
       towing_cost: Number(order.towing_cost || 0),
       project_id: order.project_id ? String(order.project_id) : '',
+      repair_date: order.repair_date || new Date().toISOString().slice(0, 10),
+      parts_used: order.parts_used || '',
+      downtime_days: Number(order.downtime_days || 0),
+      status: order.status || 'waiting',
     });
     setRepairModal(true);
   }
@@ -576,7 +585,7 @@ export default function FleetPage({
             </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="block font-medium mb-1">Date intervention</label><input type="date" value={repForm.repair_date || editingRepair?.repair_date || new Date().toISOString().slice(0,10)} onChange={e => setRepForm({ ...repForm, repair_date: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
+            <div><label className="block font-medium mb-1">Date intervention</label><input type="date" value={repForm.repair_date} onChange={e => setRepForm({ ...repForm, repair_date: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
             <div><label className="block font-medium mb-1">Priorité</label><select value={repForm.priority} onChange={e => setRepForm({ ...repForm, priority: e.target.value })} className="w-full px-3 py-2 border rounded-lg"><option value="low">Basse</option><option value="normal">Normale</option><option value="high">Haute</option><option value="urgent">Urgente</option></select></div>
           </div>
           <div><label className="block font-medium mb-1">Atelier</label><input value={repForm.workshop} onChange={e => setRepForm({ ...repForm, workshop: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
@@ -585,6 +594,7 @@ export default function FleetPage({
             <div><label className="block font-medium mb-1">Remorquage (DA)</label><input type="number" min="0" value={repForm.towing_cost || 0} onChange={e => setRepForm({ ...repForm, towing_cost: Number(e.target.value) })} className="w-full px-3 py-2 border rounded-lg" /></div>
             <div><label className="block font-medium mb-1">Jours d’immobilisation</label><input type="number" min="0" value={repForm.downtime_days || 0} onChange={e => setRepForm({ ...repForm, downtime_days: Number(e.target.value) })} className="w-full px-3 py-2 border rounded-lg" /></div>
           </div>
+          {editingRepair && <div><label className="block font-medium mb-1">Statut de l’ordre</label><select value={repForm.status} onChange={e => setRepForm({ ...repForm, status: e.target.value })} className="w-full px-3 py-2 border rounded-lg"><option value="waiting">En attente</option><option value="in_progress">En cours</option><option value="completed">Terminé</option></select></div>}
           <div><label className="block font-medium mb-1">Chantier imputé</label><select value={repForm.project_id || ''} onChange={e => setRepForm({ ...repForm, project_id: e.target.value })} className="w-full px-3 py-2 border rounded-lg"><option value="">Parc général</option>{projects.map(pr => <option key={pr.id} value={pr.id}>{pr.project_number} — {pr.title}</option>)}</select></div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setCheckoutTool(null)} className="px-3 py-2 border rounded-lg">Annuler</button>
