@@ -27,6 +27,7 @@ export default function FleetPage({
     insurance_expiry: '', inspection_expiry: '', notes: '',
   });
   const [fuelModal, setFuelModal] = useState(false);
+  const [editingFuel, setEditingFuel] = useState<any | null>(null);
   const [repairModal, setRepairModal] = useState(false);
   const [checkoutTool, setCheckoutTool] = useState<any | null>(null);
   const [error, setError] = useState('');
@@ -123,11 +124,35 @@ export default function FleetPage({
     } catch (err: any) { setError(err.message); }
   }
 
+  function openNewFuel() {
+    setEditingFuel(null);
+    setFuelForm({ date: new Date().toISOString().slice(0, 10), vehicle_id: '', driver_worker_id: '', liters: 50, price_per_liter: 29.01, odometer_before: 0, odometer_after: 0, project_id: '', fuel_station: 'Naftal', trip_purpose: '' });
+    setFuelModal(true);
+  }
+
+  function openEditFuel(entry: any) {
+    setEditingFuel(entry);
+    setFuelForm({
+      date: entry.date || new Date().toISOString().slice(0, 10),
+      vehicle_id: String(entry.vehicle_id),
+      driver_worker_id: entry.driver_worker_id ? String(entry.driver_worker_id) : '',
+      liters: Number(entry.liters || 0),
+      price_per_liter: Number(entry.price_per_liter || 0),
+      odometer_before: Number(entry.odometer_before || 0),
+      odometer_after: Number(entry.odometer_after || 0),
+      project_id: entry.project_id ? String(entry.project_id) : '',
+      fuel_station: entry.fuel_station || 'Naftal',
+      trip_purpose: entry.trip_purpose || '',
+    });
+    setFuelModal(true);
+  }
+
   async function saveFuel(e: React.FormEvent) {
     e.preventDefault();
     try {
-      await apiFetch('/fuel-entries', { method: 'POST', body: JSON.stringify(fuelForm) });
+      await apiFetch(editingFuel ? `/fuel-entries/${editingFuel.id}` : '/fuel-entries', { method: editingFuel ? 'PUT' : 'POST', body: JSON.stringify(fuelForm) });
       setFuelModal(false);
+      setEditingFuel(null);
       await load();
     } catch (err: any) {
       setError(err.message);
@@ -196,7 +221,7 @@ export default function FleetPage({
           <div className="flex flex-wrap gap-2">
             {section === 'vehicles' && canVehicles && <button type="button" onClick={openNewVehicle} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-emerald-700 rounded-lg"><Plus className="w-3.5 h-3.5" /> Ajouter un véhicule</button>}
             {canFuel && (
-              <button type="button" onClick={() => setFuelModal(true)} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-blue-700 rounded-lg">
+              <button type="button" onClick={openNewFuel} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-blue-700 rounded-lg">
                 <Fuel className="w-3.5 h-3.5" /> Saisir plein carburant
               </button>
             )}
@@ -345,6 +370,7 @@ export default function FleetPage({
                 <th className="p-3 text-right">Distance</th>
                 <th className="p-3 text-right">L / 100 km</th>
                 <th className="p-3 text-right">Coût</th>
+                {canFuel && <th className="p-3 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -359,6 +385,7 @@ export default function FleetPage({
                     {f.l_per_100 !== null ? `${f.l_per_100} L/100` : '—'}
                   </td>
                   <td className="p-3 text-right font-mono tabular-nums font-bold">{formatDA(f.total_cost)}</td>
+                  {canFuel && <td className="p-3 text-right"><button type="button" onClick={() => openEditFuel(f)} className="inline-flex items-center gap-1 px-2 py-1.5 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">Modifier</button></td>}
                 </tr>
               ))}
             </tbody>
@@ -428,12 +455,12 @@ export default function FleetPage({
         </form>
       </Modal>
 
-      <Modal open={fuelModal} onClose={() => setFuelModal(false)} title="Enregistrer un plein de carburant">
+      <Modal open={fuelModal} onClose={() => setFuelModal(false)} title={editingFuel ? "Modifier le plein de carburant" : "Enregistrer un plein de carburant"}>
         <form onSubmit={saveFuel} className="space-y-3 text-xs">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-medium mb-1">Véhicule / Engin *</label>
-              <select required value={fuelForm.vehicle_id} onChange={(e) => setFuelForm({ ...fuelForm, vehicle_id: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950">
+              <select required value={fuelForm.vehicle_id} disabled={!!editingFuel} onChange={(e) => setFuelForm({ ...fuelForm, vehicle_id: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950">
                 <option value="">Sélectionner...</option>
                 {vehicles.map((v) => <option key={v.id} value={v.id}>{v.name} ({v.registration})</option>)}
               </select>
@@ -463,8 +490,8 @@ export default function FleetPage({
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setFuelModal(false)} className="px-3 py-2 border rounded-lg">Annuler</button>
-            <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg">Enregistrer</button>
+            <button type="button" onClick={() => { setFuelModal(false); setEditingFuel(null); }} className="px-3 py-2 border rounded-lg">Annuler</button>
+            <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg">{editingFuel ? "Enregistrer les modifications" : "Enregistrer"}</button>
           </div>
         </form>
       </Modal>
