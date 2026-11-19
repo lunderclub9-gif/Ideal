@@ -4,16 +4,18 @@ import { apiFetch, downloadWithAuth, formatDA, formatDateFr, hasPerm } from '../
 import { Modal, PageHeader, StatusText } from '../components/ui';
 
 export default function AttendancePage({ permissions }: { permissions: string[] }) {
+  const now = new Date();
+  const todayLocal = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   const [rows, setRows] = useState<any[]>([]);
   const [workers, setWorkers] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
-  const [dateFilter, setDateFilter] = useState('2026-11-19');
+  const [dateFilter, setDateFilter] = useState(todayLocal);
   const [showAllDates, setShowAllDates] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [error, setError] = useState('');
 
   const [form, setForm] = useState({
-    attendance_date: '2026-11-19',
+    attendance_date: todayLocal,
     worker_id: '',
     project_id: '',
     status: 'present',
@@ -52,6 +54,7 @@ export default function AttendancePage({ permissions }: { permissions: string[] 
     try {
       await apiFetch('/attendance', { method: 'POST', body: JSON.stringify(form) });
       setCreateOpen(false);
+      setForm({ attendance_date: todayLocal, worker_id: '', project_id: '', status: 'present', day_fraction: 1, overtime_hours: 0, advance_amount: 0, notes: '' });
       await load();
     } catch (err: any) {
       setError(err.message);
@@ -196,6 +199,7 @@ export default function AttendancePage({ permissions }: { permissions: string[] 
                   </td>
                 </tr>
               ))}
+              {rows.length === 0 && <tr><td colSpan={9} className="p-8 text-center text-slate-500">Aucun pointage pour cette sélection.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -223,7 +227,7 @@ export default function AttendancePage({ permissions }: { permissions: string[] 
                 className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"
               >
                 <option value="">Sélectionner...</option>
-                {workers.map((w) => (
+                {workers.filter((w) => w.status !== 'terminated' && w.status !== 'suspended').map((w) => (
                   <option key={w.id} value={w.id}>{w.full_name} ({w.job_title})</option>
                 ))}
               </select>
@@ -247,6 +251,8 @@ export default function AttendancePage({ permissions }: { permissions: string[] 
                 <option value="absent">Absent (0 jour)</option>
                 <option value="paid_leave">Congé payé</option>
                 <option value="unpaid_leave">Congé sans solde</option>
+                <option value="sick_leave">Arrêt maladie</option>
+                <option value="holiday">Jour férié</option>
               </select>
             </div>
             <div>
