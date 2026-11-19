@@ -2947,7 +2947,8 @@ router.get('/finance/debts', requireAuth, requirePermission('treasury:read'), (_
      ORDER BY w.full_name COLLATE NOCASE`
   ).all() as any[];
 
-  const now = new Date();\n  const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0,10);
+  const now = new Date();
+  const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0,10);
   const ageDays = (date: string | null) => {
     if (!date) return 0;
     const parsed = Date.parse(String(date).slice(0,10) + 'T00:00:00Z');
