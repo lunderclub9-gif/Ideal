@@ -3179,6 +3179,55 @@ router.get('/finance/debts', requireAuth, requirePermission('treasury:read'), (_
   });
 });
 
+
+router.get('/finance/debts/export/xlsx', requireAuth, requirePermission('treasury:read'), (_req, res) => {
+  const db = getDb();
+  const receivables = db.prepare(
+    `SELECT d.doc_number AS Facture, c.name AS Client, d.issue_date AS Date_emission,
+            d.due_date AS Echeance, d.total_ttc AS Total_TTC_DA, d.amount_paid AS Regle_DA,
+            COALESCE((SELECT SUM(a.total_ttc) FROM commercial_documents a
+                      WHERE a.doc_type='avoir' AND a.linked_doc_id=d.id
+                        AND a.status NOT IN ('draft','cancelled')), 0) AS Avoirs_DA,
+            MAX(0, d.total_ttc-d.amount_paid-COALESCE((SELECT SUM(a.total_ttc)
+              FROM commercial_documents a WHERE a.doc_type='avoir' AND a.linked_doc_id=d.id
+              AND a.status NOT IN ('draft','cancelled')),0)) AS Reste_Du_DA
+     FROM commercial_documents d JOIN clients c ON c.id=d.client_id
+     WHERE d.doc_type='facture' AND d.status NOT IN ('draft','cancelled')
+       AND MAX(0, d.total_ttc-d.amount_paid-COALESCE((SELECT SUM(a.total_ttc)
+         FROM commercial_documents a WHERE a.doc_type='avoir' AND a.linked_doc_id=d.id
+         AND a.status NOT IN ('draft','cancelled')),0)) > 0
+     ORDER BY COALESCE(d.due_date,d.issue_date), d.id`
+  ).all();
+  const payables = db.prepare(
+    `SELECT pu.po_number AS Commande, pu.supplier_invoice_no AS Facture_Fournisseur,
+            s.name AS Fournisseur, pu.order_date AS Date_commande, pu.total_ttc AS Total_TTC_DA,
+            pu.amount_paid AS Regle_DA, MAX(0,pu.total_ttc-pu.amount_paid) AS Reste_Du_DA,
+            p.project_number AS Code_Chantier, p.title AS Chantier
+     FROM purchases pu JOIN suppliers s ON s.id=pu.supplier_id
+     LEFT JOIN projects p ON p.id=pu.project_id
+     WHERE pu.status IN ('ordered','received','partial_paid','paid')
+       AND MAX(0,pu.total_ttc-pu.amount_paid)>0
+     ORDER BY pu.order_date, pu.id`
+  ).all();
+  const advances = db.prepare(
+    `SELECT w.full_name AS Salarie, w.job_title AS Poste,
+            COALESCE(SUM(a.advance_amount),0) AS Avances_Versees_DA,
+            COALESCE((SELECT SUM(ps.advances_deducted) FROM payslips ps
+              JOIN payroll_periods pp ON pp.id=ps.payroll_period_id
+              WHERE ps.worker_id=w.id AND pp.status='approved'),0) AS Recuperees_DA,
+            MAX(0,COALESCE(SUM(a.advance_amount),0)-COALESCE((SELECT SUM(ps.advances_deducted)
+              FROM payslips ps JOIN payroll_periods pp ON pp.id=ps.payroll_period_id
+              WHERE ps.worker_id=w.id AND pp.status='approved'),0)) AS Solde_DA
+     FROM workers w LEFT JOIN attendance a ON a.worker_id=w.id AND a.approval_status='approved'
+     GROUP BY w.id HAVING Solde_DA>0 ORDER BY w.full_name COLLATE NOCASE`
+  ).all();
+  sendXlsx(res, 'dettes_creances_gestionpro_dz.xlsx', [
+    { name: 'Creances_Clients', rows: receivables },
+    { name: 'Dettes_Fournisseurs', rows: payables },
+    { name: 'Avances_Salaries', rows: advances },
+  ]);
+});
+
 // ==================== REPORTS ====================
 router.get('/reports/summary', requireAuth, requirePermission('reports:read'), (_req, res) => {
   const db = getDb();
