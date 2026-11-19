@@ -2292,7 +2292,7 @@ router.post('/purchases/:id/payments', requireAuth, requirePermission('suppliers
   const id = Number(req.params.id);
   const b = req.body || {};
   const amount = round2(Number(b.amount || 0));
-  if (amount <= 0) {
+  if (!Number.isFinite(amount) || amount <= 0) {
     res.status(400).json({ error: 'Montant invalide.' });
     return;
   }
@@ -2300,6 +2300,10 @@ router.post('/purchases/:id/payments', requireAuth, requirePermission('suppliers
   const pu = db.prepare('SELECT * FROM purchases WHERE id = ?').get(id) as any;
   if (!pu) {
     res.status(404).json({ error: 'Achat introuvable.' });
+    return;
+  }
+  if (pu.status === 'cancelled') {
+    res.status(400).json({ error: 'Un bon de commande annulé ne peut plus recevoir de paiement.' });
     return;
   }
   const rem = round2(pu.total_ttc - pu.amount_paid);
