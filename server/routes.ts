@@ -1220,17 +1220,37 @@ router.post('/payments/:id/reverse', requireAuth, requirePermission('invoices:ap
       const doc = db.prepare('SELECT * FROM commercial_documents WHERE id = ?').get(orig.document_id) as any;
       if (doc) {
         const newPaid = Math.max(0, round2(doc.amount_paid - orig.amount));
-        const newStatus = newPaid <= 0 ? 'issued' : newPaid >= doc.total_ttc ? 'paid' : 'partial';
+        const newStatus = newPaid <= 0 ? 'issued' : newPaid >= doc.total_ttc - 0.01 ? 'paid' : 'partial';
         db.prepare('UPDATE commercial_documents SET amount_paid=?, status=? WHERE id=?').run(newPaid, newStatus, doc.id);
+      }
+    }
+
+    // Supplier payment reversals must restore the purchase balance and its
+    // operational status as well as reverse the corresponding treasury flow.
+    if (orig.purchase_id) {
+      const purchase = db.prepare('SELECT * FROM purchases WHERE id = ?').get(orig.purchase_id) as any;
+      if (purchase) {
+        const newPaid = Math.max(0, round2(Number(purchase.amount_paid || 0) - Number(orig.amount || 0)));
+        const hasReceivedStock = !!db.prepare(
+          "SELECT id FROM stock_movements WHERE reference = ? AND movement_type = 'entry' LIMIT 1"
+        ).get(purchase.po_number);
+        const newStatus = newPaid >= purchase.total_ttc - 0.01
+          ? 'paid'
+          : newPaid > 0
+            ? 'partial_paid'
+            : hasReceivedStock
+              ? 'received'
+              : 'ordered';
+        db.prepare('UPDATE purchases SET amount_paid=?, status=? WHERE id=?').run(newPaid, newStatus, purchase.id);
       }
     }
 
     const account = orig.payment_method === 'Espèces' ? 'Caisse' : 'Banque';
     const txType = orig.direction === 'inflow' ? (account === 'Caisse' ? 'cash_outflow' : 'bank_outflow') : (account === 'Caisse' ? 'cash_inflow' : 'bank_inflow');
     db.prepare(
-      `INSERT INTO treasury_transactions (tx_date, tx_type, account, category, amount, payment_method, client_id, linked_payment_id, notes, user_id)
-       VALUES (?, ?, ?, 'Annulation règlement', ?, ?, ?, ?, ?, ?)`
-    ).run(new Date().toISOString().slice(0, 10), txType, account, orig.amount, orig.payment_method, orig.client_id, revInfo.lastInsertRowid, reason || revNumber, req.user!.id);
+      `INSERT INTO treasury_transactions (tx_date, tx_type, account, category, amount, payment_method, client_id, supplier_id, linked_payment_id, notes, user_id)
+       VALUES (?, ?, ?, 'Annulation règlement', ?, ?, ?, ?, ?, ?, ?)`
+    ).run(new Date().toISOString().slice(0, 10), txType, account, orig.amount, orig.payment_method, orig.client_id, orig.supplier_id, revInfo.lastInsertRowid, reason || revNumber, req.user!.id);
   })();
 
   logAudit(req.user!, 'REVERSE', 'payment', orig.receipt_number, `${orig.amount} DA`, reason || 'Contre-passation');
@@ -2867,6 +2887,93 @@ router.delete('/documents/:id', requireAuth, requirePermission('documents:delete
   db.prepare('UPDATE documents SET archived = 1 WHERE id = ?').run(id);
   logAudit(req.user!, 'ARCHIVE', 'document', id, '', 'Archivé');
   res.json({ ok: true });
+});
+
+// ==================== DEBTS & RECEIVABLES CONTROL ====================
+router.get('/finance/debts', requireAuth, requirePermission('reports:read'), (_req, res) => {
+  const db = getDb();
+
+  // Receivables are computed from issued invoices, net of recorded receipts
+  // and linked credit notes. Draft/cancelled documents never create a debt.
+  const receivables = db.prepare(
+    `SELECT d.id, d.doc_number, d.client_id, c.name AS party_name,
+            d.issue_date, d.due_date, d.total_ttc, d.amount_paid, d.status,
+            COALESCE((SELECT SUM(a.total_ttc) FROM commercial_documents a
+                      WHERE a.doc_type='avoir' AND a.linked_doc_id=d.id
+                        AND a.status NOT IN ('draft','cancelled')), 0) AS credits_applied,
+            MAX(0, d.total_ttc - d.amount_paid -
+              COALESCE((SELECT SUM(a.total_ttc) FROM commercial_documents a
+                        WHERE a.doc_type='avoir' AND a.linked_doc_id=d.id
+                          AND a.status NOT IN ('draft','cancelled')), 0)) AS balance_due
+     FROM commercial_documents d
+     JOIN clients c ON c.id=d.client_id
+     WHERE d.doc_type='facture' AND d.status NOT IN ('draft','cancelled')
+     ORDER BY COALESCE(d.due_date,d.issue_date) ASC, d.id ASC`
+  ).all() as any[];
+
+  const payables = db.prepare(
+    `SELECT pu.id, pu.po_number AS reference, pu.supplier_invoice_no, pu.supplier_id,
+            s.name AS party_name, pu.order_date AS issue_date, pu.total_ttc,
+            pu.amount_paid, pu.status,
+            MAX(0, pu.total_ttc - pu.amount_paid) AS balance_due,
+            pu.project_id, pr.project_number, pr.title AS project_title
+     FROM purchases pu
+     JOIN suppliers s ON s.id=pu.supplier_id
+     LEFT JOIN projects pr ON pr.id=pu.project_id
+     WHERE pu.status != 'cancelled'
+     ORDER BY pu.order_date ASC, pu.id ASC`
+  ).all() as any[];
+
+  const workerAdvances = db.prepare(
+    `SELECT w.id AS worker_id, w.full_name AS party_name, w.job_title,
+            COALESCE(SUM(a.advance_amount),0) AS advances_issued,
+            COALESCE((SELECT SUM(ps.advances_deducted)
+                      FROM payslips ps
+                      JOIN payroll_periods pp ON pp.id=ps.payroll_period_id
+                      WHERE ps.worker_id=w.id AND pp.status='approved'),0) AS advances_recovered
+     FROM workers w
+     LEFT JOIN attendance a ON a.worker_id=w.id
+     GROUP BY w.id
+     HAVING advances_issued > 0
+     ORDER BY w.full_name COLLATE NOCASE`
+  ).all() as any[];
+
+  const today = new Date().toISOString().slice(0,10);
+  const ageDays = (date: string | null) => {
+    if (!date) return 0;
+    const parsed = Date.parse(String(date).slice(0,10) + 'T00:00:00Z');
+    return Number.isFinite(parsed) ? Math.max(0, Math.floor((Date.parse(today + 'T00:00:00Z') - parsed) / 86400000)) : 0;
+  };
+  for (const row of receivables) {
+    row.balance_due = round2(Number(row.balance_due || 0));
+    row.days_overdue = row.due_date && row.balance_due > 0 ? Math.max(0, ageDays(row.due_date) - 0) : 0;
+    row.age_days = ageDays(row.issue_date);
+  }
+  for (const row of payables) {
+    row.balance_due = round2(Number(row.balance_due || 0));
+    row.age_days = ageDays(row.issue_date);
+  }
+  for (const row of workerAdvances) {
+    row.advances_issued = round2(Number(row.advances_issued || 0));
+    row.advances_recovered = round2(Number(row.advances_recovered || 0));
+    row.balance_due = round2(Math.max(0, row.advances_issued - row.advances_recovered));
+  }
+
+  const totalReceivable = round2(receivables.reduce((sum, row) => sum + row.balance_due, 0));
+  const totalPayable = round2(payables.reduce((sum, row) => sum + row.balance_due, 0));
+  const totalWorkerAdvances = round2(workerAdvances.reduce((sum, row) => sum + row.balance_due, 0));
+  res.json({
+    as_of: today,
+    summary: {
+      receivables: totalReceivable,
+      supplier_payables: totalPayable,
+      worker_advances: totalWorkerAdvances,
+      net_position: round2(totalReceivable - totalPayable - totalWorkerAdvances),
+    },
+    receivables: receivables.filter((row) => row.balance_due > 0),
+    payables: payables.filter((row) => row.balance_due > 0),
+    worker_advances: workerAdvances.filter((row) => row.balance_due > 0),
+  });
 });
 
 // ==================== REPORTS ====================
