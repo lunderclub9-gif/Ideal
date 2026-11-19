@@ -445,7 +445,7 @@ router.post('/clients', requireAuth, requirePermission('clients:write'), (req: A
       b.ai || '',
       b.payment_terms || 'Virement',
       Number(b.credit_limit || 0),
-      b.notes || '',
+      notes,
       b.status || 'active'
     );
   const created = db.prepare('SELECT * FROM clients WHERE id = ?').get(info.lastInsertRowid);
@@ -2844,11 +2844,14 @@ router.get('/documents', requireAuth, requirePermission('documents:read'), (_req
 router.post('/documents', requireAuth, requirePermission('documents:write'), uploadMemory.single('file'), (req: AuthedRequest, res) => {
   const file = req.file;
   const b = req.body || {};
-  if (!file || !b.title?.trim()) {
-    res.status(400).json({ error: 'Fichier et intitulé du document sont obligatoires.' });
+  const title = String(b.title || '').trim();
+  const cat = String(b.category || 'General').trim();
+  const docDate = String(b.doc_date || new Date().toISOString().slice(0, 10));
+  const notes = String(b.notes || '');
+  if (!file || !title || title.length > 180 || cat.length > 40 || notes.length > 1000 || !/^\\d{4}-\\d{2}-\\d{2}$/.test(docDate)) {
+    res.status(400).json({ error: 'Fichier, intitulé, catégorie, date ou notes invalides.' });
     return;
   }
-  const cat = String(b.category || 'General');
   let relation: { type: string; id: number | null };
   try {
     relation = resolveDocumentRelation(b.related_type, b.related_id);
@@ -2880,13 +2883,13 @@ router.post('/documents', requireAuth, requirePermission('documents:write'), upl
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
-      b.title.trim(),
+      title,
       cat,
       file.originalname,
       relPath,
       file.mimetype,
       file.size,
-      b.doc_date || new Date().toISOString().slice(0, 10),
+      docDate,
       relation.type,
       relation.id,
       b.notes || '',
