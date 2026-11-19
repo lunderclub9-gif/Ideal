@@ -2915,7 +2915,7 @@ router.put('/documents/:id', requireAuth, requirePermission('documents:write'), 
     res.status(400).json({ error: error.message });
     return;
   }
-  if (!title || title.length > 180 || !/^\\d{4}-\\d{2}-\\d{2}$/.test(docDate) || notes.length > 1000 || !category || category.length > 40) {
+  if (!title || title.length > 180 || !/^\d{4}-\d{2}-\d{2}$/.test(docDate) || notes.length > 1000 || !category || category.length > 40) {
     res.status(400).json({ error: 'Intitulé, catégorie, date ou notes invalides.' });
     return;
   }
