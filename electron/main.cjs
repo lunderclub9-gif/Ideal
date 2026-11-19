@@ -38,7 +38,11 @@ function waitForServer(child, timeoutMs = 30000) {
 }
 
 function startLocalServer() {
-  const serverPath = path.join(app.getAppPath(), 'dist-server', 'server.cjs');
+  // Child processes cannot execute JavaScript directly from inside app.asar.
+  // electron-builder unpacks dist-server so the bundled server can be spawned reliably.
+  const serverPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'dist-server', 'server.cjs')
+    : path.join(app.getAppPath(), 'dist-server', 'server.cjs');
   const userDataPath = app.getPath('userData');
   const dataPath = path.join(userDataPath, 'data');
   const secretPath = path.join(userDataPath, 'session-secret');
