@@ -1375,7 +1375,7 @@ router.post('/workers', requireAuth, requirePermission('payroll:write'), (req: A
     return;
   }
   const hireDate = String(b.hire_date || new Date().toISOString().slice(0, 10));
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(hireDate) || Number.isNaN(Date.parse(hireDate))) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(hireDate) || Number.isNaN(Date.parse(hireDate))) {
     res.status(400).json({ error: 'Date d’embauche invalide (AAAA-MM-JJ).' });
     return;
   }
@@ -1426,7 +1426,7 @@ router.put('/workers/:id', requireAuth, requirePermission('payroll:write'), (req
     res.status(400).json({ error: 'Statut du salarié invalide.' });
     return;
   }
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(hireDate) || Number.isNaN(Date.parse(hireDate))) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(hireDate) || Number.isNaN(Date.parse(hireDate))) {
     res.status(400).json({ error: 'Date d’embauche invalide (AAAA-MM-JJ).' });
     return;
   }
@@ -1504,7 +1504,7 @@ router.post('/attendance', requireAuth, requirePermission('attendance:write'), (
   const overtimeHours = Number(b.overtime_hours || 0);
   const advanceAmount = Number(b.advance_amount || 0);
 
-  if (!workerId || !attDate || !/^\\d{4}-\\d{2}-\\d{2}$/.test(String(attDate)) || Number.isNaN(Date.parse(String(attDate)))) {
+  if (!workerId || !attDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(attDate)) || Number.isNaN(Date.parse(String(attDate)))) {
     res.status(400).json({ error: 'Employé et date de pointage valide (AAAA-MM-JJ) sont obligatoires.' });
     return;
   }
