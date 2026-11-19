@@ -2238,6 +2238,19 @@ router.post('/purchases', requireAuth, requirePermission('suppliers:write'), (re
   res.status(201).json(db.prepare('SELECT * FROM purchases WHERE id = ?').get(poId));
 });
 
+router.post('/purchases/:id/cancel', requireAuth, requirePermission('suppliers:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const purchase = db.prepare('SELECT * FROM purchases WHERE id=?').get(id) as any;
+  if (!purchase) { res.status(404).json({ error: 'Bon de commande introuvable.' }); return; }
+  if (!['ordered','requested'].includes(purchase.status) || Number(purchase.amount_paid || 0) > 0) {
+    res.status(400).json({ error: 'Seules les commandes non réceptionnées et sans règlement peuvent être annulées.' }); return;
+  }
+  db.prepare("UPDATE purchases SET status='cancelled' WHERE id=?").run(id);
+  logAudit(req.user!, 'CANCEL', 'purchase', purchase.po_number, purchase.status, 'cancelled');
+  res.json({ ok: true, status: 'cancelled' });
+});
+
 router.post('/purchases/:id/receive', requireAuth, requirePermission('suppliers:write'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
