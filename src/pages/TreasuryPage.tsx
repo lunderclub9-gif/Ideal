@@ -30,6 +30,7 @@ export default function TreasuryPage({
     amount: 0,
     payment_method: 'Espèces',
     project_id: '',
+    vehicle_id: '',
     is_overhead: false,
   });
 
