@@ -16,7 +16,7 @@ function logStartup(message) {
   } catch {}
 }
 
-function waitForServer(child, timeoutMs = 30000) {
+function waitForServer(child, timeoutMs = 60000) {
   return new Promise((resolve, reject) => {
     let output = '';
     const timeout = setTimeout(() => reject(new Error('Le serveur local n’a pas démarré dans le délai prévu.')), timeoutMs);
@@ -105,7 +105,7 @@ else {
     if (mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus(); }
   });
   app.whenReady().then(async () => {
-    app.setPath('userData', path.join(app.getPath('appData'), 'GestionPro-DZ'));
+    app.setPath('userData', process.env.GESTIONPRO_SMOKE_USER_DATA || path.join(app.getPath('appData'), 'GestionPro-DZ'));
     app.setAppUserModelId('dz.gestionpro.desktop');
     try { await createMainWindow(); }
     catch (error) { logStartup(`APPLICATION STARTUP ERROR: ${error?.stack || error}`); stopServer(); dialog.showErrorBox('GestionPro DZ', error?.message || 'Impossible de démarrer le serveur local.'); app.quit(); }
