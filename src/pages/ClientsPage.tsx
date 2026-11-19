@@ -263,9 +263,10 @@ export default function ClientsPage({ permissions }: { permissions: string[] }) 
                         <button
                           type="button"
                           onClick={() => deleteClient(c)}
-                          title="Supprimer le client (si aucun chantier n’y est lié)"
+                          title={Number(c.project_count || 0) > 0 ? "Impossible : ce client est lié à un chantier. Utilisez Archiver." : "Supprimer définitivement ce client"}
                           aria-label={`Supprimer ${c.name}`}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded"
+                          disabled={Number(c.project_count || 0) > 0}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           <Trash2 className="w-3 h-3" /> Supprimer
                         </button>
