@@ -1,8 +1,8 @@
 # GestionPro DZ
 
-Application de gestion intégrée destinée aux entreprises algériennes du bâtiment, des travaux publics (BTP) et des services.
+Application de bureau Windows locale destinée aux entreprises algériennes du bâtiment, des travaux publics (BTP) et des services.
 
-GestionPro DZ regroupe dans une interface web locale la gestion des chantiers, des clients, des équipes, des achats, des stocks, du parc matériel, de la facturation et de la trésorerie. L'interface actuelle est principalement en français et utilise le dinar algérien (DZD).
+GestionPro DZ regroupe dans une application de bureau Windows la gestion des chantiers, des clients, des équipes, des achats, des stocks, du parc matériel, de la facturation et de la trésorerie. L'interface actuelle est principalement en français et utilise le dinar algérien (DZD).
 
 > **État du projet :** dépôt en développement. Ce README décrit les fonctionnalités repérées dans le code source. Il ne constitue pas une certification de mise en production : les parcours métier, les calculs réglementaires, la sécurité et la restauration doivent encore être testés sur un environnement de validation.
 
@@ -50,84 +50,77 @@ GestionPro DZ regroupe dans une interface web locale la gestion des chantiers, d
 - **Base de données :** SQLite avec better-sqlite3, mode WAL et clés étrangères activées.
 - **Autres composants :** Motion, Lucide React, SheetJS (XLSX), AdmZip et Multer.
 
-L'architecture actuelle est une application web servie localement par Express. Le dépôt ne contient pas, à la date de rédaction, de configuration Tauri ou Electron : il ne faut donc pas la présenter comme un installateur Windows natif.
+L'application de bureau utilise Electron pour afficher l'interface et démarrer le serveur Express sur l'adresse loopback 127.0.0.1. Elle est empaquetée pour Windows x64 avec un installateur NSIS. Le serveur n'écoute pas sur le réseau local.
 
-## Prérequis
+## Installer l'application sur Windows
 
-- Node.js 22 LTS recommandé (ou une version compatible avec Vite 8).
-- npm.
-- Windows, Linux ou macOS pour le développement, sous réserve de la disponibilité des outils de compilation nécessaires à better-sqlite3.
+Le dépôt contient désormais une configuration de génération d'un installateur Windows x64 :
 
-## Installation et lancement en développement
+- Fichier produit : `GestionPro-DZ-Setup-0.1.0.exe`.
+- Installation utilisateur Windows (aucun droit administrateur normalement requis).
+- Raccourcis dans le menu Démarrer et sur le Bureau.
+- Fenêtre de bureau native fournie par Electron.
+- Serveur Express local démarré automatiquement en arrière-plan.
+- Base SQLite et documents stockés dans le dossier de données de l'utilisateur Windows.
+- Désinstallation sans suppression automatique des données.
 
-Depuis la racine du dépôt :
+Le build Windows est automatisé par GitHub Actions. Après la réussite du workflow, l'installateur est publié dans les Releases GitHub du dépôt.
+
+### Télécharger
+
+Ouvrir la page [GitHub Releases](https://github.com/lunderclub9-gif/Ideal/releases/latest) et télécharger `GestionPro-DZ-Setup-0.1.0.exe`.
+
+> Le programme n'est pas encore signé par un certificat de signature de code. Windows SmartScreen peut donc afficher un avertissement d'éditeur inconnu. Ne lancer que le fichier téléchargé depuis les Releases officielles de ce dépôt.
+
+### Installation
+
+1. Télécharger le fichier `.exe`.
+2. Double-cliquer dessus.
+3. Choisir le dossier d'installation si nécessaire.
+4. Terminer l'installation ; GestionPro DZ démarre automatiquement.
+5. Utiliser le raccourci du Bureau ou du menu Démarrer pour les lancements suivants.
+
+Aucun Node.js, Python, SQLite, serveur cloud ou compte Supabase/Firebase n'est requis sur le PC cible. Les dépendances de l'application sont intégrées au programme.
+
+## Développement et compilation
+
+Prérequis développeur : Node.js 22 et npm.
 
 ~~~bash
 npm install
 npm run dev
 ~~~
 
-Le serveur démarre sur :
+Le mode développement ouvre le serveur local sur `http://127.0.0.1:3000`.
 
-~~~text
-http://localhost:3000
-~~~
-
-Le port est actuellement défini en dur à 3000 dans server.ts.
-
-## Vérifications et build
-
-Vérification TypeScript (script nommé lint dans le dépôt) :
-
-~~~bash
-npm run lint
-~~~
-
-Build de production du frontend :
-
-~~~bash
-npm run build
-~~~
-
-Lancement du serveur en mode production après le build :
-
-**Windows PowerShell**
-~~~powershell
-$env:NODE_ENV = "production"
-npm start
-~~~
-
-**Linux / macOS**
-~~~bash
-NODE_ENV=production npm start
-~~~
-
-Puis ouvrir http://localhost:3000.
-
-Scripts disponibles :
+Commandes utiles :
 
 | Commande | Description |
 |---|---|
-| npm run dev | Démarre le serveur Express avec Vite en mode développement. |
-| npm start | Démarre le serveur Node.js. Définir NODE_ENV=production après le build pour servir dist. |
-| npm run build | Construit les fichiers frontend dans dist. |
-| npm run preview | Lance l'aperçu Vite du build frontend. |
-| npm run lint | Exécute tsc --noEmit (vérification TypeScript, pas un linter stylistique). |
-| npm run clean | Supprime dist et server.js via une commande shell Unix. |
+| `npm run dev` | Démarre Express et Vite en mode développement. |
+| `npm run lint` | Vérification TypeScript avec `tsc --noEmit`. |
+| `npm run build` | Construit le frontend et le serveur de production. |
+| `npm run dist:win` | Génère l'installateur Windows x64 dans `release/`. |
+| `npm run clean` | Supprime les dossiers de compilation et de distribution. |
 
-## Données locales et sauvegardes
+Le build Windows doit être effectué sur un environnement Windows (GitHub Actions utilise `windows-latest`).
 
-Au démarrage, l'application crée le dossier data/ à la racine du répertoire de travail si nécessaire.
+## Données locales et confidentialité
 
-| Chemin | Contenu |
-|---|---|
-| data/gestionpro.db | Base de données SQLite. |
-| data/Documents/ | Documents téléversés et classés par catégorie. |
-| data/backups/ | Archives ZIP de sauvegarde. |
+Dans la version installée, les données sont stockées dans le dossier utilisateur Windows fourni par Electron, sous :
 
-La base est configurée avec SQLite WAL et l'activation des clés étrangères. Le code de sauvegarde crée un instantané SQLite avec VACUUM INTO, vérifie PRAGMA integrity_check, ajoute les documents au ZIP et inclut un manifeste avec une empreinte SHA-256 de la base.
+~~~text
+%APPDATA%/gestionpro-dz/data/
+├── gestionpro.db
+├── Documents/
+└── backups/
+~~~
 
-**Important :** conservez des copies de sauvegarde hors de l'ordinateur principal. Avant toute utilisation réelle, testez la restauration sur une copie de l'environnement et vérifiez que les documents associés sont présents et lisibles. Ne manipulez pas directement le fichier SQLite pendant que le serveur fonctionne.
+Le chemin exact dépend du profil Windows. La base SQLite n'est pas envoyée vers un service cloud par l'architecture du programme. Le serveur écoute uniquement sur `127.0.0.1` avec un port local attribué automatiquement.
+
+Les données restent après une mise à jour et ne sont pas supprimées automatiquement par le désinstallateur. Effectuer régulièrement des sauvegardes externes (par exemple sur une clé USB). Avant d'utiliser des données réelles, tester une restauration de sauvegarde.
+
+Pour transférer des données depuis une ancienne installation de développement, arrêter l'application et copier le dossier `data` vers le dossier de données GestionPro DZ indiqué ci-dessus, en conservant une sauvegarde originale.
 
 ## Comptes de démonstration
 
@@ -157,19 +150,19 @@ Les autorisations sont vérifiées côté serveur par des permissions associées
 ## Configuration et points de vigilance
 
 - La variable SESSION_SECRET doit être définie avec une valeur aléatoire forte avant tout déploiement. Le code contient actuellement une valeur de secours si cette variable est absente.
-- Le serveur écoute actuellement sur 0.0.0.0:3000. Ne l'exposez pas à un réseau public sans configuration de sécurité et de pare-feu appropriée.
+- Le serveur de l'application de bureau écoute sur 127.0.0.1 et utilise un port local attribué automatiquement.
 - L'interface charge actuellement des polices depuis Google Fonts ; leur chargement dépend d'une connexion Internet, même si le serveur et la base de données sont locaux.
-- Le paquet @google/genai figure dans les dépendances du projet. Aucune fonctionnalité IA n'est décrite dans ce README ; cette dépendance doit être auditée et retirée si elle n'est pas utilisée, conformément au périmètre sans IA.
+- Le périmètre fonctionnel de GestionPro DZ ne requiert pas de service d'intelligence artificielle.
 - Les taux et règles fiscales fournis dans les données de démonstration ne remplacent pas une validation par un comptable algérien. Les règles doivent être vérifiées et configurées selon la situation réelle et la législation applicable.
-- L'application utilise actuellement un serveur Express et une base locale dans data/. Une installation Windows native Tauri, le stockage dans le répertoire de données utilisateur de Windows, la gestion des mises à jour et les tests de reprise après coupure restent à confirmer ou à réaliser.
+- Le programme Windows est empaqueté avec Electron et utilise SQLite dans le dossier de données utilisateur. Les mises à jour automatiques intégrées ne sont pas configurées : installer une nouvelle version depuis GitHub Releases.
 - Le dépôt ne fournit pas encore de suite de tests automatisés métier clairement identifiée. Le build et la vérification TypeScript ne suffisent pas à prouver que tous les scénarios fonctionnent.
 
 ## Structure principale du dépôt
 
 ~~~text
 .
-├── server.ts                 # Démarrage Express + Vite
-├── package.json              # Dépendances et scripts
+├── server.ts                 # Démarrage Express + Vite (développement)
+├── electron/\n│   └── main.cjs               # Fenêtre Windows et démarrage du serveur local\n├── .github/workflows/\n│   └── windows-installer.yml  # Build et publication du setup Windows\n├── package.json              # Dépendances et scripts
 ├── vite.config.ts            # Configuration Vite / React / Tailwind
 ├── index.html
 ├── server/
