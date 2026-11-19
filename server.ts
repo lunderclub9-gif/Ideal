@@ -1,13 +1,11 @@
 import express from 'express';
 import path from 'path';
 import { getDb } from './server/db.ts';
-import { seedIfEmpty } from './server/seed.ts';
 import apiRouter from './server/routes.ts';
 import { createFullBackup } from './server/backup.ts';
 
 async function startServer() {
   getDb();
-  seedIfEmpty();
   const app = express();
   app.use(express.json({ limit: '15mb' }));
   app.use('/api', apiRouter);
