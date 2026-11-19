@@ -51,7 +51,7 @@ function startLocalServer() {
   }
   serverProcess = spawn(process.execPath, [serverPath], {
     cwd: process.resourcesPath,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_ENV: 'production', HOST: APP_URL_HOST, PORT: '3000', GESTIONPRO_DATA_DIR: dataPath, GESTIONPRO_APP_ROOT: app.getAppPath(), SESSION_SECRET: sessionSecret },
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_ENV: 'production', HOST: APP_URL_HOST, PORT: '0', GESTIONPRO_DATA_DIR: dataPath, GESTIONPRO_APP_ROOT: app.getAppPath(), SESSION_SECRET: sessionSecret },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true
   });
