@@ -29,6 +29,7 @@ export default function FleetPage({
   const [fuelModal, setFuelModal] = useState(false);
   const [editingFuel, setEditingFuel] = useState<any | null>(null);
   const [repairModal, setRepairModal] = useState(false);
+  const [editingRepair, setEditingRepair] = useState<any | null>(null);
   const [checkoutTool, setCheckoutTool] = useState<any | null>(null);
   const [error, setError] = useState('');
 
@@ -159,11 +160,34 @@ export default function FleetPage({
     }
   }
 
+  function openNewRepair() {
+    setEditingRepair(null);
+    setRepForm({ vehicle_id: '', problem_category: 'engine', description: '', priority: 'normal', workshop: '', parts_cost: 0, labor_cost: 0, towing_cost: 0, project_id: '' });
+    setRepairModal(true);
+  }
+
+  function openEditRepair(order: any) {
+    setEditingRepair(order);
+    setRepForm({
+      vehicle_id: String(order.vehicle_id),
+      problem_category: order.problem_category || 'other',
+      description: order.description || '',
+      priority: order.priority || 'normal',
+      workshop: order.workshop || '',
+      parts_cost: Number(order.parts_cost || 0),
+      labor_cost: Number(order.labor_cost || 0),
+      towing_cost: Number(order.towing_cost || 0),
+      project_id: order.project_id ? String(order.project_id) : '',
+    });
+    setRepairModal(true);
+  }
+
   async function saveRepair(e: React.FormEvent) {
     e.preventDefault();
     try {
-      await apiFetch('/repair-orders', { method: 'POST', body: JSON.stringify(repForm) });
+      await apiFetch(editingRepair ? `/repair-orders/${editingRepair.id}` : '/repair-orders', { method: editingRepair ? 'PUT' : 'POST', body: JSON.stringify(repForm) });
       setRepairModal(false);
+      setEditingRepair(null);
       await load();
     } catch (err: any) {
       setError(err.message);
@@ -226,7 +250,7 @@ export default function FleetPage({
               </button>
             )}
             {canRepairs && (
-              <button type="button" onClick={() => setRepairModal(true)} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border border-slate-300 dark:border-slate-700 rounded-lg">
+              <button type="button" onClick={openNewRepair} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border border-slate-300 dark:border-slate-700 rounded-lg">
                 <Wrench className="w-3.5 h-3.5" /> Signaler panne / OR
               </button>
             )}
@@ -344,11 +368,7 @@ export default function FleetPage({
                     <td className="p-3 text-right font-mono tabular-nums font-semibold">{formatDA(ro.total_cost)}</td>
                     <td className="p-3"><StatusText status={ro.status} /></td>
                     <td className="p-3 text-right">
-                      {canRepairs && ro.status !== 'completed' && (
-                        <button type="button" onClick={() => completeRepair(ro.id)} className="text-emerald-700 font-medium hover:underline">
-                          Clôturer
-                        </button>
-                      )}
+                      {canRepairs && <div className="inline-flex items-center gap-2"><button type="button" onClick={() => openEditRepair(ro)} className="inline-flex items-center gap-1 px-2 py-1.5 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">Modifier</button>{ro.status !== 'completed' && <button type="button" onClick={() => completeRepair(ro.id)} className="text-emerald-700 font-medium hover:underline">Clôturer</button>}</div>}
                     </td>
                   </tr>
                 ))}
@@ -496,12 +516,12 @@ export default function FleetPage({
         </form>
       </Modal>
 
-      <Modal open={repairModal} onClose={() => setRepairModal(false)} title="Nouvel ordre de réparation">
+      <Modal open={repairModal} onClose={() => setRepairModal(false)} title={editingRepair ? `Modifier l’ordre ${editingRepair.order_number}` : "Nouvel ordre de réparation"}>
         <form onSubmit={saveRepair} className="space-y-3 text-xs">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-medium mb-1">Véhicule / Engin *</label>
-              <select required value={repForm.vehicle_id} onChange={(e) => setRepForm({ ...repForm, vehicle_id: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950">
+              <select required value={repForm.vehicle_id} disabled={!!editingRepair} onChange={(e) => setRepForm({ ...repForm, vehicle_id: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950">
                 <option value="">Sélectionner...</option>
                 {vehicles.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
@@ -533,8 +553,8 @@ export default function FleetPage({
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setRepairModal(false)} className="px-3 py-2 border rounded-lg">Annuler</button>
-            <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg">Créer l’OR</button>
+            <button type="button" onClick={() => { setRepairModal(false); setEditingRepair(null); }} className="px-3 py-2 border rounded-lg">Annuler</button>
+            <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg">{editingRepair ? "Enregistrer les modifications" : "Créer l’OR"}</button>
           </div>
         </form>
       </Modal>
@@ -555,6 +575,17 @@ export default function FleetPage({
               {projects.map((p) => <option key={p.id} value={p.id}>{p.project_number} — {p.title}</option>)}
             </select>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="block font-medium mb-1">Date intervention</label><input type="date" value={repForm.repair_date || editingRepair?.repair_date || new Date().toISOString().slice(0,10)} onChange={e => setRepForm({ ...repForm, repair_date: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
+            <div><label className="block font-medium mb-1">Priorité</label><select value={repForm.priority} onChange={e => setRepForm({ ...repForm, priority: e.target.value })} className="w-full px-3 py-2 border rounded-lg"><option value="low">Basse</option><option value="normal">Normale</option><option value="high">Haute</option><option value="urgent">Urgente</option></select></div>
+          </div>
+          <div><label className="block font-medium mb-1">Atelier</label><input value={repForm.workshop} onChange={e => setRepForm({ ...repForm, workshop: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
+          <div><label className="block font-medium mb-1">Pièces utilisées</label><input value={repForm.parts_used || ''} onChange={e => setRepForm({ ...repForm, parts_used: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="block font-medium mb-1">Remorquage (DA)</label><input type="number" min="0" value={repForm.towing_cost || 0} onChange={e => setRepForm({ ...repForm, towing_cost: Number(e.target.value) })} className="w-full px-3 py-2 border rounded-lg" /></div>
+            <div><label className="block font-medium mb-1">Jours d’immobilisation</label><input type="number" min="0" value={repForm.downtime_days || 0} onChange={e => setRepForm({ ...repForm, downtime_days: Number(e.target.value) })} className="w-full px-3 py-2 border rounded-lg" /></div>
+          </div>
+          <div><label className="block font-medium mb-1">Chantier imputé</label><select value={repForm.project_id || ''} onChange={e => setRepForm({ ...repForm, project_id: e.target.value })} className="w-full px-3 py-2 border rounded-lg"><option value="">Parc général</option>{projects.map(pr => <option key={pr.id} value={pr.id}>{pr.project_number} — {pr.title}</option>)}</select></div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setCheckoutTool(null)} className="px-3 py-2 border rounded-lg">Annuler</button>
             <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg">Confirmer sortie</button>
