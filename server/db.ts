@@ -689,10 +689,12 @@ function runMigrations(db: Database.Database) {
       db.exec("ALTER TABLE services ADD COLUMN description TEXT NOT NULL DEFAULT ''");
     }
     if (!serviceColumns.includes('created_at')) {
-      db.exec("ALTER TABLE services ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'))");
+      db.exec("ALTER TABLE services ADD COLUMN created_at TEXT NOT NULL DEFAULT ''");
+      db.exec("UPDATE services SET created_at = datetime('now') WHERE created_at = ''");
     }
     if (!serviceColumns.includes('updated_at')) {
-      db.exec("ALTER TABLE services ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))");
+      db.exec("ALTER TABLE services ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''");
+      db.exec("UPDATE services SET updated_at = datetime('now') WHERE updated_at = ''");
     }
     // Starter catalogue only when the existing catalogue is genuinely empty.
     // Existing user-defined services are never overwritten or duplicated.
