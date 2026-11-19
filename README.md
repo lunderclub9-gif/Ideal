@@ -171,7 +171,6 @@ Les autorisations sont vérifiées côté serveur par des permissions associées
 │   ├── calculations.ts       # Calculs métier et fiscaux
 │   ├── db.ts                 # SQLite et migrations
 │   ├── routes.ts             # API Express
-│   └── seed.ts               # Données initiales de démonstration
 └── src/
     ├── App.tsx               # Navigation et assemblage des modules
     ├── main.tsx              # Point d'entrée React
