@@ -7,7 +7,7 @@
 - Les montants financiers sont calculés côté serveur, avec références, validation et traçabilité.
 - Une phase n'est déclarée terminée qu'après vérification du build, des scénarios métier et des migrations.
 
-## Découpage en six phases
+## Découpage en sept phases
 
 ### Phase 1 — Fondations et référentiels
 - Audit du schéma, des permissions, des flux et des migrations existants.
@@ -53,11 +53,18 @@
 - Design responsive, lisible, accessible et rapide sur les PC modestes ; aucune animation lourde inutile.
 - Audit final de navigation et tests de bout en bout de tous les modules.
 
+### Phase 7 — Interface française et cohérence linguistique
+- Français comme langue unique de l'interface, y compris mise à jour, erreurs, notifications, dialogues et états de chargement.
+- Suppression des textes arabes codés en dur dans l'interface, sans toucher aux données saisies par les utilisateurs, aux noms de fichiers, aux contenus métier ou aux archives.
+- Harmonisation du vocabulaire, des accents, des dates, des montants et des messages d'assistance.
+- Contrôle final de tous les textes visibles et tests de build Windows.
+
 ## État et reprise
 - Phase 1 : implémentée sur `phase-1-foundation`, en attente de validation CI et de revue.
 - Phase 2 : implémentée sur `phase-2-workforce-final`, en attente de validation CI et de revue.
 - Phase 3 : implémentée sur `phase-3-debts-finance` ; CI Windows (TypeScript, build, installateur et smoke test) réussie sur la PR #5. Les scénarios comptables sur données réelles restent à vérifier.
 - Phase 4 : implémentée sur `phase-4-documents-exports` ; CI Windows réussie (TypeScript, installateur et smoke test). Les vérifications métier sur une base locale réelle restent à effectuer.
-- Phase 5 : en cours sur `phase-5-data-protection`.
-- Phase 6 : planifiée comme dernière phase, après les fonctionnalités et le durcissement.
+- Phase 5 : implémentée sur `phase-5-data-protection` ; CI Windows réussie (TypeScript, tests de protection des données, build, installateur et smoke test). Les scénarios sur la base réelle restent à vérifier.
+- Phase 6 : en cours sur `phase-6-ui-overhaul` ; navigation filtrable/repliable, accessibilité des composants partagés et édition sûre des fiches matériaux/fournisseurs ajoutées. Audit fonctionnel et CI à terminer.
+- Phase 7 : planifiée après validation de la phase 6 ; français uniquement.
 - Consulter `PHASE_1_STATUS.md`, `PHASE_2_STATUS.md` et `PHASE_3_STATUS.md` pour les points de reprise.
