@@ -1,0 +1,6 @@
+{
+  "name": "GestionPro DZ",
+  "description": "Système intégré de gestion hors ligne pour entreprises algériennes de BTP et services : chantiers, pointage, paie, stocks, parc matériel, facturation et sauvegarde locale.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
