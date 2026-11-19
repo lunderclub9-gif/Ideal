@@ -403,6 +403,9 @@ router.get('/clients/:id', requireAuth, requirePermission('clients:read'), (req,
   const totalInvoiced = documents
     .filter((d: any) => d.doc_type === 'facture' && !['draft', 'cancelled'].includes(d.status))
     .reduce((s: number, d: any) => s + Number(d.total_ttc || 0), 0);
+  const totalCredits = documents
+    .filter((d: any) => d.doc_type === 'avoir' && !['draft', 'cancelled'].includes(d.status))
+    .reduce((s: number, d: any) => s + Number(d.total_ttc || 0), 0);
   const totalPaid = payments.reduce((s: number, p: any) => s + Number(p.amount || 0), 0);
   res.json({
     client,
@@ -411,8 +414,9 @@ router.get('/clients/:id', requireAuth, requirePermission('clients:read'), (req,
     payments,
     totals: {
       totalInvoiced: round2(totalInvoiced),
+      totalCredits: round2(totalCredits),
       totalPaid: round2(totalPaid),
-      balanceDue: round2(Math.max(0, totalInvoiced - totalPaid)),
+      balanceDue: round2(Math.max(0, totalInvoiced - totalCredits - totalPaid)),
     },
   });
 });
