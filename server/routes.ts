@@ -2827,6 +2827,48 @@ router.get('/expenses', requireAuth, requirePermission('expenses:read'), (_req, 
   res.json(rows);
 });
 
+router.put('/expenses/:id', requireAuth, requirePermission('expenses:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const b = req.body || {};
+  const amount = round2(Number(b.amount || 0));
+  if (!Number.isInteger(id) || id <= 0 || !b.category || !String(b.description || '').trim() || !Number.isFinite(amount) || amount <= 0) {
+    res.status(400).json({ error: 'Date, catégorie, libellé et montant valide (> 0) sont obligatoires.' }); return;
+  }
+  const db = getDb();
+  const old = db.prepare('SELECT * FROM expenses WHERE id=?').get(id) as any;
+  if (!old) { res.status(404).json({ error: 'Dépense introuvable.' }); return; }
+  const linked = db.prepare('SELECT * FROM treasury_transactions WHERE linked_expense_id=?').get(id) as any;
+  if (linked?.bank_reconciled) {
+    res.status(400).json({ error: 'Cette dépense est déjà rapprochée avec un relevé bancaire. Créez une opération de régularisation au lieu de modifier l’historique.' }); return;
+  }
+  const expDate = String(b.expense_date || old.expense_date);
+  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(expDate) || !Number.isFinite(Date.parse(expDate + 'T00:00:00'))) {
+    res.status(400).json({ error: 'Date de dépense invalide.' }); return;
+  }
+  const method = String(b.payment_method || old.payment_method || 'Espèces');
+  if (!['Espèces','Virement','Chèque'].includes(method)) {
+    res.status(400).json({ error: 'Mode de paiement invalide.' }); return;
+  }
+  const projectId = b.project_id ? Number(b.project_id) : null;
+  const vehicleId = b.vehicle_id ? Number(b.vehicle_id) : null;
+  const account = method === 'Espèces' ? 'Caisse' : 'Banque';
+  const txType = method === 'Espèces' ? 'cash_outflow' : 'bank_outflow';
+  db.transaction(() => {
+    db.prepare(`UPDATE expenses SET expense_date=?, category=?, description=?, amount=?, payment_method=?, project_id=?, vehicle_id=?, is_overhead=?, notes=? WHERE id=?`).run(
+      expDate, String(b.category), String(b.description).trim(), amount, method, projectId, vehicleId,
+      b.is_overhead || !projectId ? 1 : 0, b.notes || '', id
+    );
+    if (linked) {
+      db.prepare(`UPDATE treasury_transactions SET tx_date=?, tx_type=?, account=?, to_account=NULL, category=?, amount=?, payment_method=?, project_id=?, notes=? WHERE id=?`).run(
+        expDate, txType, account, String(b.category), amount, method, projectId,
+        String(b.description).trim(), linked.id
+      );
+    }
+  })();
+  logAudit(req.user!, 'UPDATE', 'expense', id, `${old.category}: ${old.amount} DA`, `${b.category}: ${amount} DA`);
+  res.json(db.prepare('SELECT * FROM expenses WHERE id=?').get(id));
+});
+
 router.post('/expenses', requireAuth, requirePermission('expenses:write'), (req: AuthedRequest, res) => {
   const b = req.body || {};
   const amount = round2(Number(b.amount || 0));
