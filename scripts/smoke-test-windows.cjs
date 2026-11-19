@@ -78,6 +78,15 @@ async function run() {
   const created = await response.json();
   if (!created.token || created.user?.username !== 'smoke_owner') throw new Error('First-run setup did not create a valid owner session.');
 
+  response = await fetch(base + '/api/backups/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + created.token },
+    body: JSON.stringify({ backup_type: 'manual_local' }),
+  });
+  if (response.status !== 201) throw new Error('Manual backup failed with HTTP ' + response.status);
+  const backup = await response.json();
+  if (!backup.verified || !backup.file_name) throw new Error('Backup was not verified.');
+
   response = await fetch(base + '/api/auth/setup', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -107,7 +116,16 @@ async function run() {
   const login = await response.json();
   if (!login.token || login.user?.username !== 'smoke_owner') throw new Error('Owner session could not be restored after restart.');
 
-  console.log('SMOKE_TEST_OK: packaged Electron app starts, serves the UI, creates a first owner, blocks duplicate setup, preserves SQLite data after restart, and authenticates the owner.');
+  response = await fetch(base + '/api/backups', {
+    headers: { 'Authorization': 'Bearer ' + login.token },
+  });
+  if (!response.ok) throw new Error('Backup history could not be read after restart.');
+  const backups = await response.json();
+  if (!backups.some(item => item.file_name === backup.file_name && item.verified)) {
+    throw new Error('Verified backup history did not persist after restart.');
+  }
+
+  console.log('SMOKE_TEST_OK: packaged app starts, creates owner, blocks duplicate setup, creates verified backup, persists SQLite and backup history after restart, and authenticates owner.');
 }
 
 run().catch(error => {
