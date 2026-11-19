@@ -38,6 +38,8 @@ jobs:
         run: npm run lint
       - name: Build application and Windows installer
         run: npm run dist:win
+      - name: Smoke test packaged Windows application
+        run: node scripts/smoke-test-windows.cjs
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
