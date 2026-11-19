@@ -315,7 +315,7 @@ export default function TreasuryPage({
         </form>
       </Modal>
 
-      <Modal open={expOpen} onClose={() => setExpOpen(false)} title={editingExpense ? "Modifier une dépense" : "Enregistrer une dépense"} maxWidth="max-w-md">
+      <Modal open={expOpen} onClose={() => { setExpOpen(false); setEditingExpense(null); }} title={editingExpense ? "Modifier une dépense" : "Enregistrer une dépense"} maxWidth="max-w-md">
         <form onSubmit={saveExpense} className="space-y-3 text-xs">
           <div>
             <label className="block font-medium mb-1">Date de dépense</label>
