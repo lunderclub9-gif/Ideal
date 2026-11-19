@@ -361,7 +361,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <UpdaterPanel />
+            <UpdaterPanel canBackup={hasPerm(permissions, 'backup:manage')} />
             <button
               type="button"
               onClick={() => setDark((d) => !d)}
