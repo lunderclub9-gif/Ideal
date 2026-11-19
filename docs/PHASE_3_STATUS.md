@@ -27,7 +27,8 @@
 - src/pages/DebtsPage.tsx
 
 ## Contrôles encore nécessaires
-- Attendre la fin du workflow Windows : TypeScript, build client/serveur, packaging et smoke test.
+- CI Windows de la PR #5 terminée avec succès : vérification TypeScript, build de l’application, packaging Windows, smoke test et dépôt de l’artefact ont réussi. La publication d’une Release a été ignorée normalement sur une PR.
+- Les scénarios comptables sur une base réelle et la comparaison avec les pièces sources restent à effectuer.
 - Vérifier des scénarios réels : facture sans paiement, paiement partiel, facture soldée, avoir lié, facture échue, achat fournisseur avec paiement partiel, contre-passation et avance salarié récupérée par paie validée.
 - Vérifier que les rôles sans treasury:read reçoivent bien un refus 403.
 - Comparer les soldes affichés avec les pièces comptables sources avant toute clôture.
@@ -37,4 +38,4 @@
 Aucune migration destructive ni suppression d'enregistrements n'a été ajoutée dans cette phase. Les soldes sont calculés à partir des documents et mouvements existants ; ils ne réécrivent pas les historiques.
 
 ## Suite
-Après validation de la phase 3, poursuivre la phase 4 — Documents et exports enrichis (PDF/Excel, références, dates, coordonnées de l'entreprise et impression).
+La CI de construction est réussie. Poursuivre les scénarios comptables de validation, puis la phase 4 — Documents et exports enrichis.
