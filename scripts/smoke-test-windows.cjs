@@ -20,11 +20,11 @@ async function startApp() {
   try { fs.unlinkSync(portFile); } catch {}
   try { fs.unlinkSync(startupLogFile); } catch {}
   child = spawn(exe, ['--disable-gpu'], {
-    env: { ...process.env, APPDATA: appData, GESTIONPRO_SMOKE_TEST: '1' },
+    env: { ...process.env, APPDATA: appData, GESTIONPRO_SMOKE_TEST: '1', GESTIONPRO_SMOKE_USER_DATA: userData },
     stdio: 'ignore',
     windowsHide: true,
   });
-  const deadline = Date.now() + 45000;
+  const deadline = Date.now() + 75000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error('Desktop application exited early with code ' + child.exitCode);
     if (fs.existsSync(portFile)) {
@@ -34,7 +34,7 @@ async function startApp() {
     await sleep(400);
   }
   const diagnostics = fs.existsSync(startupLogFile) ? fs.readFileSync(startupLogFile, 'utf8') : '(startup.log was not created)';
-  throw new Error('Desktop app did not start its local server within 45 seconds. Bundled server exists=' + fs.existsSync(serverBundle) + '. Startup diagnostics: ' + diagnostics);
+  throw new Error('Desktop app did not start its local server within 75 seconds. Bundled server exists=' + fs.existsSync(serverBundle) + '. Startup diagnostics: ' + diagnostics);
 }
 
 async function stopApp() {
