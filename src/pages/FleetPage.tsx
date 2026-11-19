@@ -59,6 +59,7 @@ export default function FleetPage({
     towing_cost: 0,
     downtime_days: 0,
     status: 'waiting',
+    notes: '',
   });
   const [coForm, setCoForm] = useState({ worker_id: '', project_id: '', expected_return_date: '' });
 
