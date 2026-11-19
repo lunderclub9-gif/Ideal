@@ -243,7 +243,8 @@ export function DocumentsPage({ permissions }: { permissions: string[] }) {
   );
 }
 
-export function ReportsPage() {
+export function ReportsPage({ permissions }: { permissions: string[] }) {
+  const canExport = hasPerm(permissions, 'reports:export');
   const [data, setData] = useState<any>(null);
   useEffect(() => {
     apiFetch('/reports/summary').then(setData).catch(() => {});
@@ -261,9 +262,9 @@ export function ReportsPage() {
             <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium border border-slate-300 dark:border-slate-700 rounded-lg">
               <Printer className="w-3.5 h-3.5" /> Imprimer / PDF
             </button>
-            <button type="button" onClick={() => downloadWithAuth('/reports/export/xlsx', 'rapport_complet_gestionpro_dz.xlsx')} className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-emerald-700 rounded-lg">
+            {canExport && <button type="button" onClick={() => downloadWithAuth('/reports/export/xlsx', 'rapport_complet_gestionpro_dz.xlsx')} className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-emerald-700 rounded-lg">
               <FileSpreadsheet className="w-3.5 h-3.5" /> Classeur Excel complet
-            </button>
+            </button>}
           </div>
         }
       />
