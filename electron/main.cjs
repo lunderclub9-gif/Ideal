@@ -1,5 +1,5 @@
 const { app, BrowserWindow, dialog, shell } = require('electron');
-const { fork } = require('node:child_process');
+const { spawn } = require('node:child_process');
 const path = require('node:path');
 
 let serverProcess = null;
@@ -37,10 +37,11 @@ function waitForServer(child, timeoutMs = 30000) {
 function startLocalServer() {
   const serverPath = path.join(app.getAppPath(), 'dist-server', 'server.cjs');
   const dataPath = path.join(app.getPath('userData'), 'data');
-  serverProcess = fork(serverPath, [], {
+  serverProcess = spawn(process.execPath, [serverPath], {
     cwd: app.getAppPath(),
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_ENV: 'production', HOST: APP_URL_HOST, PORT: '0', GESTIONPRO_DATA_DIR: dataPath },
-    stdio: ['ignore', 'pipe', 'pipe']
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true
   });
   return waitForServer(serverProcess);
 }
