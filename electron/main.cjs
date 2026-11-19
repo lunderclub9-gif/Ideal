@@ -64,6 +64,9 @@ function startLocalServer() {
 
 async function createMainWindow() {
   const port = await startLocalServer();
+  if (process.env.GESTIONPRO_SMOKE_TEST === '1') {
+    fs.writeFileSync(path.join(app.getPath('userData'), 'server-port.txt'), String(port), 'utf8');
+  }
   mainWindow = new BrowserWindow({
     width: 1440, height: 920, minWidth: 1024, minHeight: 680, show: false,
     title: 'GestionPro DZ', autoHideMenuBar: true, backgroundColor: '#f8fafc',
