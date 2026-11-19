@@ -87,6 +87,22 @@ async function run() {
   const backup = await response.json();
   if (!backup.verified || !backup.file_name) throw new Error('Backup was not verified.');
 
+  response = await fetch(base + '/api/backups/' + backup.id + '/download', {
+    headers: { 'Authorization': 'Bearer ' + created.token },
+  });
+  if (!response.ok) throw new Error('Backup archive download failed with HTTP ' + response.status);
+  const archiveBlob = new Blob([await response.arrayBuffer()], { type: 'application/zip' });
+  const restoreForm = new FormData();
+  restoreForm.append('archive', archiveBlob, backup.file_name);
+  response = await fetch(base + '/api/backups/restore', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + created.token },
+    body: restoreForm,
+  });
+  if (!response.ok) throw new Error('Backup restore failed with HTTP ' + response.status + ': ' + await response.text());
+  const restored = await response.json();
+  if (!restored.ok || !restored.safetyBackup?.verified) throw new Error('Restore did not create a verified safety backup.');
+
   response = await fetch(base + '/api/auth/setup', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -121,11 +137,11 @@ async function run() {
   });
   if (!response.ok) throw new Error('Backup history could not be read after restart.');
   const backups = await response.json();
-  if (!backups.some(item => item.file_name === backup.file_name && item.verified)) {
-    throw new Error('Verified backup history did not persist after restart.');
+  if (!backups.some(item => item.backup_type === 'pre_restore_safety' && item.verified)) {
+    throw new Error('Verified pre-restore safety backup did not persist after restart.');
   }
 
-  console.log('SMOKE_TEST_OK: packaged app starts, creates owner, blocks duplicate setup, creates verified backup, persists SQLite and backup history after restart, and authenticates owner.');
+  console.log('SMOKE_TEST_OK: packaged app starts, creates owner, blocks duplicate setup, creates and downloads a verified backup, restores it with a safety copy, preserves SQLite after restart, and authenticates owner.');
 }
 
 run().catch(error => {
