@@ -560,9 +560,27 @@ export function BackupPage() {
     }
   }
 
+  async function verifyBackup(id: number) {
+    setError('');
+    setStatus('');
+    try {
+      const result = await apiFetch(`/backups/${id}/verify`, { method: 'POST' });
+      await load();
+      setStatus(`Vérification réussie : base SQLite intègre, ${result.documentCount} document(s) contrôlé(s).`);
+    } catch (e: any) {
+      setError(e.message);
+      await load();
+    }
+  }
+
   async function handleRestore(file: File) {
     setError('');
     setStatus('');
+    if (file.size > 50 * 1024 * 1024) {
+      setError('L’archive dépasse la limite de 50 Mo.');
+      return;
+    }
+    if (!window.confirm(`ATTENTION : restaurer « ${file.name} » remplacera la base de données et le dossier Documents actuels. Une sauvegarde de sécurité sera créée automatiquement. Continuer ?`)) return;
     const fd = new FormData();
     fd.append('archive', file);
     try {
@@ -627,7 +645,7 @@ export function BackupPage() {
               <th className="p-3 text-right">Taille</th>
               <th className="p-3 text-left">Intégrité</th>
               <th className="p-3 text-left">Créée par / Date</th>
-              <th className="p-3 text-right">Télécharger</th>
+              <th className="p-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -637,15 +655,14 @@ export function BackupPage() {
                 <td className="p-3">{b.backup_type}</td>
                 <td className="p-3 text-right font-mono tabular-nums">{Math.round(b.size_bytes / 1024)} Ko</td>
                 <td className="p-3">
-                  <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
-                    <ShieldCheck className="w-3.5 h-3.5" /> Vérifiée
+                  <span className={`inline-flex items-center gap-1 font-medium ${b.verified ? 'text-emerald-700' : 'text-red-700'}`}>
+                    <ShieldCheck className="w-3.5 h-3.5" /> {b.verified ? 'Vérifiée' : 'À vérifier'}
                   </span>
                 </td>
                 <td className="p-3 text-slate-500">{b.created_by} · {b.created_at}</td>
-                <td className="p-3 text-right">
-                  <button type="button" onClick={() => downloadWithAuth(`/backups/${b.id}/download`, b.file_name)} className="text-blue-700 hover:underline">
-                    Télécharger
-                  </button>
+                <td className="p-3 text-right whitespace-nowrap space-x-3">
+                  <button type="button" onClick={() => verifyBackup(b.id)} className="text-emerald-700 hover:underline">Vérifier</button>
+                  <button type="button" onClick={() => downloadWithAuth(`/backups/${b.id}/download`, b.file_name)} className="text-blue-700 hover:underline">Télécharger</button>
                 </td>
               </tr>
             ))}
