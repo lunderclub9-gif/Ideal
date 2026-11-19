@@ -84,7 +84,7 @@ const NAV_ITEMS: NavEntry[] = [
   { id: 'fuel', label: 'Carburant', group: 'Stock, Achats & Parc', permission: 'vehicles:read', icon: Fuel },
   { id: 'tools', label: 'Outillage & Sorties', group: 'Stock, Achats & Parc', permission: 'materials:read', icon: Hammer },
   { id: 'treasury', label: 'Trésorerie', group: 'Finances & Administration', permission: 'treasury:read', icon: Landmark },
-  { id: 'debts', label: 'Dettes & Créances', group: 'Finances & Administration', permission: 'reports:read', icon: CreditCard },
+  { id: 'debts', label: 'Dettes & Créances', group: 'Finances & Administration', permission: 'treasury:read', icon: CreditCard },
   { id: 'expenses', label: 'Dépenses', group: 'Finances & Administration', permission: 'expenses:read', icon: Receipt },
   { id: 'taxes', label: 'Comptabilité & Impôts', group: 'Finances & Administration', permission: 'taxes:read', icon: Scale },
   { id: 'documents', label: 'Centre de documents', group: 'Finances & Administration', permission: 'documents:read', icon: FolderOpen },
