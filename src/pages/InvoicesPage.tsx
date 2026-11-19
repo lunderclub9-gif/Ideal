@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowRightLeft, CreditCard, FilePlus2, Plus, Printer, RotateCcw } from 'lucide-react';
 import { apiFetch, formatDA, formatDateFr, hasPerm } from '../lib/api';
-import { CommercialPrintModal, Modal, PageHeader, StatusText } from '../components/ui';
+import { CommercialPrintModal, Modal, PageHeader, PaymentReceiptPrintModal, StatusText } from '../components/ui';
 
 const TYPE_LABELS: Record<string, string> = {
   devis: 'Devis',
@@ -19,6 +19,7 @@ export default function InvoicesPage({ permissions }: { permissions: string[] })
   const [company, setCompany] = useState<any>(null);
   const [filterType, setFilterType] = useState('all');
   const [printDoc, setPrintDoc] = useState<any | null>(null);
+  const [printPayment, setPrintPayment] = useState<any | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [payDoc, setPayDoc] = useState<any | null>(null);
   const [dupWarning, setDupWarning] = useState('');
@@ -301,7 +302,10 @@ export default function InvoicesPage({ permissions }: { permissions: string[] })
                   <td className={`p-3 text-right font-mono tabular-nums font-bold ${p.amount < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
                     {formatDA(p.amount)}
                   </td>
-                  <td className="p-3 text-right">
+                  <td className="p-3 text-right whitespace-nowrap space-x-2">
+                    <button type="button" onClick={() => setPrintPayment(p)} className="inline-flex items-center gap-1 text-blue-700 hover:underline">
+                      <Printer className="w-3 h-3" /> Reçu PDF
+                    </button>
                     {canApprove && !p.is_reversal && p.amount > 0 && (
                       <button
                         type="button"
@@ -534,6 +538,7 @@ export default function InvoicesPage({ permissions }: { permissions: string[] })
       </Modal>
 
       <CommercialPrintModal doc={printDoc} company={company} onClose={() => setPrintDoc(null)} />
+      <PaymentReceiptPrintModal payment={printPayment} company={company} onClose={() => setPrintPayment(null)} />
     </div>
   );
 }
