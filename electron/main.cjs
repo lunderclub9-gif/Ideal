@@ -156,7 +156,7 @@ else {
   app.whenReady().then(async () => {
     app.setPath('userData', process.env.GESTIONPRO_SMOKE_USER_DATA || path.join(app.getPath('appData'), 'GestionPro-DZ'));
     app.setAppUserModelId('dz.gestionpro.desktop');
-    try { await createMainWindow(); configureAutoUpdater(); if (app.isPackaged && process.env.GESTIONPRO_SMOKE_TEST !== '1') setTimeout(() => autoUpdater.checkForUpdates().catch(error => { logStartup(`AUTO UPDATE CHECK ERROR: ${error?.stack || error}`); }), 5000); }
+    try { configureAutoUpdater(); await createMainWindow(); if (app.isPackaged && process.env.GESTIONPRO_SMOKE_TEST !== '1') setTimeout(() => autoUpdater.checkForUpdates().catch(error => { logStartup(`AUTO UPDATE CHECK ERROR: ${error?.stack || error}`); }), 5000); }
     catch (error) { logStartup(`APPLICATION STARTUP ERROR: ${error?.stack || error}`); stopServer(); if (process.env.GESTIONPRO_SMOKE_TEST !== '1') dialog.showErrorBox('GestionPro DZ', error?.message || 'Impossible de démarrer le serveur local.'); app.quit(); }
   });
 }
