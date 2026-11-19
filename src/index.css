@@ -70,7 +70,7 @@
 
 @layer base {
   :focus-visible {
-    outline: 2px solid #2563eb;
+    outline: 2px solid #0f8a80;
     outline-offset: 2px;
   }
 
@@ -89,7 +89,7 @@
   }
 
   ::selection {
-    background: rgb(37 99 235 / 18%);
+    background: rgb(15 138 128 / 20%);
   }
 }
 
@@ -133,4 +133,16 @@
   .border-slate-200 { border-color: #dce7e4 !important; }
   .shadow-sm { box-shadow: 0 1px 2px rgb(20 55 50 / 5%), 0 4px 14px rgb(20 55 50 / 3%); }
   .focus\:ring-blue-500:focus { --tw-ring-color: rgb(8 127 117 / 28%) !important; }
+}
+
+@layer utilities {
+  .bg-blue-600 { background-color: #0f8a80 !important; }
+  .hover\\:bg-blue-700:hover { background-color: #08746d !important; }
+  .text-blue-600 { color: #0f8a80 !important; }
+  .ring-blue-500 { --tw-ring-color: rgb(15 138 128 / 28%) !important; }
+  .border-blue-200 { border-color: #b9ded8 !important; }
+  .bg-blue-50 { background-color: #edf8f6 !important; }
+  .text-emerald-700 { color: #08746d !important; }
+  .bg-emerald-700 { background-color: #087f75 !important; }
+  .hover\\:bg-emerald-800:hover { background-color: #06665f !important; }
 }
