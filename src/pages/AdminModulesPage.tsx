@@ -104,111 +104,133 @@ export function TaxesPage({ permissions }: { permissions: string[] }) {
 
 export function DocumentsPage({ permissions }: { permissions: string[] }) {
   const [docs, setDocs] = useState<any[]>([]);
+  const [clients, setClients] = useState<any[]>([]);
+  const [projects, setProjects] = useState<any[]>([]);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [workers, setWorkers] = useState<any[]>([]);
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('projects');
+  const [docDate, setDocDate] = useState(new Date().toISOString().slice(0, 10));
+  const [relatedType, setRelatedType] = useState('');
+  const [relatedId, setRelatedId] = useState('');
+  const [notes, setNotes] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [search, setSearch] = useState('');
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [editing, setEditing] = useState<any>(null);
   const canWrite = hasPerm(permissions, 'documents:write');
+  const canArchive = hasPerm(permissions, 'documents:delete');
 
   async function load() {
     try {
-      setDocs(await apiFetch('/documents'));
-    } catch (e: any) {
-      setError(e.message);
-    }
+      const [d, c, p, s, w] = await Promise.all([
+        apiFetch('/documents'), apiFetch('/clients'), apiFetch('/projects'),
+        apiFetch('/suppliers'), apiFetch('/workers'),
+      ]);
+      setDocs(d); setClients(c); setProjects(p); setSuppliers(s); setWorkers(w);
+    } catch (e: any) { setError(e.message); }
   }
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
+
+  const relatedOptions = relatedType === 'client' ? clients
+    : relatedType === 'project' ? projects
+    : relatedType === 'supplier' ? suppliers
+    : relatedType === 'worker' ? workers : [];
+  const relatedLabel = (item: any) => item.name || item.title || item.full_name || item.project_number || String(item.id);
+  const visibleDocs = docs.filter((d) => {
+    const q = search.trim().toLowerCase();
+    return !q || [d.title, d.file_name, d.category, d.notes, d.related_type].some((v) => String(v || '').toLowerCase().includes(q));
+  });
 
   async function uploadDoc(e: React.FormEvent) {
     e.preventDefault();
     if (!file || !title.trim()) return;
-    setError('');
+    setError(''); setMessage('');
     const fd = new FormData();
-    fd.append('title', title);
-    fd.append('category', category);
-    fd.append('file', file);
+    fd.append('title', title.trim()); fd.append('category', category);
+    fd.append('doc_date', docDate); fd.append('related_type', relatedType);
+    fd.append('related_id', relatedId); fd.append('notes', notes); fd.append('file', file);
     try {
-      const res = await fetch('/api/documents', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${getToken()}` },
-        body: fd,
-      });
-      if (!res.ok) throw new Error((await res.json()).error);
-      setTitle('');
-      setFile(null);
-      await load();
-    } catch (err: any) {
-      setError(err.message);
-    }
+      const res = await fetch('/api/documents', { method: 'POST', headers: { Authorization: `Bearer ${getToken()}` }, body: fd });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || 'Échec du dépôt du document.');
+      setTitle(''); setFile(null); setNotes(''); setRelatedType(''); setRelatedId('');
+      setDocDate(new Date().toISOString().slice(0, 10));
+      setMessage('Document archivé et associé avec succès.'); await load();
+    } catch (err: any) { setError(err.message); }
   }
+
+  async function saveMetadata(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editing) return;
+    try {
+      await apiFetch(`/documents/${editing.id}`, { method: 'PUT', body: JSON.stringify(editing) });
+      setEditing(null); setMessage('Informations du document mises à jour.'); await load();
+    } catch (err: any) { setError(err.message); }
+  }
+
+  async function archiveDoc(id: number) {
+    if (!window.confirm('Archiver ce document ? Le fichier restera conservé sur le disque.')) return;
+    try {
+      await apiFetch(`/documents/${id}`, { method: 'DELETE' });
+      setMessage('Document archivé sans supprimer le fichier.'); await load();
+    } catch (err: any) { setError(err.message); }
+  }
+
+  const entityOptions = (type: string) => type === 'client' ? clients : type === 'project' ? projects : type === 'supplier' ? suppliers : workers;
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Centre de documents local" subtitle="Stockage organisé sur le poste local (contrats, plans, cartes grises, factures scannées)" />
+      <PageHeader title="Centre de documents & pièces jointes" subtitle="Classement local, liaison aux clients, chantiers, fournisseurs et salariés, avec historique conservé" actions={<button type="button" onClick={() => downloadWithAuth('/documents/export/xlsx', 'registre_documents_gestionpro.xlsx')} className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium border border-slate-300 dark:border-slate-700 rounded-lg"><FileSpreadsheet className="w-3.5 h-3.5" /> Exporter le registre</button>} />
       {error && <div className="p-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg">{error}</div>}
+      {message && <div className="p-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg">{message}</div>}
 
       {canWrite && (
-        <form onSubmit={uploadDoc} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex flex-wrap items-end gap-3 text-xs">
-          <div className="flex-1 min-w-[200px]">
-            <label className="block font-medium mb-1">Intitulé du document *</label>
-            <input type="text" required value={title} onChange={(e) => setTitle(e.target.value)} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" placeholder="ex. Attestation assurance 2026" />
+        <form onSubmit={uploadDoc} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3 text-xs">
+          <div className="font-semibold text-sm">Ajouter une pièce jointe</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="sm:col-span-2"><label className="block font-medium mb-1">Intitulé *</label><input required value={title} onChange={(e) => setTitle(e.target.value)} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" placeholder="Contrat, plan, facture fournisseur..." /></div>
+            <div><label className="block font-medium mb-1">Catégorie</label><select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"><option value="projects">Chantiers / Plans</option><option value="contracts">Contrats</option><option value="invoices">Factures</option><option value="vehicles">Véhicules</option><option value="payroll">Paie / RH</option><option value="suppliers">Fournisseurs / Achats</option><option value="clients">Clients</option><option value="general">Général</option></select></div>
+            <div><label className="block font-medium mb-1">Date du document</label><input type="date" value={docDate} onChange={(e) => setDocDate(e.target.value)} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
+            <div><label className="block font-medium mb-1">Lier à une fiche</label><select value={relatedType} onChange={(e) => { setRelatedType(e.target.value); setRelatedId(''); }} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"><option value="">Aucun lien</option><option value="client">Client</option><option value="project">Chantier</option><option value="supplier">Fournisseur</option><option value="worker">Salarié</option></select></div>
+            {relatedType && <div><label className="block font-medium mb-1">Fiche associée</label><select required value={relatedId} onChange={(e) => setRelatedId(e.target.value)} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"><option value="">Sélectionner...</option>{relatedOptions.map((item: any) => <option key={item.id} value={item.id}>{relatedLabel(item)}</option>)}</select></div>}
+            <div><label className="block font-medium mb-1">Fichier (max. 50 Mo)</label><input type="file" required onChange={(e) => setFile(e.target.files?.[0] || null)} className="w-full text-xs" /></div>
+            <div className="sm:col-span-2"><label className="block font-medium mb-1">Notes</label><input value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={1000} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" placeholder="Description ou référence complémentaire" /></div>
           </div>
-          <div>
-            <label className="block font-medium mb-1">Dossier</label>
-            <select value={category} onChange={(e) => setCategory(e.target.value)} className="px-3 py-2 border rounded-lg bg-white dark:bg-slate-950">
-              <option value="projects">Chantiers / Plans</option>
-              <option value="contracts">Contrats</option>
-              <option value="invoices">Factures</option>
-              <option value="vehicles">Véhicules</option>
-              <option value="payroll">Paie / RH</option>
-              <option value="general">Général</option>
-            </select>
-          </div>
-          <div>
-            <label className="block font-medium mb-1">Fichier *</label>
-            <input type="file" required onChange={(e) => setFile(e.target.files?.[0] || null)} className="text-xs" />
-          </div>
-          <button type="submit" className="inline-flex items-center gap-1.5 px-4 py-2 text-white bg-blue-700 rounded-lg font-medium">
-            <FolderUp className="w-3.5 h-3.5" /> Archiver localement
-          </button>
+          <button type="submit" className="inline-flex items-center gap-1.5 px-4 py-2 text-white bg-blue-700 rounded-lg font-medium"><FolderUp className="w-3.5 h-3.5" /> Archiver localement</button>
         </form>
       )}
 
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-        <table className="w-full text-xs">
-          <thead className="bg-slate-50 dark:bg-slate-800/60">
-            <tr>
-              <th className="p-3 text-left">Document</th>
-              <th className="p-3 text-left">Dossier</th>
-              <th className="p-3 text-left">Date</th>
-              <th className="p-3 text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-            {docs.map((d) => (
-              <tr key={d.id}>
-                <td className="p-3">
-                  <div className="font-semibold">{d.title}</div>
-                  <div className="font-mono text-[11px] text-slate-500">{d.file_name}</div>
-                </td>
-                <td className="p-3">{d.category}</td>
-                <td className="p-3 font-mono">{formatDateFr(d.doc_date)}</td>
-                <td className="p-3 text-right">
-                  <button
-                    type="button"
-                    onClick={() => downloadWithAuth(`/documents/${d.id}/download`, d.file_name)}
-                    className="inline-flex items-center gap-1 text-blue-700 hover:underline"
-                  >
-                    <Download className="w-3.5 h-3.5" /> Télécharger
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher par titre, fichier, catégorie ou note..." className="w-full sm:max-w-md px-3 py-2 text-xs border rounded-lg bg-white dark:bg-slate-900" />
+        <span className="text-xs text-slate-500">{visibleDocs.length} document(s)</span>
       </div>
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+        <div className="overflow-x-auto"><table className="w-full text-xs">
+          <thead className="bg-slate-50 dark:bg-slate-800/60"><tr><th className="p-3 text-left">Document</th><th className="p-3 text-left">Catégorie / Liaison</th><th className="p-3 text-left">Date</th><th className="p-3 text-right">Actions</th></tr></thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+            {visibleDocs.map((d) => <tr key={d.id}>
+              <td className="p-3"><div className="font-semibold">{d.title}</div><div className="font-mono text-[11px] text-slate-500">{d.file_name} · {(Number(d.file_size || 0) / 1024).toFixed(1)} Ko</div>{d.notes && <div className="text-[11px] text-slate-500 mt-1">{d.notes}</div>}</td>
+              <td className="p-3"><div>{d.category}</div><div className="text-[11px] text-slate-500">{d.related_type ? `${d.related_type} #${d.related_id}` : 'Non associé'}</div></td>
+              <td className="p-3 font-mono">{formatDateFr(d.doc_date)}</td>
+              <td className="p-3 text-right whitespace-nowrap space-x-3">
+                <button type="button" onClick={() => downloadWithAuth(`/documents/${d.id}/download`, d.file_name)} className="inline-flex items-center gap-1 text-blue-700 hover:underline"><Download className="w-3.5 h-3.5" /> Télécharger</button>
+                {canWrite && <button type="button" onClick={() => setEditing({ id: d.id, title: d.title, category: d.category, doc_date: d.doc_date, related_type: d.related_type || '', related_id: d.related_id || '', notes: d.notes || '' })} className="inline-flex items-center gap-1 text-slate-600 hover:underline"><FileSpreadsheet className="w-3.5 h-3.5" /> Modifier</button>}
+                {canArchive && <button type="button" onClick={() => archiveDoc(d.id)} className="text-red-700 hover:underline">Archiver</button>}
+              </td>
+            </tr>)}
+            {visibleDocs.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-500">Aucun document correspondant.</td></tr>}
+          </tbody>
+        </table></div>
+      </div>
+
+      {editing && <div className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4"><form onSubmit={saveMetadata} className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-xl p-5 space-y-3 text-xs"><div className="flex justify-between items-center"><h2 className="font-semibold text-sm">Modifier les informations</h2><button type="button" onClick={() => setEditing(null)} className="text-slate-500">Fermer</button></div>
+        <label className="block">Intitulé<input required value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></label>
+        <div className="grid grid-cols-2 gap-3"><label>Catégorie<select value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"><option value="projects">Chantiers</option><option value="contracts">Contrats</option><option value="invoices">Factures</option><option value="vehicles">Véhicules</option><option value="payroll">Paie</option><option value="suppliers">Fournisseurs</option><option value="clients">Clients</option><option value="general">Général</option></select></label><label>Date<input type="date" value={editing.doc_date} onChange={(e) => setEditing({ ...editing, doc_date: e.target.value })} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></label></div>
+        <label className="block">Notes<textarea value={editing.notes} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} maxLength={1000} className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></label>
+        <div className="flex justify-end gap-2"><button type="button" onClick={() => setEditing(null)} className="px-3 py-2 border rounded-lg">Annuler</button><button className="px-4 py-2 bg-blue-700 text-white rounded-lg">Enregistrer</button></div>
+      </form></div>}
     </div>
   );
 }
