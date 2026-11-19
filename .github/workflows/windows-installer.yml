@@ -9,6 +9,7 @@ on:
       - 'server.ts'
       - 'package.json'
       - 'electron/**'
+      - 'scripts/**'
       - 'vite.config.ts'
       - 'index.html'
       - 'public/**'
