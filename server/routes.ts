@@ -365,7 +365,12 @@ router.get('/clients', requireAuth, requirePermission('clients:read'), (_req, re
     .prepare(
       `SELECT c.*,
         (SELECT COUNT(*) FROM projects p WHERE p.client_id = c.id) AS project_count,
-        (SELECT COALESCE(SUM(total_ttc - amount_paid), 0) FROM commercial_documents d WHERE d.client_id = c.id AND d.doc_type='facture' AND d.status NOT IN ('draft','cancelled')) AS balance_due
+        (SELECT COALESCE(SUM(MAX(0, d.total_ttc - d.amount_paid -
+          COALESCE((SELECT SUM(a.total_ttc) FROM commercial_documents a
+                    WHERE a.doc_type='avoir' AND a.linked_doc_id=d.id
+                      AND a.status NOT IN ('draft','cancelled')), 0))), 0)
+         FROM commercial_documents d
+         WHERE d.client_id = c.id AND d.doc_type='facture' AND d.status NOT IN ('draft','cancelled')) AS balance_due
        FROM clients c ORDER BY c.id DESC`
     )
     .all();
@@ -2934,7 +2939,7 @@ router.get('/finance/debts', requireAuth, requirePermission('reports:read'), (_r
      FROM workers w
      LEFT JOIN attendance a ON a.worker_id=w.id
      GROUP BY w.id
-     HAVING advances_issued > 0
+     HAVING COALESCE(SUM(a.advance_amount),0) > 0
      ORDER BY w.full_name COLLATE NOCASE`
   ).all() as any[];
 
