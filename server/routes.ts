@@ -1270,11 +1270,12 @@ router.get('/payments', requireAuth, requirePermission('invoices:read'), (_req, 
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT p.*, c.name AS client_name, s.name AS supplier_name, d.doc_number
+      `SELECT p.*, c.name AS client_name, s.name AS supplier_name, d.doc_number, pu.po_number AS purchase_number
        FROM payments p
        LEFT JOIN clients c ON c.id = p.client_id
        LEFT JOIN suppliers s ON s.id = p.supplier_id
        LEFT JOIN commercial_documents d ON d.id = p.document_id
+       LEFT JOIN purchases pu ON pu.id = p.purchase_id
        ORDER BY p.payment_date DESC, p.id DESC`
     )
     .all();
