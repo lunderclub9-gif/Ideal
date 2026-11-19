@@ -38,6 +38,7 @@ import {
   saveSession,
 } from './lib/api';
 import LoginPage from './pages/LoginPage';
+import UpdaterPanel from './components/UpdaterPanel';
 import SetupPage from './pages/SetupPage';
 import DashboardPage from './pages/DashboardPage';
 import ClientsPage from './pages/ClientsPage';
@@ -360,6 +361,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <UpdaterPanel />
             <button
               type="button"
               onClick={() => setDark((d) => !d)}
