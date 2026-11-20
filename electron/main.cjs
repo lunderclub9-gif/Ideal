@@ -18,7 +18,8 @@ function publishUpdateStatus(patch) {
 }
 
 function configureAutoUpdater() {
-  if (!app.isPackaged || process.env.GESTIONPRO_SMOKE_TEST === '1') return;
+  // Microsoft Store packages receive updates through Store; electron-updater is for NSIS releases only.
+  if (process.windowsStore || !app.isPackaged || process.env.GESTIONPRO_SMOKE_TEST === '1') return;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.allowPrerelease = false;
@@ -162,7 +163,7 @@ else {
     }
     app.setPath('userData', idealUserData || newUserData);
     app.setAppUserModelId('dz.ideal.desktop');
-    try { configureAutoUpdater(); await createMainWindow(); if (app.isPackaged && process.env.GESTIONPRO_SMOKE_TEST !== '1') setTimeout(() => autoUpdater.checkForUpdates().catch(error => { logStartup(`AUTO UPDATE CHECK ERROR: ${error?.stack || error}`); }), 5000); }
+    try { configureAutoUpdater(); await createMainWindow(); if (app.isPackaged && !process.windowsStore && process.env.GESTIONPRO_SMOKE_TEST !== '1') setTimeout(() => autoUpdater.checkForUpdates().catch(error => { logStartup(`AUTO UPDATE CHECK ERROR: ${error?.stack || error}`); }), 5000); }
     catch (error) { logStartup(`APPLICATION STARTUP ERROR: ${error?.stack || error}`); stopServer(); if (process.env.GESTIONPRO_SMOKE_TEST !== '1') dialog.showErrorBox('IDEAL', error?.message || 'Impossible de démarrer le serveur local.'); app.quit(); }
   });
 }
