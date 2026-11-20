@@ -544,16 +544,21 @@ export function KpiCard({
     blue: 'text-blue-700 dark:text-blue-400',
   }[tone];
 
-  const Comp: any = onClick ? 'button' : 'div';
-  return (
-    <Comp
-      type={onClick ? 'button' : undefined}
-      onClick={onClick}
-      className={`text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl ${compact ? 'p-3' : 'p-4'} ${onClick ? 'hover:border-blue-400 dark:hover:border-blue-600 transition-colors' : ''}`}
-    >
+  const className = `text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl ${compact ? 'p-3' : 'p-4'} ${onClick ? 'hover:border-blue-400 dark:hover:border-blue-600 transition-colors' : ''}`;
+  const content = (
+    <>
       <div className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">{label}</div>
       <div className={`mt-1.5 text-lg font-bold font-mono tabular-nums tracking-tight ${cls}`}>{value}</div>
       {subtext && <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 truncate">{subtext}</div>}
-    </Comp>
+    </>
   );
+
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={className}>
+        {content}
+      </button>
+    );
+  }
+  return <div className={className}>{content}</div>;
 }
