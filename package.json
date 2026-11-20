@@ -18,7 +18,8 @@
     "postinstall": "electron-builder install-app-deps",
     "test:data-protection": "tsx scripts/test-data-protection.ts",
     "check:french-ui": "node scripts/check-french-ui.cjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "dist:win:store": "npm run build && node scripts/build-store-package.cjs"
   },
   "dependencies": {
     "adm-zip": "^0.6.1",
