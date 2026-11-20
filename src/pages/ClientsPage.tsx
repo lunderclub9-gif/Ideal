@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Download, Eye, Plus, Search, UserCheck, Trash2, Archive, RotateCcw } from 'lucide-react';
 import { apiFetch, downloadWithAuth, formatDA, formatDateFr, hasPerm } from '../lib/api';
-import { EmptyState, Modal, PageHeader, StatusText } from '../components/ui';
+import { EmptyState, KpiCard, Modal, PageHeader, StatusText } from '../components/ui';
 
 export default function ClientsPage({ permissions }: { permissions: string[] }) {
   const [clients, setClients] = useState<any[]>([]);
@@ -192,22 +192,10 @@ export default function ClientsPage({ permissions }: { permissions: string[] }) 
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
-          <div className="text-[11px] text-slate-500">Clients</div>
-          <div className="text-lg font-bold font-mono tabular-nums">{clients.length}</div>
-        </div>
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
-          <div className="text-[11px] text-slate-500">Actifs</div>
-          <div className="text-lg font-bold font-mono tabular-nums text-emerald-700">{clients.filter((c) => c.status === 'active').length}</div>
-        </div>
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
-          <div className="text-[11px] text-slate-500">Archivés</div>
-          <div className="text-lg font-bold font-mono tabular-nums text-slate-600">{clients.filter((c) => c.status !== 'active').length}</div>
-        </div>
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
-          <div className="text-[11px] text-slate-500">Reste à encaisser</div>
-          <div className="text-lg font-bold font-mono tabular-nums text-amber-700">{formatDA(clients.reduce((s, c) => s + Number(c.balance_due || 0), 0))}</div>
-        </div>
+        <KpiCard compact label="Clients" value={clients.length} />
+        <KpiCard compact label="Actifs" value={clients.filter((c) => c.status === 'active').length} tone="green" />
+        <KpiCard compact label="Archivés" value={clients.filter((c) => c.status !== 'active').length} />
+        <KpiCard compact label="Reste à encaisser" value={formatDA(clients.reduce((s, c) => s + Number(c.balance_due || 0), 0))} tone="amber" />
       </div>
 
       {filtered.length === 0 ? (

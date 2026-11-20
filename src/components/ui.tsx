@@ -520,3 +520,40 @@ export function PayslipPrintModal({
     </div>
   );
 }
+
+export function KpiCard({
+  label,
+  value,
+  subtext,
+  tone = 'default',
+  onClick,
+  compact = false,
+}: {
+  label: string;
+  value: string | number;
+  subtext?: string;
+  tone?: 'default' | 'green' | 'amber' | 'red' | 'blue';
+  onClick?: () => void;
+  compact?: boolean;
+}) {
+  const cls = {
+    default: 'text-slate-900 dark:text-white',
+    green: 'text-emerald-700 dark:text-emerald-400',
+    amber: 'text-amber-700 dark:text-amber-400',
+    red: 'text-red-700 dark:text-red-400',
+    blue: 'text-blue-700 dark:text-blue-400',
+  }[tone];
+
+  const Comp: any = onClick ? 'button' : 'div';
+  return (
+    <Comp
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className={`text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl ${compact ? 'p-3' : 'p-4'} ${onClick ? 'hover:border-blue-400 dark:hover:border-blue-600 transition-colors' : ''}`}
+    >
+      <div className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">{label}</div>
+      <div className={`mt-1.5 text-lg font-bold font-mono tabular-nums tracking-tight ${cls}`}>{value}</div>
+      {subtext && <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 truncate">{subtext}</div>}
+    </Comp>
+  );
+}
