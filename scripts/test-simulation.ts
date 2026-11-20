@@ -136,6 +136,7 @@ try {
     lines: [{ description: 'Prestation de simulation', quantity: 1, unit_price: 10000, tva_rate: 19 }],
   }, token);
   assert.equal(result.status, 201, 'issue invoice');
+  const invoiceId = Number(result.data.id);
   assert.ok(result.data.deletion_eligible_until, 'invoice creation metadata is present');
 
   result = await request('/expenses', 'POST', {
@@ -155,7 +156,7 @@ try {
     ['clients', clientId],
     ['projects', projectId],
     ['workers', workerId],
-    ['commercial_documents', Number((await request('/commercial-documents', 'GET', undefined, token)).data?.[0]?.id || 0)],
+    ['commercial_documents', invoiceId],
   ]) {
     assert.ok(records.some((row) => row.table === table && row.id === id), `lifecycle overview includes ${table} #${id}`);
   }
