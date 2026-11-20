@@ -955,7 +955,7 @@ router.post('/commercial-documents', requireAuth, requirePermission('invoices:wr
     return;
   }
   const db = getDb();
-  const docType = b.doc_type || 'devis';
+  const docType = DOC_PREFIX_MAP[b.doc_type] ? String(b.doc_type) : 'devis';
   const settings = db.prepare('SELECT * FROM company_settings WHERE id = 1').get() as any;
   const prefixCol = DOC_PREFIX_MAP[docType] || 'prefix_quote';
   const prefix = settings?.[prefixCol] || 'DOC';
