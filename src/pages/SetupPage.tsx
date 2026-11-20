@@ -40,7 +40,7 @@ export default function SetupPage({ onSuccess }: { onSuccess: () => void }) {
         <div className="p-7 sm:p-9 bg-slate-900 text-white">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl bg-blue-600 flex items-center justify-center"><Building2 className="w-6 h-6" /></div>
-            <div><div className="font-bold text-xl">GestionPro DZ</div><div className="text-xs text-slate-300">Configuration initiale</div></div>
+            <div><div className="font-bold text-xl">IDEAL</div><div className="text-xs text-slate-300">Configuration initiale</div></div>
           </div>
           <h1 className="mt-7 text-2xl font-semibold">Bienvenue dans votre espace de gestion</h1>
           <p className="mt-2 text-sm leading-6 text-slate-300">Renseignez les informations de votre entreprise et créez votre compte propriétaire. Aucune donnée fictive ne sera ajoutée.</p>

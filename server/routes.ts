@@ -3661,7 +3661,7 @@ router.post('/backups/:id/verify', requireAuth, requirePermission('backup:manage
 
 router.post('/backups/restore', requireAuth, requirePermission('backup:manage'), uploadMemory.single('archive'), (req: AuthedRequest, res) => {
   if (!req.file) {
-    res.status(400).json({ error: 'Veuillez sélectionner une archive ZIP de sauvegarde GestionPro DZ.' });
+    res.status(400).json({ error: 'Veuillez sélectionner une archive ZIP de sauvegarde IDEAL.' });
     return;
   }
   try {

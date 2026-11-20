@@ -1,6 +1,6 @@
 {
-  "name": "gestionpro-dz",
-  "productName": "GestionPro DZ",
+  "name": "ideal",
+  "productName": "IDEAL",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -52,8 +52,8 @@
     "vite": "^8.3.0"
   },
   "build": {
-    "appId": "dz.gestionpro.desktop",
-    "productName": "GestionPro DZ",
+    "appId": "dz.ideal.desktop",
+    "productName": "IDEAL",
     "asar": true,
     "asarUnpack": [
       "**/*.node",
@@ -77,7 +77,7 @@
           ]
         }
       ],
-      "artifactName": "GestionPro-DZ-Setup-${version}.${ext}"
+      "artifactName": "IDEAL-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -85,7 +85,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "GestionPro DZ",
+      "shortcutName": "IDEAL",
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false
     },
@@ -101,6 +101,6 @@
       }
     ]
   },
-  "description": "Application de gestion locale pour les entreprises algériennes.",
-  "author": "GestionPro DZ"
+  "description": "IDEAL — application de gestion locale pour les entreprises.",
+  "author": "IDEAL"
 }

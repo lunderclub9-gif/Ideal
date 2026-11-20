@@ -8,9 +8,9 @@ export interface AuthUser {
   status: string;
 }
 
-const TOKEN_KEY = 'gestionpro_dz_token';
-const USER_KEY = 'gestionpro_dz_user';
-const PERMS_KEY = 'gestionpro_dz_perms';
+const TOKEN_KEY = 'ideal_token';
+const USER_KEY = 'ideal_user';
+const PERMS_KEY = 'ideal_perms';
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -79,7 +79,7 @@ export async function apiFetch<T = any>(path: string, options: RequestInit = {})
 
   if (res.status === 401) {
     clearSession();
-    window.dispatchEvent(new CustomEvent('gestionpro-unauthorized'));
+    window.dispatchEvent(new CustomEvent('ideal-unauthorized'));
   }
 
   const contentType = res.headers.get('content-type') || '';

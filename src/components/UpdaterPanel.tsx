@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { apiFetch } from '../lib/api';
 type UpdateStatus = { state: string; version: string | null; percent: number; message: string };
 type DesktopBridge = { getVersion: () => Promise<string>; getUpdateStatus: () => Promise<UpdateStatus>; checkForUpdates: () => Promise<UpdateStatus>; installUpdate: () => Promise<boolean>; onUpdateStatus: (callback: (status: UpdateStatus) => void) => () => void };
-declare global { interface Window { gestionProDesktop?: DesktopBridge } }
+declare global { interface Window { idealDesktop?: DesktopBridge } }
 export default function UpdaterPanel({ canBackup }: { canBackup: boolean }) {
-  const bridge = window.gestionProDesktop;
+  const bridge = window.idealDesktop;
   const [version, setVersion] = useState('…');
   const [status, setStatus] = useState<UpdateStatus>({ state: 'idle', version: null, percent: 0, message: 'Prêt à vérifier les mises à jour.' });
   const [busy, setBusy] = useState(false);

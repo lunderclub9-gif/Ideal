@@ -59,7 +59,7 @@ function verifySqliteSnapshot(snapshotPath: string) {
     if (foreignKeyIssue) throw new Error('La base restaurée contient des références internes incohérentes.');
     const tables = testDb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>;
     if (!tables.some((table) => table.name === 'users') || !tables.some((table) => table.name === 'company_settings')) {
-      throw new Error('La base ne contient pas les tables essentielles de GestionPro DZ.');
+      throw new Error('La base ne contient pas les tables essentielles de IDEAL.');
     }
   } finally {
     testDb.close();
@@ -117,7 +117,7 @@ export function createFullBackup(
     }
 
     const manifest: BackupManifest = {
-      app: 'GestionPro DZ',
+      app: 'IDEAL',
       schema_version: currentSchemaVersion(db),
       backup_type: backupType,
       created_at: now.toISOString(),
@@ -261,7 +261,7 @@ export function restoreFromZip(
       }
       if (manifest.integrity_check && manifest.integrity_check !== 'ok') throw new Error('Le manifeste indique une sauvegarde non vérifiée.');
       if (manifest.schema_version && manifest.schema_version > currentSchemaVersion(getDb())) {
-        throw new Error('Cette sauvegarde provient d’une version plus récente de GestionPro DZ. Mettez le programme à jour avant de la restaurer.');
+        throw new Error('Cette sauvegarde provient d’une version plus récente de IDEAL. Mettez le programme à jour avant de la restaurer.');
       }
     } catch (err: any) {
       if (/SHA-256|plus récente|non vérifiée/.test(String(err.message || ''))) throw err;

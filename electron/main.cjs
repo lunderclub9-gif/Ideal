@@ -14,7 +14,7 @@ let updateStatus = { state: 'idle', version: null, percent: 0, message: 'Les mis
 
 function publishUpdateStatus(patch) {
   updateStatus = { ...updateStatus, ...patch };
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('gestionpro:update-status', updateStatus);
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('ideal:update-status', updateStatus);
 }
 
 function configureAutoUpdater() {
@@ -33,9 +33,9 @@ function configureAutoUpdater() {
     logStartup(`AUTO UPDATE ERROR: ${error?.stack || error}`);
     publishUpdateStatus({ state: 'error', message: 'Impossible de vérifier ou télécharger la mise à jour. Réessayez lorsque la connexion Internet sera disponible.' });
   });
-  ipcMain.handle('gestionpro:get-version', () => app.getVersion());
-  ipcMain.handle('gestionpro:get-update-status', () => updateStatus);
-  ipcMain.handle('gestionpro:check-updates', async () => {
+  ipcMain.handle('ideal:get-version', () => app.getVersion());
+  ipcMain.handle('ideal:get-update-status', () => updateStatus);
+  ipcMain.handle('ideal:check-updates', async () => {
     try {
       if (updateStatus.state === 'checking' || updateStatus.state === 'downloading') return updateStatus;
       await autoUpdater.checkForUpdates();
@@ -45,12 +45,12 @@ function configureAutoUpdater() {
       return updateStatus;
     }
   });
-  ipcMain.handle('gestionpro:install-update', async () => {
+  ipcMain.handle('ideal:install-update', async () => {
     if (updateStatus.state !== 'downloaded') return false;
     const choice = await dialog.showMessageBox(mainWindow, {
       type: 'warning', buttons: ['Redémarrer et installer', 'Annuler'], defaultId: 1, cancelId: 1,
-      title: 'Installer la mise à jour de GestionPro DZ',
-      message: 'Une sauvegarde vérifiée a été créée. Voulez-vous redémarrer GestionPro DZ et installer la mise à jour maintenant ?',
+      title: 'Installer la mise à jour IDEAL',
+      message: 'Une sauvegarde vérifiée a été créée. Voulez-vous redémarrer IDEAL et installer la mise à jour maintenant ?',
       detail: 'Le programme sera fermé puis redémarré après l’installation. La mise à jour ne supprimera pas les données de l’entreprise enregistrées dans AppData.'
     });
     if (choice.response !== 0) return false;
@@ -73,7 +73,7 @@ function waitForServer(child, timeoutMs = 60000) {
     child.stdout.on('data', (chunk) => {
       output += chunk.toString();
       logStartup(`SERVER STDOUT: ${chunk.toString().trim()}`);
-      const match = output.match(/GESTIONPRO_SERVER_READY:(\d+)/);
+      const match = output.match(/IDEAL_SERVER_READY:(\d+)/);
       if (match) { clearTimeout(timeout); resolve(Number(match[1])); }
       if (output.length > 12000) output = output.slice(-6000);
     });
@@ -81,7 +81,7 @@ function waitForServer(child, timeoutMs = 60000) {
       const message = chunk.toString();
       console.error(message);
       logStartup(`SERVER STDERR: ${message.trim()}`);
-      if (/GESTIONPRO_STARTUP_ERROR|GESTIONPRO_SERVER_ERROR/.test(message)) {
+      if (/IDEAL_STARTUP_ERROR|IDEAL_SERVER_ERROR/.test(message)) {
         clearTimeout(timeout);
         reject(new Error(message));
       }
@@ -131,7 +131,7 @@ async function createMainWindow() {
   }
   mainWindow = new BrowserWindow({
     width: 1440, height: 920, minWidth: 1024, minHeight: 680, show: false,
-    title: 'GestionPro DZ', autoHideMenuBar: true, backgroundColor: '#f8fafc',
+    title: 'IDEAL', autoHideMenuBar: true, backgroundColor: '#f8fafc',
     webPreferences: { preload: path.join(app.getAppPath(), 'electron', 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -154,10 +154,16 @@ else {
     if (mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus(); }
   });
   app.whenReady().then(async () => {
-    app.setPath('userData', process.env.GESTIONPRO_SMOKE_USER_DATA || path.join(app.getPath('appData'), 'GestionPro-DZ'));
-    app.setAppUserModelId('dz.gestionpro.desktop');
+    const idealUserData = process.env.IDEAL_SMOKE_USER_DATA || process.env.GESTIONPRO_SMOKE_USER_DATA;
+    const oldUserData = path.join(app.getPath('appData'), 'GestionPro-DZ');
+    const newUserData = path.join(app.getPath('appData'), 'IDEAL');
+    if (!idealUserData && !fs.existsSync(newUserData) && fs.existsSync(oldUserData)) {
+      try { fs.cpSync(oldUserData, newUserData, { recursive: true }); } catch (e) { logStartup(`USER DATA MIGRATION ERROR: ${e?.stack || e}`); }
+    }
+    app.setPath('userData', idealUserData || newUserData);
+    app.setAppUserModelId('dz.ideal.desktop');
     try { configureAutoUpdater(); await createMainWindow(); if (app.isPackaged && process.env.GESTIONPRO_SMOKE_TEST !== '1') setTimeout(() => autoUpdater.checkForUpdates().catch(error => { logStartup(`AUTO UPDATE CHECK ERROR: ${error?.stack || error}`); }), 5000); }
-    catch (error) { logStartup(`APPLICATION STARTUP ERROR: ${error?.stack || error}`); stopServer(); if (process.env.GESTIONPRO_SMOKE_TEST !== '1') dialog.showErrorBox('GestionPro DZ', error?.message || 'Impossible de démarrer le serveur local.'); app.quit(); }
+    catch (error) { logStartup(`APPLICATION STARTUP ERROR: ${error?.stack || error}`); stopServer(); if (process.env.GESTIONPRO_SMOKE_TEST !== '1') dialog.showErrorBox('IDEAL', error?.message || 'Impossible de démarrer le serveur local.'); app.quit(); }
   });
 }
 app.on('before-quit', stopServer);
