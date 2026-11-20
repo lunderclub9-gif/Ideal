@@ -1,4 +1,4 @@
-const { build, Platform, Arch } = require('electron-builder');
+const { build, Platform } = require('electron-builder');
 
 const identityName = process.env.IDEAL_STORE_IDENTITY_NAME?.trim();
 const publisher = process.env.IDEAL_STORE_PUBLISHER?.trim();
@@ -19,7 +19,7 @@ if (!/^CN=.+/.test(publisher)) {
 
 async function main() {
   const artifacts = await build({
-    targets: Platform.WINDOWS.createTarget(['appx'], Arch.x64),
+    targets: Platform.WINDOWS.createTarget(['appx']),
     config: {
       productName: 'IDEAL',
       appId: 'dz.ideal.desktop',
