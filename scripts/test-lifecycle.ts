@@ -125,6 +125,12 @@ try {
   process.exitCode = 1;
 } finally {
   try { process.kill(-server.pid!, 'SIGTERM'); } catch {}
-  try { server.kill('SIGTERM'); } catch {}
+  if (server.exitCode === null) {
+    try { server.kill('SIGTERM'); } catch {}
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 5000);
+      server.once('exit', () => { clearTimeout(timer); resolve(); });
+    });
+  }
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }
