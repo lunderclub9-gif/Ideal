@@ -10,7 +10,8 @@ process.env.GESTIONPRO_DATA_DIR = dataDir;
 const port = 3099;
 const env = { ...process.env, HOST: '127.0.0.1', PORT: String(port), GESTIONPRO_DATA_DIR: dataDir, NODE_ENV: 'development' };
 
-const server = spawn('npx', ['tsx', 'server.ts'], { env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+const tsxCli = path.resolve('node_modules/tsx/dist/cli.mjs');
+const server = spawn(process.execPath, [tsxCli, 'server.ts'], { env, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
 let ready = false;
 await new Promise<void>((resolve, reject) => {
   const timer = setTimeout(() => reject(new Error('server startup timeout')), 30000);
