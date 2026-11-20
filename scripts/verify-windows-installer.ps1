@@ -12,9 +12,20 @@ if ($installer.Length -lt 10MB) { throw "Installer is unexpectedly small ($($ins
 
 $stream = [System.IO.File]::OpenRead($installer.FullName)
 try {
-  $header = New-Object byte[] 2
-  if ($stream.Read($header, 0, 2) -ne 2 -or $header[0] -ne 0x4D -or $header[1] -ne 0x5A) {
-    throw "Installer does not have a valid Windows executable header."
+  $dosHeader = New-Object byte[] 64
+  if ($stream.Read($dosHeader, 0, 64) -ne 64 -or $dosHeader[0] -ne 0x4D -or $dosHeader[1] -ne 0x5A) {
+    throw "Installer does not have a valid Windows DOS executable header."
+  }
+  $peOffset = [BitConverter]::ToInt32($dosHeader, 0x3C)
+  if ($peOffset -lt 64 -or $peOffset -gt ($stream.Length - 4)) {
+    throw "Installer has an invalid PE header offset."
+  }
+  [void]$stream.Seek($peOffset, [System.IO.SeekOrigin]::Begin)
+  $peSignature = New-Object byte[] 4
+  if ($stream.Read($peSignature, 0, 4) -ne 4 -or
+      $peSignature[0] -ne 0x50 -or $peSignature[1] -ne 0x45 -or
+      $peSignature[2] -ne 0x00 -or $peSignature[3] -ne 0x00) {
+    throw "Installer does not contain a valid PE signature."
   }
 }
 finally { $stream.Dispose() }
