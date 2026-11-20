@@ -64,6 +64,8 @@ jobs:
         run: npm run check:french-ui
       - name: Test backup, restore and session protection
         run: npm run test:data-protection
+      - name: Test lifecycle policies in an isolated temporary database
+        run: npm run test:lifecycle
       - name: Build application and Windows installer
         run: npm run dist:win
       - name: Smoke test packaged Windows application
