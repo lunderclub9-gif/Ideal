@@ -25,7 +25,7 @@ import {
 } from './calculations.ts';
 import { createFullBackup, listBackups, restoreFromZip, verifyBackupArchive } from './backup.ts';
 import { DOCS_DIR, getDb } from './db.ts';
-import { archiveEntity, clientDependencies, isDeletionEligible, projectDependencies, restoreEntity, vehicleDependencies, workerDependencies, materialDependencies, daysRemaining, deletionDeadline } from './lifecycle.ts';
+import { archiveEntity, clientDependencies, isDeletionEligible, projectDependencies, restoreEntity, vehicleDependencies, workerDependencies, materialDependencies, daysRemaining, deletionDeadline, markReviewed, isReviewDue, protectedReason } from './lifecycle.ts';
 
 const router = express.Router();
 
@@ -3879,6 +3879,11 @@ router.delete('/commercial-documents/:id', requireAuth, requirePermission('invoi
   const db = getDb();
   const row = db.prepare('SELECT * FROM commercial_documents WHERE id = ?').get(id) as any;
   if (!row) { res.status(404).json({ error: 'Pièce introuvable.' }); return; }
+  const pReason = protectedReason('commercial_documents', row);
+  if (pReason) {
+    res.status(400).json({ error: pReason, protected: true });
+    return;
+  }
   if (row.status !== 'draft') {
     res.status(400).json({ error: 'Suppression impossible : seuls les brouillons peuvent être supprimés. Utilisez l’annulation pour une pièce émise.' });
     return;
@@ -3911,6 +3916,30 @@ router.post('/commercial-documents/:id/restore', requireAuth, requirePermission(
   if (!row) { res.status(404).json({ error: 'Pièce introuvable.' }); return; }
   restoreEntity('commercial_documents', id);
   logAudit(req.user!, 'RESTORE', 'commercial_document', id, 'archived', 'Restauré');
+  res.json({ ok: true });
+});
+
+router.post('/lifecycle/review', requireAuth, requirePermission('audit:read'), (req: AuthedRequest, res) => {
+  const table = String(req.body?.table || '');
+  const id = Number(req.body?.id);
+  const allowed = ['clients','suppliers','workers','projects','vehicles','materials','services','commercial_documents'];
+  if (!allowed.includes(table) || !Number.isFinite(id)) {
+    res.status(400).json({ error: 'Entité non supportée.' });
+    return;
+  }
+  const db = getDb();
+  const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Enregistrement introuvable.' }); return; }
+  if (row.lifecycle_status !== 'archived') {
+    res.status(400).json({ error: 'Seuls les enregistrements archivés peuvent être revus.' });
+    return;
+  }
+  if (!isReviewDue(row.retention_review_due_at)) {
+    res.status(400).json({ error: 'La revue annuelle n’est pas encore due.' });
+    return;
+  }
+  markReviewed(table, id, req.user!.id);
+  logAudit(req.user!, 'REVIEW', table, id, 'archived', 'Revue annuelle effectuée');
   res.json({ ok: true });
 });
 
