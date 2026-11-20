@@ -1,0 +1,77 @@
+name: Build IDEAL Microsoft Store package
+
+on:
+  workflow_dispatch:
+    inputs:
+      identity_name:
+        description: Exact Package/Identity Name from Partner Center
+        required: true
+        type: string
+      publisher:
+        description: Exact Publisher distinguished name from Partner Center (CN=...)
+        required: true
+        type: string
+      publisher_display_name:
+        description: Exact publisher display name shown in Partner Center
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ideal-store-package
+  cancel-in-progress: false
+
+jobs:
+  build-store-package:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Set package version
+        shell: pwsh
+        run: |
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          $package.version = "0.1.\${{ github.run_number }}"
+          $package | ConvertTo-Json -Depth 100 | Out-File package.json -Encoding utf8NoBOM
+          Write-Host "Building IDEAL Store package version $($package.version)"
+      - name: TypeScript check
+        run: npm run lint
+      - name: Verify French-only application interface
+        run: npm run check:french-ui
+      - name: Test backup, restore and session protection
+        run: npm run test:data-protection
+      - name: Build Microsoft Store AppX package
+        shell: pwsh
+        env:
+          IDEAL_STORE_IDENTITY_NAME: \${{ inputs.identity_name }}
+          IDEAL_STORE_PUBLISHER: \${{ inputs.publisher }}
+          IDEAL_STORE_PUBLISHER_DISPLAY_NAME: \${{ inputs.publisher_display_name }}
+        run: npm run dist:win:store
+      - name: Verify package output
+        shell: pwsh
+        run: |
+          $packages = Get-ChildItem release -Filter *.appx -File
+          if (-not $packages -or $packages.Count -eq 0) {
+            throw "No .appx package was produced."
+          }
+          $packages | ForEach-Object {
+            Write-Host "Verified package: $($_.Name), $($_.Length) bytes"
+            if ($_.Length -lt 1000000) { throw "AppX package is unexpectedly small: $($_.Name)" }
+          }
+      - name: Upload Microsoft Store submission package
+        uses: actions/upload-artifact@v4
+        with:
+          name: IDEAL-Microsoft-Store-AppX
+          path: release/*.appx
+          if-no-files-found: error
+          retention-days: 30
