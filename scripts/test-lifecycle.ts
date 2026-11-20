@@ -121,9 +121,9 @@ try {
 } catch (e: any) {
   console.error('TEST FAILED:', e?.message || e);
   console.error(e?.stack);
+  process.exitCode = 1;
 } finally {
   try { process.kill(-server.pid!, 'SIGTERM'); } catch {}
   try { server.kill('SIGTERM'); } catch {}
   fs.rmSync(tempRoot, { recursive: true, force: true });
-  process.exit(0);
 }
