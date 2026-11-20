@@ -192,6 +192,25 @@ export default function InvoicesPage({ permissions }: { permissions: string[] })
 
       {error && <div className="p-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg">{error}</div>}
 
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
+          <div className="text-[11px] text-slate-500">Pièces affichées</div>
+          <div className="text-lg font-bold font-mono tabular-nums">{visibleDocs.length}</div>
+        </div>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
+          <div className="text-[11px] text-slate-500">Total TTC</div>
+          <div className="text-lg font-bold font-mono tabular-nums text-blue-700">{formatDA(visibleDocs.reduce((s, d) => s + Number(d.total_ttc || 0), 0))}</div>
+        </div>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
+          <div className="text-[11px] text-slate-500">Encaissé</div>
+          <div className="text-lg font-bold font-mono tabular-nums text-emerald-700">{formatDA(visibleDocs.reduce((s, d) => s + Number(d.amount_paid || 0), 0))}</div>
+        </div>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
+          <div className="text-[11px] text-slate-500">Reste à encaisser</div>
+          <div className="text-lg font-bold font-mono tabular-nums text-amber-700">{formatDA(visibleDocs.reduce((s, d) => s + Math.max(0, Number(d.total_ttc || 0) - Number(d.amount_paid || 0)), 0))}</div>
+        </div>
+      </div>
+
       <div className="flex flex-wrap gap-1.5 text-xs">
         {[
           ['all', 'Toutes les pièces'],

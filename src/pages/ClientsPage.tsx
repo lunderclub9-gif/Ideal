@@ -191,6 +191,25 @@ export default function ClientsPage({ permissions }: { permissions: string[] }) 
         </select>
       </div>
 
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
+          <div className="text-[11px] text-slate-500">Clients</div>
+          <div className="text-lg font-bold font-mono tabular-nums">{clients.length}</div>
+        </div>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
+          <div className="text-[11px] text-slate-500">Actifs</div>
+          <div className="text-lg font-bold font-mono tabular-nums text-emerald-700">{clients.filter((c) => c.status === 'active').length}</div>
+        </div>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
+          <div className="text-[11px] text-slate-500">Archivés</div>
+          <div className="text-lg font-bold font-mono tabular-nums text-slate-600">{clients.filter((c) => c.status !== 'active').length}</div>
+        </div>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
+          <div className="text-[11px] text-slate-500">Reste à encaisser</div>
+          <div className="text-lg font-bold font-mono tabular-nums text-amber-700">{formatDA(clients.reduce((s, c) => s + Number(c.balance_due || 0), 0))}</div>
+        </div>
+      </div>
+
       {filtered.length === 0 ? (
         <EmptyState message="Aucun client trouvé pour ces critères." />
       ) : (
