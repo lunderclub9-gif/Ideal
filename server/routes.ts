@@ -25,7 +25,7 @@ import {
 } from './calculations.ts';
 import { createFullBackup, listBackups, restoreFromZip, verifyBackupArchive } from './backup.ts';
 import { DOCS_DIR, getDb } from './db.ts';
-import { archiveEntity, clientDependencies, isDeletionEligible, projectDependencies, restoreEntity, vehicleDependencies, workerDependencies, materialDependencies, markReviewed, isReviewDue } from './lifecycle.ts';
+import { archiveEntity, clientDependencies, isDeletionEligible, projectDependencies, restoreEntity, vehicleDependencies, workerDependencies, materialDependencies, markReviewed, isReviewDue, listLifecycleRecords, syncRetentionNotifications } from './lifecycle.ts';
 
 const router = express.Router();
 
@@ -3936,6 +3936,28 @@ router.post('/lifecycle/review', requireAuth, requirePermission('audit:read'), (
   markReviewed(table, id, req.user!.id);
   logAudit(req.user!, 'REVIEW', table, id, 'archived', 'Revue annuelle effectuée');
   res.json({ ok: true });
+});
+
+router.get('/lifecycle/overview', requireAuth, requirePermission('dashboard:view'), (_req, res) => {
+  res.json(listLifecycleRecords());
+});
+
+router.get('/notifications', requireAuth, (_req, res) => {
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM notifications ORDER BY id DESC LIMIT 100').all();
+  res.json(rows);
+});
+
+router.post('/notifications/:id/read', requireAuth, (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ?').run(id);
+  res.json({ ok: true });
+});
+
+router.post('/lifecycle/notifications/sync', requireAuth, requirePermission('audit:read'), (_req, res) => {
+  const created = syncRetentionNotifications();
+  res.json({ created });
 });
 
 export default router;

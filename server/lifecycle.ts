@@ -98,3 +98,67 @@ export function markReviewed(table: string, id: number, userId: number): void {
     .run(nowIso(), userId, nowIso(), id);
 }
 
+
+export const LIFECYCLE_TABLES = [
+  'clients','suppliers','workers','projects','vehicles','materials','services',
+  'commercial_documents','purchases','expenses','treasury_transactions','tools','contracts',
+  'users','attendance','repair_orders','stock_movements','fuel_entries','payments','documents'
+];
+
+export function syncRetentionNotifications(): number {
+  const db = getDb();
+  let created = 0;
+  for (const t of LIFECYCLE_TABLES) {
+    let rows: any[] = [];
+    try {
+      rows = db.prepare(
+        `SELECT id FROM ${t} WHERE lifecycle_status='archived' AND retention_status IN ('scheduled','due') AND retention_review_due_at IS NOT NULL AND retention_review_due_at <= datetime('now')`
+      ).all() as any[];
+    } catch {
+      continue;
+    }
+    for (const r of rows) {
+      const key = `retention_review:${t}:${r.id}`;
+      const exists = db.prepare('SELECT id FROM notifications WHERE dedupe_key = ?').get(key);
+      if (!exists) {
+        db.prepare(
+          `INSERT INTO notifications (dedupe_key, type, title, body, entity_type, entity_id) VALUES (?,?,?,?,?,?)`
+        ).run(key, 'retention_review', 'Revue annuelle due', `L'enregistrement ${t} #${r.id} est arrive a echeance de revue annuelle.`, t, r.id);
+        created++;
+      }
+      db.prepare(`UPDATE ${t} SET retention_status='due' WHERE id=? AND retention_status='scheduled'`).run(r.id);
+    }
+  }
+  return created;
+}
+
+export function listLifecycleRecords(): any[] {
+  const db = getDb();
+  const out: any[] = [];
+  for (const t of LIFECYCLE_TABLES) {
+    let rows: any[] = [];
+    try {
+      rows = db.prepare(`SELECT * FROM ${t}`).all() as any[];
+    } catch {
+      continue;
+    }
+    for (const r of rows) {
+      const label =
+        r.name || r.title || r.full_name || r.project_number || r.doc_number || r.code || `#${r.id}`;
+      out.push({
+        id: r.id,
+        table: t,
+        type: t,
+        label,
+        lifecycle_status: r.lifecycle_status || 'active',
+        created_at: r.created_at || null,
+        updated_at: r.updated_at || null,
+        archived_at: r.archived_at || null,
+        deletion_eligible_until: r.deletion_eligible_until || null,
+        retention_review_due_at: r.retention_review_due_at || null,
+        retention_status: r.retention_status || 'none',
+      });
+    }
+  }
+  return out;
+}
