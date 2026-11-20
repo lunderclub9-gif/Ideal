@@ -80,11 +80,13 @@
           ]
         }
       ],
+      "requestedExecutionLevel": "asInvoker",
       "artifactName": "IDEAL-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
+      "allowElevation": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
