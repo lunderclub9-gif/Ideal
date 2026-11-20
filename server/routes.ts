@@ -25,6 +25,7 @@ import {
 } from './calculations.ts';
 import { createFullBackup, listBackups, restoreFromZip, verifyBackupArchive } from './backup.ts';
 import { DOCS_DIR, getDb } from './db.ts';
+import { archiveEntity, clientDependencies, isDeletionEligible, projectDependencies, restoreEntity, vehicleDependencies, workerDependencies, materialDependencies, daysRemaining, deletionDeadline } from './lifecycle.ts';
 
 const router = express.Router();
 
@@ -460,8 +461,8 @@ router.post('/clients', requireAuth, requirePermission('clients:write'), (req: A
   const db = getDb();
   const info = db
     .prepare(
-      `INSERT INTO clients (client_type, name, phone, email, address, nif, nis, rc, ai, payment_terms, credit_limit, notes, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO clients (client_type, name, phone, email, address, nif, nis, rc, ai, payment_terms, credit_limit, notes, status, lifecycle_status, deletion_eligible_until)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', datetime('now', '+7 days'))`
     )
     .run(
       b.client_type === 'individual' ? 'individual' : 'company',
@@ -517,13 +518,40 @@ router.put('/clients/:id', requireAuth, requirePermission('clients:write'), (req
 router.delete('/clients/:id', requireAuth, requirePermission('clients:delete'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
-  const linked = (db.prepare('SELECT COUNT(*) AS c FROM projects WHERE client_id = ?').get(id) as { c: number }).c;
-  if (linked > 0) {
-    res.status(400).json({ error: 'Impossible de supprimer ce client : il est lié à un ou plusieurs chantiers. Désactivez-le plutôt.' });
+  const row = db.prepare('SELECT * FROM clients WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Client introuvable.' }); return; }
+  const deps = clientDependencies(id);
+  if (deps.length > 0) {
+    res.status(400).json({ error: `Suppression impossible : ${deps.join(', ')}.`, dependencies: deps });
+    return;
+  }
+  const deadline = row.deletion_eligible_until || row.created_at;
+  if (!isDeletionEligible(deadline)) {
+    res.status(400).json({ error: 'Suppression impossible : la période de 7 jours est dépassée. Archivez le client à la place.' });
     return;
   }
   db.prepare('DELETE FROM clients WHERE id = ?').run(id);
-  logAudit(req.user!, 'DELETE', 'client', id, '', 'Suppression client');
+  logAudit(req.user!, 'DELETE', 'client', id, '', 'Suppression client (période 7 jours)');
+  res.json({ ok: true });
+});
+
+router.post('/clients/:id/archive', requireAuth, requirePermission('clients:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM clients WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Client introuvable.' }); return; }
+  archiveEntity('clients', id, req.user!.id, (req.body?.reason || 'Archivage manuel'));
+  logAudit(req.user!, 'ARCHIVE', 'client', id, row.status, 'Archivé');
+  res.json({ ok: true });
+});
+
+router.post('/clients/:id/restore', requireAuth, requirePermission('clients:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM clients WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Client introuvable.' }); return; }
+  restoreEntity('clients', id);
+  logAudit(req.user!, 'RESTORE', 'client', id, 'archived', 'Restauré');
   res.json({ ok: true });
 });
 
@@ -620,8 +648,8 @@ router.post('/projects', requireAuth, requirePermission('projects:write'), (req:
 
   const info = db
     .prepare(
-      `INSERT INTO projects (project_number, client_id, title, address, project_type, start_date, expected_end_date, status, manager_user_id, expected_cost, expected_selling_price, progress_percent, include_overhead, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO projects (project_number, client_id, title, address, project_type, start_date, expected_end_date, status, manager_user_id, expected_cost, expected_selling_price, progress_percent, include_overhead, notes, lifecycle_status, deletion_eligible_until)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', datetime('now', '+7 days'))`
     )
     .run(
       projectNumber,
@@ -672,6 +700,46 @@ router.put('/projects/:id', requireAuth, requirePermission('projects:write'), (r
   );
   logAudit(req.user!, 'UPDATE', 'project', old.project_number, old.status, b.status ?? old.status);
   res.json(db.prepare('SELECT * FROM projects WHERE id = ?').get(id));
+});
+
+router.delete('/projects/:id', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Chantier introuvable.' }); return; }
+  const deps = projectDependencies(id);
+  if (deps.length > 0) {
+    res.status(400).json({ error: `Suppression impossible : ${deps.join(', ')}.`, dependencies: deps });
+    return;
+  }
+  const deadline = row.deletion_eligible_until || row.created_at;
+  if (!isDeletionEligible(deadline)) {
+    res.status(400).json({ error: 'Suppression impossible : la période de 7 jours est dépassée. Archivez le chantier à la place.' });
+    return;
+  }
+  db.prepare('DELETE FROM projects WHERE id = ?').run(id);
+  logAudit(req.user!, 'DELETE', 'project', row.project_number, '', 'Suppression chantier (période 7 jours)');
+  res.json({ ok: true });
+});
+
+router.post('/projects/:id/archive', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Chantier introuvable.' }); return; }
+  archiveEntity('projects', id, req.user!.id, (req.body?.reason || 'Archivage manuel'));
+  logAudit(req.user!, 'ARCHIVE', 'project', row.project_number, row.status, 'Archivé');
+  res.json({ ok: true });
+});
+
+router.post('/projects/:id/restore', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Chantier introuvable.' }); return; }
+  restoreEntity('projects', id);
+  logAudit(req.user!, 'RESTORE', 'project', row.project_number, 'archived', 'Restauré');
+  res.json({ ok: true });
 });
 
 router.post('/projects/:id/phases', requireAuth, requirePermission('projects:write'), (req, res) => {

@@ -720,4 +720,36 @@ function runMigrations(db: Database.Database) {
     db.exec('CREATE INDEX IF NOT EXISTS idx_services_active_name ON services(active, name)');
     db.prepare('INSERT INTO schema_migrations (version) VALUES (2)').run();
   }
+
+  // Version 3: Smart Lifecycle Management columns (additive, idempotent).
+  const migration3 = db.prepare('SELECT version FROM schema_migrations WHERE version = 3').get();
+  if (!migration3) {
+    const lifecycleTables = ['clients', 'suppliers', 'workers', 'projects', 'vehicles', 'materials', 'services'];
+    for (const t of lifecycleTables) {
+      const cols = (db.pragma(`table_info(${t})`) as Array<{ name: string }>).map((c) => c.name);
+      if (!cols.includes('lifecycle_status')) {
+        db.exec(`ALTER TABLE ${t} ADD COLUMN lifecycle_status TEXT NOT NULL DEFAULT 'active'`);
+      }
+      if (!cols.includes('archived_at')) {
+        db.exec(`ALTER TABLE ${t} ADD COLUMN archived_at TEXT`);
+      }
+      if (!cols.includes('archived_by')) {
+        db.exec(`ALTER TABLE ${t} ADD COLUMN archived_by INTEGER`);
+      }
+      if (!cols.includes('archive_reason')) {
+        db.exec(`ALTER TABLE ${t} ADD COLUMN archive_reason TEXT DEFAULT ''`);
+      }
+      if (!cols.includes('deletion_eligible_until')) {
+        db.exec(`ALTER TABLE ${t} ADD COLUMN deletion_eligible_until TEXT`);
+      }
+      if (!cols.includes('updated_at')) {
+        db.exec(`ALTER TABLE ${t} ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''`);
+        db.exec(`UPDATE ${t} SET updated_at = created_at WHERE updated_at = ''`);
+      }
+      // Backfill: existing records are already established => protected.
+      db.exec(`UPDATE ${t} SET lifecycle_status = COALESCE(NULLIF(lifecycle_status,''),'active') WHERE lifecycle_status IS NULL OR lifecycle_status = ''`);
+      db.exec(`UPDATE ${t} SET deletion_eligible_until = created_at WHERE deletion_eligible_until IS NULL`);
+    }
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (3)').run();
+  }
 }

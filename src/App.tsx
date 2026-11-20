@@ -48,6 +48,7 @@ import ClientsPage from './pages/ClientsPage';
 import ProjectsPage from './pages/ProjectsPage';
 import ServicesPage from './pages/ServicesPage';
 import InvoicesPage from './pages/InvoicesPage';
+import LifecyclePage from './pages/LifecyclePage';
 import AttendancePage from './pages/AttendancePage';
 import PayrollPage from './pages/PayrollPage';
 import MaterialsPage from './pages/MaterialsPage';
@@ -93,6 +94,7 @@ const NAV_ITEMS: NavEntry[] = [
   { id: 'reports', label: 'Rapports', group: 'Finances & Administration', permission: 'reports:read', icon: BarChart3 },
   { id: 'settings', label: 'Paramètres', group: 'Finances & Administration', permission: 'settings:read', icon: Settings },
   { id: 'backup', label: 'Sauvegarde & Restauration', group: 'Finances & Administration', permission: 'backup:manage', icon: HardDrive },
+  { id: 'lifecycle', label: 'Cycle de vie', group: 'Finances & Administration', permission: 'dashboard:view', icon: HardDrive },
 ];
 
 function getInitialRoute(): string {
@@ -325,6 +327,8 @@ export default function App() {
         return <SettingsPage permissions={permissions} />;
       case 'backup':
         return <BackupPage />;
+      case 'lifecycle':
+        return <LifecyclePage />;
       default:
         return <DashboardPage onNavigate={navigate} />;
     }
