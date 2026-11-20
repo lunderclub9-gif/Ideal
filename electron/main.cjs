@@ -18,6 +18,14 @@ function publishUpdateStatus(patch) {
 }
 
 function configureAutoUpdater() {
+  if (process.windowsStore) {
+    const storeStatus = { state: 'up-to-date', version: app.getVersion(), percent: 0, message: 'Les mises à jour sont gérées automatiquement par Microsoft Store.' };
+    ipcMain.handle('ideal:get-version', () => app.getVersion());
+    ipcMain.handle('ideal:get-update-status', () => storeStatus);
+    ipcMain.handle('ideal:check-updates', async () => storeStatus);
+    ipcMain.handle('ideal:install-update', async () => false);
+    return;
+  }
   if (!app.isPackaged || process.env.GESTIONPRO_SMOKE_TEST === '1') return;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = false;
@@ -117,7 +125,7 @@ function startLocalServer() {
   if (!fs.existsSync(serverPath)) throw new Error(`Le serveur intégré est introuvable : ${serverPath}`);
   serverProcess = spawn(process.execPath, [serverPath], {
     cwd: process.resourcesPath,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_ENV: 'production', HOST: APP_URL_HOST, PORT: '0', GESTIONPRO_DATA_DIR: dataPath, GESTIONPRO_APP_ROOT: app.getAppPath(), NODE_PATH: path.join(app.getAppPath(), 'node_modules'), SESSION_SECRET: sessionSecret },
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_ENV: 'production', HOST: APP_URL_HOST, PORT: '0', IDEAL_DATA_DIR: dataPath, GESTIONPRO_DATA_DIR: dataPath, GESTIONPRO_APP_ROOT: app.getAppPath(), NODE_PATH: path.join(app.getAppPath(), 'node_modules'), SESSION_SECRET: sessionSecret },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true
   });
@@ -162,7 +170,7 @@ else {
     }
     app.setPath('userData', idealUserData || newUserData);
     app.setAppUserModelId('dz.ideal.desktop');
-    try { configureAutoUpdater(); await createMainWindow(); if (app.isPackaged && process.env.GESTIONPRO_SMOKE_TEST !== '1') setTimeout(() => autoUpdater.checkForUpdates().catch(error => { logStartup(`AUTO UPDATE CHECK ERROR: ${error?.stack || error}`); }), 5000); }
+    try { configureAutoUpdater(); await createMainWindow(); if (app.isPackaged && !process.windowsStore && process.env.GESTIONPRO_SMOKE_TEST !== '1') setTimeout(() => autoUpdater.checkForUpdates().catch(error => { logStartup(`AUTO UPDATE CHECK ERROR: ${error?.stack || error}`); }), 5000); }
     catch (error) { logStartup(`APPLICATION STARTUP ERROR: ${error?.stack || error}`); stopServer(); if (process.env.GESTIONPRO_SMOKE_TEST !== '1') dialog.showErrorBox('IDEAL', error?.message || 'Impossible de démarrer le serveur local.'); app.quit(); }
   });
 }

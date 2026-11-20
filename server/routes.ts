@@ -3979,22 +3979,31 @@ router.post('/backups/restore', requireAuth, requirePermission('backup:manage'),
 router.delete('/commercial-documents/:id', requireAuth, requirePermission('invoices:write'), requirePermission('lifecycle:delete'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
-  const row = db.prepare('SELECT * FROM commercial_documents WHERE id = ?').get(id) as any;
-  if (!row) { res.status(404).json({ error: 'Pièce introuvable.' }); return; }
-  if (row.status !== 'draft') {
-    res.status(400).json({ error: 'Suppression impossible : seuls les brouillons peuvent être supprimés. Utilisez l’annulation pour une pièce émise.' });
+  const result = db.transaction(() => {
+    const row = db.prepare('SELECT * FROM commercial_documents WHERE id = ?').get(id) as any;
+    if (!row) return { status: 404, error: 'Pièce introuvable.' };
+    if (row.status !== 'draft') {
+      return { status: 400, error: 'Suppression impossible : seuls les brouillons peuvent être supprimés. Utilisez l’annulation pour une pièce émise.' };
+    }
+    const payments = (db.prepare('SELECT COUNT(*) c FROM payments WHERE document_id = ?').get(id) as any).c;
+    if (payments > 0) return { status: 400, error: 'Suppression impossible : des règlements sont liés.' };
+    const deadline = row.deletion_eligible_until || row.created_at;
+    if (!isDeletionEligible(deadline)) {
+      return { status: 400, error: 'Suppression impossible : la période de 7 jours est dépassée.' };
+    }
+
+    // Remove child rows first and commit both deletes atomically.
+    db.prepare('DELETE FROM commercial_lines WHERE document_id = ?').run(id);
+    const deleted = db.prepare("DELETE FROM commercial_documents WHERE id = ? AND status = 'draft'").run(id);
+    if (deleted.changes !== 1) throw new Error('DRAFT_DOCUMENT_DELETE_CONFLICT');
+    logAudit(req.user!, 'DELETE', 'commercial_document', id, '', 'Suppression brouillon (période 7 jours)');
+    return { status: 200, error: null };
+  }).immediate();
+
+  if (result.error) {
+    res.status(result.status).json({ error: result.error });
     return;
   }
-  const payments = (db.prepare('SELECT COUNT(*) c FROM payments WHERE doc_id = ?').get(id) as any).c;
-  if (payments > 0) { res.status(400).json({ error: 'Suppression impossible : des règlements sont liés.' }); return; }
-  const deadline = row.deletion_eligible_until || row.created_at;
-  if (row.deletion_eligible_until && !isDeletionEligible(deadline)) {
-    res.status(400).json({ error: 'Suppression impossible : la période de 7 jours est dépassée.' });
-    return;
-  }
-  db.prepare('DELETE FROM commercial_documents WHERE id = ?').run(id);
-  db.prepare('DELETE FROM commercial_lines WHERE doc_id = ?').run(id);
-  logAudit(req.user!, 'DELETE', 'commercial_document', id, '', 'Suppression brouillon (période 7 jours)');
   res.json({ ok: true });
 });
 router.post('/commercial-documents/:id/archive', requireAuth, requirePermission('invoices:write'), requirePermission('lifecycle:archive'), (req: AuthedRequest, res) => {

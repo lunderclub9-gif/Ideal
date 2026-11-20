@@ -20,7 +20,7 @@ async function startApp() {
   try { fs.unlinkSync(portFile); } catch {}
   try { fs.unlinkSync(startupLogFile); } catch {}
   child = spawn(exe, ['--disable-gpu'], {
-    env: { ...process.env, APPDATA: appData, GESTIONPRO_SMOKE_TEST: '1', GESTIONPRO_SMOKE_USER_DATA: userData },
+    env: { ...process.env, APPDATA: appData, IDEAL_DATA_DIR: path.join(userData, 'data'), GESTIONPRO_DATA_DIR: path.join(userData, 'data'), IDEAL_SMOKE_USER_DATA: userData, GESTIONPRO_SMOKE_TEST: '1', GESTIONPRO_SMOKE_USER_DATA: userData },
     stdio: 'ignore',
     windowsHide: true,
   });

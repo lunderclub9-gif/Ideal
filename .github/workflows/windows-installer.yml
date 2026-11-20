@@ -66,6 +66,8 @@ jobs:
         run: npm run test:data-protection
       - name: Test lifecycle policies in an isolated temporary database
         run: npm run test:lifecycle
+      - name: Simulate a complete business workflow in an isolated database
+        run: npm run test:simulation
       - name: Build application and Windows installer
         run: npm run dist:win
       - name: Smoke test packaged Windows application

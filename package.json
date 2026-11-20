@@ -19,7 +19,9 @@
     "test:data-protection": "tsx scripts/test-data-protection.ts",
     "test:lifecycle": "tsx scripts/test-lifecycle.ts",
     "check:french-ui": "node scripts/check-french-ui.cjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:simulation": "tsx scripts/test-simulation.ts",
+    "dist:win:store": "npm run build && node scripts/build-store-package.cjs"
   },
   "dependencies": {
     "adm-zip": "^0.6.1",

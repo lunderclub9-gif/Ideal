@@ -5,6 +5,7 @@ import path from 'node:path';
 import AdmZip from 'adm-zip';
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gestionpro-data-protection-'));
+process.env.IDEAL_DATA_DIR = path.join(tempRoot, 'data');
 process.env.GESTIONPRO_DATA_DIR = path.join(tempRoot, 'data');
 
 const { getDb, closeDb, DOCS_DIR } = await import('../server/db.ts');

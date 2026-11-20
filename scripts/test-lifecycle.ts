@@ -6,9 +6,10 @@ import { spawn } from 'node:child_process';
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ideal-lifecycle-'));
 const dataDir = path.join(tempRoot, 'data');
+process.env.IDEAL_DATA_DIR = dataDir;
 process.env.GESTIONPRO_DATA_DIR = dataDir;
 const port = 3099;
-const env = { ...process.env, HOST: '127.0.0.1', PORT: String(port), GESTIONPRO_DATA_DIR: dataDir, NODE_ENV: 'development' };
+const env = { ...process.env, IDEAL_DATA_DIR: dataDir, GESTIONPRO_DATA_DIR: dataDir, HOST: '127.0.0.1', PORT: String(port), NODE_ENV: 'development' };
 
 const tsxCli = path.resolve('node_modules/tsx/dist/cli.mjs');
 const server = spawn(process.execPath, [tsxCli, 'server.ts'], { env, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
@@ -52,6 +53,17 @@ try {
   assert.ok(r.data.deletion_eligible_until, 'deadline set');
   r = await req(`/clients/${cid}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
   assert.equal(r.status, 200, 'new client deletable');
+
+  // The seven-day deletion window must be enforced after its deadline.
+  r = await req('/clients', j('POST', { name: 'Client Expired' }, token));
+  assert.equal(r.status, 201);
+  const expiredClientId = r.data.id;
+  db.prepare("UPDATE clients SET deletion_eligible_until = datetime('now', '-1 second') WHERE id = ?").run(expiredClientId);
+  r = await req(`/clients/${expiredClientId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+  assert.equal(r.status, 400, 'expired client cannot be permanently deleted');
+  assert.match(r.data.error, /7 jours/i);
+  r = await req(`/clients/${expiredClientId}/archive`, j('POST', { reason: 'expired test' }, token));
+  assert.equal(r.status, 200, 'expired client can be archived instead');
 
   // dependency blocking
   r = await req('/clients', j('POST', { name: 'Client Dep' }, token));
@@ -117,8 +129,10 @@ try {
     doc_type: 'facture', client_id: cid6, issue_immediately: false,
     lines: [{ description: 'Ligne', quantity: 1, unit_price: 100, tva_rate: 19 }]
   }, token));
-  // endpoint may require different payload; just check status
-  console.log('invoice create status', r.status);
+  assert.equal(r.status, 201, 'draft invoice created');
+  const draftId = r.data.id;
+  r = await req(`/commercial-documents/${draftId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+  assert.equal(r.status, 200, 'new draft invoice can be deleted within the seven-day window');
 
   console.log('LIFECYCLE_TESTS_OK');
 } catch (e: any) {
