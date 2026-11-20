@@ -17,6 +17,7 @@
     "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never",
     "postinstall": "electron-builder install-app-deps",
     "test:data-protection": "tsx scripts/test-data-protection.ts",
+    "test:lifecycle": "tsx scripts/test-lifecycle.ts",
     "check:french-ui": "node scripts/check-french-ui.cjs",
     "test:e2e": "playwright test"
   },
