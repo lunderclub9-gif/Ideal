@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowRightLeft, CreditCard, FilePlus2, Plus, Printer, RotateCcw, Pencil } from 'lucide-react';
 import { apiFetch, formatDA, formatDateFr, hasPerm } from '../lib/api';
-import { CommercialPrintModal, EmptyState, Modal, PageHeader, PaymentReceiptPrintModal, StatusText } from '../components/ui';
+import { CommercialPrintModal, EmptyState, KpiCard, Modal, PageHeader, PaymentReceiptPrintModal, StatusText } from '../components/ui';
 
 const TYPE_LABELS: Record<string, string> = {
   devis: 'Devis',
@@ -193,22 +193,10 @@ export default function InvoicesPage({ permissions }: { permissions: string[] })
       {error && <div className="p-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg">{error}</div>}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
-          <div className="text-[11px] text-slate-500">Pièces affichées</div>
-          <div className="text-lg font-bold font-mono tabular-nums">{visibleDocs.length}</div>
-        </div>
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
-          <div className="text-[11px] text-slate-500">Total TTC</div>
-          <div className="text-lg font-bold font-mono tabular-nums text-blue-700">{formatDA(visibleDocs.reduce((s, d) => s + Number(d.total_ttc || 0), 0))}</div>
-        </div>
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
-          <div className="text-[11px] text-slate-500">Encaissé</div>
-          <div className="text-lg font-bold font-mono tabular-nums text-emerald-700">{formatDA(visibleDocs.reduce((s, d) => s + Number(d.amount_paid || 0), 0))}</div>
-        </div>
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
-          <div className="text-[11px] text-slate-500">Reste à encaisser</div>
-          <div className="text-lg font-bold font-mono tabular-nums text-amber-700">{formatDA(visibleDocs.reduce((s, d) => s + Math.max(0, Number(d.total_ttc || 0) - Number(d.amount_paid || 0)), 0))}</div>
-        </div>
+        <KpiCard compact label="Pièces affichées" value={visibleDocs.length} />
+        <KpiCard compact label="Total TTC" value={formatDA(visibleDocs.reduce((s, d) => s + Number(d.total_ttc || 0), 0))} tone="blue" />
+        <KpiCard compact label="Encaissé" value={formatDA(visibleDocs.reduce((s, d) => s + Number(d.amount_paid || 0), 0))} tone="green" />
+        <KpiCard compact label="Reste à encaisser" value={formatDA(visibleDocs.reduce((s, d) => s + Math.max(0, Number(d.total_ttc || 0) - Number(d.amount_paid || 0)), 0))} tone="amber" />
       </div>
 
       <div className="flex flex-wrap gap-1.5 text-xs">
