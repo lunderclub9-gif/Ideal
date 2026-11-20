@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CreditCard, PackageCheck, Pencil, Plus } from 'lucide-react';
+import { CreditCard, PackageCheck, Pencil, Plus, Archive, RotateCcw } from 'lucide-react';
 import { apiFetch, formatDA, formatDateFr, hasPerm } from '../lib/api';
 import { Modal, PageHeader, StatusText } from '../components/ui';
 
@@ -16,7 +16,7 @@ export default function SuppliersPage({ permissions }: { permissions: string[] }
   const [payMethod, setPayMethod] = useState('Virement');
   const [error, setError] = useState('');
 
-  const [supForm, setSupForm] = useState({ name: '', contact_name: '', phone: '', address: '', nif: '', payment_terms: '30 jours' });
+  const [supForm, setSupForm] = useState({ name: '', contact_name: '', phone: '', address: '', nif: '', payment_terms: '30 jours', status: 'active' });
   const [poForm, setPoForm] = useState({
     supplier_id: '',
     project_id: '',
@@ -51,13 +51,13 @@ export default function SuppliersPage({ permissions }: { permissions: string[] }
 
   function openNewSupplier() {
     setEditingSupplier(null);
-    setSupForm({ name: '', contact_name: '', phone: '', address: '', nif: '', payment_terms: '30 jours' });
+    setSupForm({ name: '', contact_name: '', phone: '', address: '', nif: '', payment_terms: '30 jours', status: 'active' });
     setSupOpen(true);
   }
 
   function openEditSupplier(supplier: any) {
     setEditingSupplier(supplier);
-    setSupForm({ name: supplier.name || '', contact_name: supplier.contact_name || '', phone: supplier.phone || '', address: supplier.address || '', nif: supplier.nif || '', payment_terms: supplier.payment_terms || '30 jours' });
+    setSupForm({ name: supplier.name || '', contact_name: supplier.contact_name || '', phone: supplier.phone || '', address: supplier.address || '', nif: supplier.nif || '', payment_terms: supplier.payment_terms || '30 jours', status: supplier.status || 'active' });
     setSupOpen(true);
   }
 
@@ -73,11 +73,31 @@ export default function SuppliersPage({ permissions }: { permissions: string[] }
     }
   }
 
+  async function toggleSupplierStatus(supplier: any) {
+    const next = supplier.status === 'inactive' ? 'active' : 'inactive';
+    const action = next === 'inactive' ? 'archiver' : 'réactiver';
+    if (!window.confirm(`Voulez-vous ${action} le fournisseur « ${supplier.name} » ? Les commandes et paiements historiques seront conservés.`)) return;
+    try {
+      await apiFetch(`/suppliers/${supplier.id}`, { method: 'PUT', body: JSON.stringify({ status: next }) });
+      await load();
+    } catch (err: any) { setError(err.message); }
+  }
+
   async function savePurchase(e: React.FormEvent) {
     e.preventDefault();
     try {
       await apiFetch('/purchases', { method: 'POST', body: JSON.stringify(poForm) });
       setPoOpen(false);
+      await load();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }
+
+  async function cancelPo(purchase: any) {
+    if (!window.confirm(`Annuler le bon ${purchase.po_number} ? Cette action est réservée aux commandes non réceptionnées et non réglées.`)) return;
+    try {
+      await apiFetch(`/purchases/${purchase.id}/cancel`, { method: 'POST' });
       await load();
     } catch (err: any) {
       setError(err.message);
@@ -132,7 +152,7 @@ export default function SuppliersPage({ permissions }: { permissions: string[] }
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         {suppliers.map((s) => (
           <div key={s.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 text-xs">
-            <div className="flex items-start justify-between gap-2"><div className="font-bold text-slate-900 dark:text-white">{s.name}</div>{canWrite && <button type="button" onClick={() => openEditSupplier(s)} title="Modifier le fournisseur" aria-label={`Modifier ${s.name}`} className="inline-flex items-center gap-1 px-2 py-1 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><Pencil className="w-3 h-3" /><span>Modifier</span></button>}</div>
+            <div className="flex items-start justify-between gap-2"><div className="font-bold text-slate-900 dark:text-white">{s.name}</div>{canWrite && <div className="flex items-center gap-1"><button type="button" onClick={() => openEditSupplier(s)} title="Modifier le fournisseur" aria-label={`Modifier ${s.name}`} className="inline-flex items-center gap-1 px-2 py-1 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><Pencil className="w-3 h-3" /><span>Modifier</span></button><button type="button" onClick={() => toggleSupplierStatus(s)} title={s.status === 'inactive' ? 'Réactiver' : 'Archiver'} className="p-1.5 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">{s.status === 'inactive' ? <RotateCcw className="w-3 h-3" /> : <Archive className="w-3 h-3" />}</button></div>}</div>
             <div className="text-slate-500 mt-0.5">{s.contact_name} · {s.phone}</div>
             <div className="font-mono text-[11px] text-slate-500 mt-1">NIF : {s.nif || '—'}</div>
             <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
@@ -177,6 +197,11 @@ export default function SuppliersPage({ permissions }: { permissions: string[] }
                     <td className="p-3 text-right font-mono tabular-nums text-emerald-700">{formatDA(p.amount_paid)}</td>
                     <td className="p-3"><StatusText status={p.status} /></td>
                     <td className="p-3 text-right whitespace-nowrap space-x-2">
+                      {canWrite && ['ordered','requested'].includes(p.status) && Number(p.amount_paid || 0) === 0 && (
+                        <button type="button" onClick={() => cancelPo(p)} className="inline-flex items-center gap-1 px-2.5 py-1 border border-rose-300 text-rose-700 hover:bg-rose-50 rounded" title="Annuler la commande">
+                          Annuler
+                        </button>
+                      )}
                       {canWrite && (p.status === 'ordered' || p.status === 'requested') && (
                         <button type="button" onClick={() => receivePo(p.id)} className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-700 text-white rounded">
                           <PackageCheck className="w-3 h-3" /> Réceptionner
@@ -223,6 +248,7 @@ export default function SuppliersPage({ permissions }: { permissions: string[] }
               <input type="text" value={supForm.nif} onChange={(e) => setSupForm({ ...supForm, nif: e.target.value })} className="w-full px-3 py-2 border rounded-lg font-mono" />
             </div>
           </div>
+          {editingSupplier && <div><label className="block font-medium mb-1">Statut du fournisseur</label><select value={supForm.status} onChange={e => setSupForm({ ...supForm, status: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"><option value="active">Actif</option><option value="inactive">Archivé</option></select></div>}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setSupOpen(false)} className="px-3 py-2 border rounded-lg">Annuler</button>
             <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg">Enregistrer</button>

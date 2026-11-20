@@ -1638,6 +1638,38 @@ router.post('/attendance', requireAuth, requirePermission('attendance:write'), (
   res.status(201).json(db.prepare('SELECT * FROM attendance WHERE id = ?').get(info.lastInsertRowid));
 });
 
+
+router.put('/attendance/:id', requireAuth, requirePermission('attendance:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const b = req.body || {};
+  const db = getDb();
+  const old = db.prepare('SELECT * FROM attendance WHERE id = ?').get(id) as any;
+  if (!old) { res.status(404).json({ error: 'Pointage introuvable.' }); return; }
+  if (old.approval_status !== 'pending') { res.status(400).json({ error: 'Seuls les pointages en attente peuvent être modifiés. Un pointage validé reste protégé pour la paie.' }); return; }
+  const workerId = Number(b.worker_id);
+  const attDate = String(b.attendance_date || '');
+  const status = String(b.status || 'present');
+  const dayFraction = status === 'absent' || status === 'unpaid_leave' ? 0 : status === 'half_day' ? 0.5 : Number(b.day_fraction ?? 1);
+  const overtimeHours = Number(b.overtime_hours || 0);
+  const advanceAmount = Number(b.advance_amount || 0);
+  if (!workerId || !/^\d{4}-\d{2}-\d{2}$/.test(attDate) || !['present','absent','half_day','paid_leave','unpaid_leave','sick_leave','holiday'].includes(status) ||
+      !Number.isFinite(dayFraction) || dayFraction < 0 || dayFraction > 1 || !Number.isFinite(overtimeHours) || overtimeHours < 0 || !Number.isFinite(advanceAmount) || advanceAmount < 0) {
+    res.status(400).json({ error: 'Vérifiez le salarié, la date, le statut et les montants du pointage.' }); return;
+  }
+  if ((status === 'present' || status === 'half_day') && !b.project_id) { res.status(400).json({ error: 'Veuillez sélectionner le chantier d’affectation.' }); return; }
+  const worker = db.prepare('SELECT status FROM workers WHERE id=?').get(workerId) as any;
+  if (!worker || ['terminated','suspended'].includes(worker.status)) { res.status(400).json({ error: 'Ce salarié ne peut pas être pointé.' }); return; }
+  const existing = db.prepare('SELECT COALESCE(SUM(day_fraction),0) AS total FROM attendance WHERE worker_id=? AND attendance_date=? AND id<>?').get(workerId,attDate,id) as any;
+  if (existing.total + dayFraction > 1.001) { res.status(400).json({ error: 'Le cumul journalier de cet employé dépasserait une journée.' }); return; }
+  const [year,month] = attDate.slice(0,7).split('-').map(Number);
+  if (db.prepare("SELECT id FROM payroll_periods WHERE month=? AND year=? AND status='approved'").get(month,year)) { res.status(400).json({ error: 'La paie de cette période est verrouillée.' }); return; }
+  db.prepare('UPDATE attendance SET attendance_date=?, worker_id=?, project_id=?, status=?, day_fraction=?, overtime_hours=?, advance_amount=?, notes=? WHERE id=?').run(
+    attDate, workerId, b.project_id ? Number(b.project_id) : null, status, dayFraction, overtimeHours, advanceAmount, b.notes || '', id
+  );
+  logAudit(req.user!, 'UPDATE', 'attendance', id, old.attendance_date, attDate);
+  res.json(db.prepare('SELECT * FROM attendance WHERE id=?').get(id));
+});
+
 router.delete('/attendance/:id', requireAuth, requirePermission('attendance:write'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
@@ -1964,12 +1996,13 @@ router.put('/materials/:id', requireAuth, requirePermission('materials:write'), 
   const name = String(b.name ?? old.name).trim();
   const code = String(b.code ?? old.code).trim();
   if (!name || !code) { res.status(400).json({ error: 'Désignation et code matériau sont obligatoires.' }); return; }
-  db.prepare(`UPDATE materials SET name=?, code=?, category=?, unit=?, purchase_price=?, selling_price=?, min_stock_level=?, preferred_supplier_id=?, storage_location=? WHERE id=?`).run(
+  if (b.status === 'inactive' && Number(old.current_quantity) > 0) { res.status(400).json({ error: 'Impossible d’archiver un matériau tant qu’un stock positif est disponible.' }); return; }
+  db.prepare(`UPDATE materials SET name=?, code=?, category=?, unit=?, purchase_price=?, selling_price=?, min_stock_level=?, preferred_supplier_id=?, storage_location=?, status=? WHERE id=?`).run(
     name, code, b.category ?? old.category, b.unit ?? old.unit,
     Number(b.purchase_price ?? old.purchase_price), Number(b.selling_price ?? old.selling_price),
     Number(b.min_stock_level ?? old.min_stock_level),
     b.preferred_supplier_id === undefined ? old.preferred_supplier_id : (b.preferred_supplier_id ? Number(b.preferred_supplier_id) : null),
-    b.storage_location ?? old.storage_location, id
+    b.storage_location ?? old.storage_location, b.status === 'inactive' ? 'inactive' : b.status === 'active' ? 'active' : old.status, id
   );
   logAudit(req.user!, 'UPDATE', 'material', code, old.name, name);
   res.json(db.prepare('SELECT * FROM materials WHERE id = ?').get(id));
@@ -2106,10 +2139,10 @@ router.put('/suppliers/:id', requireAuth, requirePermission('suppliers:write'), 
   const b = req.body || {};
   const name = String(b.name ?? old.name).trim();
   if (!name) { res.status(400).json({ error: 'Le nom du fournisseur est obligatoire.' }); return; }
-  db.prepare(`UPDATE suppliers SET name=?, contact_name=?, phone=?, email=?, address=?, nif=?, nis=?, rc=?, ai=?, payment_terms=?, notes=? WHERE id=?`).run(
+  db.prepare(`UPDATE suppliers SET name=?, contact_name=?, phone=?, email=?, address=?, nif=?, nis=?, rc=?, ai=?, payment_terms=?, notes=?, status=? WHERE id=?`).run(
     name, b.contact_name ?? old.contact_name, b.phone ?? old.phone, b.email ?? old.email,
     b.address ?? old.address, b.nif ?? old.nif, b.nis ?? old.nis, b.rc ?? old.rc,
-    b.ai ?? old.ai, b.payment_terms ?? old.payment_terms, b.notes ?? old.notes, id
+    b.ai ?? old.ai, b.payment_terms ?? old.payment_terms, b.notes ?? old.notes, b.status === 'inactive' ? 'inactive' : b.status === 'active' ? 'active' : old.status, id
   );
   logAudit(req.user!, 'UPDATE', 'supplier', id, old.name, name);
   res.json(db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id));
@@ -2205,12 +2238,29 @@ router.post('/purchases', requireAuth, requirePermission('suppliers:write'), (re
   res.status(201).json(db.prepare('SELECT * FROM purchases WHERE id = ?').get(poId));
 });
 
+router.post('/purchases/:id/cancel', requireAuth, requirePermission('suppliers:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const purchase = db.prepare('SELECT * FROM purchases WHERE id=?').get(id) as any;
+  if (!purchase) { res.status(404).json({ error: 'Bon de commande introuvable.' }); return; }
+  if (!['ordered','requested'].includes(purchase.status) || Number(purchase.amount_paid || 0) > 0) {
+    res.status(400).json({ error: 'Seules les commandes non réceptionnées et sans règlement peuvent être annulées.' }); return;
+  }
+  db.prepare("UPDATE purchases SET status='cancelled' WHERE id=?").run(id);
+  logAudit(req.user!, 'CANCEL', 'purchase', purchase.po_number, purchase.status, 'cancelled');
+  res.json({ ok: true, status: 'cancelled' });
+});
+
 router.post('/purchases/:id/receive', requireAuth, requirePermission('suppliers:write'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const pu = db.prepare('SELECT * FROM purchases WHERE id = ?').get(id) as any;
   if (!pu) {
     res.status(404).json({ error: 'Bon de commande introuvable.' });
+    return;
+  }
+  if (pu.status === 'cancelled') {
+    res.status(400).json({ error: 'Ce bon de commande est annulé et ne peut plus être réceptionné.' });
     return;
   }
   if (pu.status === 'received' || pu.status === 'paid') {
@@ -2242,7 +2292,7 @@ router.post('/purchases/:id/payments', requireAuth, requirePermission('suppliers
   const id = Number(req.params.id);
   const b = req.body || {};
   const amount = round2(Number(b.amount || 0));
-  if (amount <= 0) {
+  if (!Number.isFinite(amount) || amount <= 0) {
     res.status(400).json({ error: 'Montant invalide.' });
     return;
   }
@@ -2250,6 +2300,10 @@ router.post('/purchases/:id/payments', requireAuth, requirePermission('suppliers
   const pu = db.prepare('SELECT * FROM purchases WHERE id = ?').get(id) as any;
   if (!pu) {
     res.status(404).json({ error: 'Achat introuvable.' });
+    return;
+  }
+  if (pu.status === 'cancelled') {
+    res.status(400).json({ error: 'Un bon de commande annulé ne peut plus recevoir de paiement.' });
     return;
   }
   const rem = round2(pu.total_ttc - pu.amount_paid);
@@ -2333,6 +2387,43 @@ router.post('/vehicles', requireAuth, requirePermission('vehicles:write'), (req:
   res.status(201).json(db.prepare('SELECT * FROM vehicles WHERE id = ?').get(info.lastInsertRowid));
 });
 
+router.put('/vehicles/:id', requireAuth, requirePermission('vehicles:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const b = req.body || {};
+  if (!Number.isInteger(id) || id <= 0 || !b.name?.trim() || !b.registration?.trim()) {
+    res.status(400).json({ error: 'Désignation et immatriculation/code sont obligatoires.' });
+    return;
+  }
+  const db = getDb();
+  const current = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id) as any;
+  if (!current) { res.status(404).json({ error: 'Véhicule introuvable.' }); return; }
+  const mileage = Number(b.current_mileage ?? current.current_mileage ?? 0);
+  const engineHours = Number(b.current_engine_hours ?? current.current_engine_hours ?? 0);
+  const usageRate = Number(b.usage_rate_per_day ?? current.usage_rate_per_day ?? 0);
+  const assetType = String(b.asset_type || current.asset_type || 'vehicle');
+  const status = String(b.status || current.status || 'available');
+  if (![mileage, engineHours, usageRate].every(Number.isFinite) || [mileage, engineHours, usageRate].some(v => v < 0)) {
+    res.status(400).json({ error: 'Les relevés et coûts d’utilisation doivent être des nombres positifs ou nuls.' }); return;
+  }
+  if (!['vehicle','truck','excavator','mixer','compressor','pump','scaffolding'].includes(assetType) ||
+      !['available','on_project','under_maintenance','broken_down'].includes(status)) {
+    res.status(400).json({ error: 'Type ou statut de véhicule invalide.' }); return;
+  }
+  try {
+    db.prepare(`UPDATE vehicles SET asset_type = ?, name = ?, brand = ?, registration = ?, driver_worker_id = ?, current_mileage = ?, current_engine_hours = ?, usage_rate_per_day = ?, status = ?, current_project_id = ?, insurance_expiry = ?, inspection_expiry = ?, notes = ? WHERE id = ?`).run(
+      assetType, b.name.trim(), b.brand ?? current.brand, b.registration.trim(),
+      b.driver_worker_id ? Number(b.driver_worker_id) : null, mileage, engineHours, usageRate,
+      status, b.current_project_id ? Number(b.current_project_id) : null,
+      b.insurance_expiry || null, b.inspection_expiry || null, b.notes ?? current.notes, id
+    );
+  } catch (error: any) {
+    if (String(error?.message || '').includes('UNIQUE')) { res.status(409).json({ error: 'Cette immatriculation existe déjà.' }); return; }
+    throw error;
+  }
+  logAudit(req.user!, 'UPDATE', 'vehicle', id, current.name, b.name.trim());
+  res.json(db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id));
+});
+
 router.get('/fuel-entries', requireAuth, requirePermission('vehicles:read'), (_req, res) => {
   const db = getDb();
   const rows = db
@@ -2353,6 +2444,43 @@ router.get('/fuel-entries', requireAuth, requirePermission('vehicles:read'), (_r
     return { ...r, distance_km: dist, l_per_100: lPer100, abnormal };
   });
   res.json(enriched);
+});
+
+router.put('/fuel-entries/:id', requireAuth, requirePermission('fuel:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const b = req.body || {};
+  const db = getDb();
+  const old = db.prepare('SELECT * FROM fuel_entries WHERE id=?').get(id) as any;
+  if (!old) { res.status(404).json({ error: 'Enregistrement carburant introuvable.' }); return; }
+  const liters = Number(b.liters ?? old.liters);
+  const pricePerLiter = Number(b.price_per_liter ?? old.price_per_liter);
+  const odometerBefore = Number(b.odometer_before ?? old.odometer_before);
+  const odometerAfter = Number(b.odometer_after ?? old.odometer_after);
+  const entryDate = String(b.date || old.date);
+  if (!Number.isFinite(liters) || liters <= 0 || !Number.isFinite(pricePerLiter) || pricePerLiter <= 0 ||
+      !Number.isFinite(odometerBefore) || odometerBefore < 0 || !Number.isFinite(odometerAfter) || odometerAfter < 0 ||
+      (odometerBefore > 0 && odometerAfter > 0 && odometerAfter < odometerBefore) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(entryDate) || !Number.isFinite(Date.parse(entryDate + 'T00:00:00'))) {
+    res.status(400).json({ error: 'Vérifiez la date, les litres, le prix et les relevés kilométriques.' }); return;
+  }
+  const vehicleId = b.vehicle_id ? Number(b.vehicle_id) : Number(old.vehicle_id);
+  const vehicle = db.prepare('SELECT id FROM vehicles WHERE id=?').get(vehicleId);
+  if (!Number.isInteger(vehicleId) || !vehicle) {
+    res.status(400).json({ error: 'Veuillez sélectionner un véhicule valide.' }); return;
+  }
+  const totalCost = round2(liters * pricePerLiter);
+  db.transaction(() => {
+    db.prepare(`UPDATE fuel_entries SET date=?, vehicle_id=?, liters=?, price_per_liter=?, total_cost=?, odometer_before=?, odometer_after=?, driver_worker_id=?, project_id=?, trip_purpose=?, fuel_station=?, notes=? WHERE id=?`).run(
+      entryDate, vehicleId, liters, pricePerLiter, totalCost, odometerBefore, odometerAfter,
+      b.driver_worker_id !== undefined ? (b.driver_worker_id ? Number(b.driver_worker_id) : null) : old.driver_worker_id,
+      b.project_id ? Number(b.project_id) : null,
+      b.trip_purpose ?? old.trip_purpose, b.fuel_station ?? old.fuel_station,
+      b.notes ?? old.notes, id
+    );
+    if (odometerAfter > 0) db.prepare('UPDATE vehicles SET current_mileage=MAX(current_mileage,?) WHERE id=?').run(odometerAfter, vehicleId);
+  })();
+  logAudit(req.user!, 'UPDATE', 'fuel_entry', id, `${old.liters} L / ${old.total_cost} DA`, `${liters} L / ${totalCost} DA`);
+  res.json(db.prepare('SELECT * FROM fuel_entries WHERE id=?').get(id));
 });
 
 router.post('/fuel-entries', requireAuth, requirePermission('fuel:write'), (req: AuthedRequest, res) => {
@@ -2465,20 +2593,35 @@ router.put('/repair-orders/:id', requireAuth, requirePermission('repairs:write')
   const b = req.body || {};
   const db = getDb();
   const old = db.prepare('SELECT * FROM repair_orders WHERE id = ?').get(id) as any;
-  if (!old) {
-    res.status(404).json({ error: 'Ordre de réparation introuvable.' });
-    return;
+  if (!old) { res.status(404).json({ error: 'Ordre de réparation introuvable.' }); return; }
+  const description = String(b.description ?? old.description).trim();
+  const status = String(b.status ?? old.status);
+  const parts = Number(b.parts_cost ?? old.parts_cost ?? 0);
+  const labor = Number(b.labor_cost ?? old.labor_cost ?? 0);
+  const towing = Number(b.towing_cost ?? old.towing_cost ?? 0);
+  const downtime = Number(b.downtime_days ?? old.downtime_days ?? 0);
+  const repairDate = String(b.repair_date ?? old.repair_date);
+  if (!description || !['waiting','in_progress','completed'].includes(status) ||
+      ![parts,labor,towing,downtime].every(Number.isFinite) || [parts,labor,towing,downtime].some(v=>v<0) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(repairDate) || !Number.isFinite(Date.parse(repairDate+'T00:00:00'))) {
+    res.status(400).json({ error: 'Vérifiez la description, le statut, la date et les coûts de réparation.' }); return;
   }
-  const status = b.status ?? old.status;
+  const total = round2(parts + labor + towing);
   db.transaction(() => {
-    db.prepare('UPDATE repair_orders SET status=?, notes=? WHERE id=?').run(status, b.notes ?? old.notes, id);
-    if (status === 'completed') {
-      db.prepare("UPDATE vehicles SET status='available' WHERE id=? AND status IN ('under_maintenance','broken_down')").run(
-        old.vehicle_id
-      );
+    db.prepare(`UPDATE repair_orders SET repair_date=?, problem_category=?, description=?, priority=?, workshop=?, parts_used=?, parts_cost=?, labor_cost=?, towing_cost=?, total_cost=?, downtime_days=?, status=?, project_id=?, notes=? WHERE id=?`).run(
+      repairDate, b.problem_category ?? old.problem_category, description, b.priority ?? old.priority,
+      b.workshop ?? old.workshop, b.parts_used ?? old.parts_used, parts, labor, towing, total,
+      downtime, status, b.project_id !== undefined ? (b.project_id ? Number(b.project_id) : null) : old.project_id,
+      b.notes ?? old.notes, id
+    );
+    const openOrders = db.prepare("SELECT COUNT(*) AS count FROM repair_orders WHERE vehicle_id=? AND id<>? AND status<>'completed'").get(old.vehicle_id,id) as any;
+    if (status === 'completed' && Number(openOrders.count) === 0) {
+      db.prepare("UPDATE vehicles SET status=CASE WHEN current_project_id IS NOT NULL THEN 'on_project' ELSE 'available' END WHERE id=? AND status IN ('under_maintenance','broken_down')").run(old.vehicle_id);
+    } else {
+      db.prepare("UPDATE vehicles SET status='under_maintenance' WHERE id=? AND status IN ('available','on_project','under_maintenance','broken_down')").run(old.vehicle_id);
     }
   })();
-  logAudit(req.user!, 'UPDATE', 'repair_order', old.order_number, old.status, status);
+  logAudit(req.user!, 'UPDATE', 'repair_order', old.order_number, `${old.status}: ${old.total_cost} DA`, `${status}: ${total} DA`);
   res.json(db.prepare('SELECT * FROM repair_orders WHERE id = ?').get(id));
 });
 
@@ -2766,6 +2909,48 @@ router.get('/expenses', requireAuth, requirePermission('expenses:read'), (_req, 
     )
     .all();
   res.json(rows);
+});
+
+router.put('/expenses/:id', requireAuth, requirePermission('expenses:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const b = req.body || {};
+  const amount = round2(Number(b.amount || 0));
+  if (!Number.isInteger(id) || id <= 0 || !b.category || !String(b.description || '').trim() || !Number.isFinite(amount) || amount <= 0) {
+    res.status(400).json({ error: 'Date, catégorie, libellé et montant valide (> 0) sont obligatoires.' }); return;
+  }
+  const db = getDb();
+  const old = db.prepare('SELECT * FROM expenses WHERE id=?').get(id) as any;
+  if (!old) { res.status(404).json({ error: 'Dépense introuvable.' }); return; }
+  const linked = db.prepare('SELECT * FROM treasury_transactions WHERE linked_expense_id=?').get(id) as any;
+  if (linked?.bank_reconciled) {
+    res.status(400).json({ error: 'Cette dépense est déjà rapprochée avec un relevé bancaire. Créez une opération de régularisation au lieu de modifier l’historique.' }); return;
+  }
+  const expDate = String(b.expense_date || old.expense_date);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(expDate) || !Number.isFinite(Date.parse(expDate + 'T00:00:00'))) {
+    res.status(400).json({ error: 'Date de dépense invalide.' }); return;
+  }
+  const method = String(b.payment_method || old.payment_method || 'Espèces');
+  if (!['Espèces','Virement','Chèque'].includes(method)) {
+    res.status(400).json({ error: 'Mode de paiement invalide.' }); return;
+  }
+  const projectId = b.project_id ? Number(b.project_id) : null;
+  const vehicleId = b.vehicle_id ? Number(b.vehicle_id) : null;
+  const account = method === 'Espèces' ? 'Caisse' : 'Banque';
+  const txType = method === 'Espèces' ? 'cash_outflow' : 'bank_outflow';
+  db.transaction(() => {
+    db.prepare(`UPDATE expenses SET expense_date=?, category=?, description=?, amount=?, payment_method=?, project_id=?, vehicle_id=?, is_overhead=?, notes=? WHERE id=?`).run(
+      expDate, String(b.category), String(b.description).trim(), amount, method, projectId, vehicleId,
+      b.is_overhead || !projectId ? 1 : 0, b.notes || '', id
+    );
+    if (linked) {
+      db.prepare(`UPDATE treasury_transactions SET tx_date=?, tx_type=?, account=?, to_account=NULL, category=?, amount=?, payment_method=?, project_id=?, notes=? WHERE id=?`).run(
+        expDate, txType, account, String(b.category), amount, method, projectId,
+        String(b.description).trim(), linked.id
+      );
+    }
+  })();
+  logAudit(req.user!, 'UPDATE', 'expense', id, `${old.category}: ${old.amount} DA`, `${b.category}: ${amount} DA`);
+  res.json(db.prepare('SELECT * FROM expenses WHERE id=?').get(id));
 });
 
 router.post('/expenses', requireAuth, requirePermission('expenses:write'), (req: AuthedRequest, res) => {
@@ -3118,6 +3303,55 @@ router.get('/finance/debts', requireAuth, requirePermission('treasury:read'), (_
     payables: payables.filter((row) => row.balance_due > 0),
     worker_advances: workerAdvances.filter((row) => row.balance_due > 0),
   });
+});
+
+
+router.get('/finance/debts/export/xlsx', requireAuth, requirePermission('treasury:read'), (_req, res) => {
+  const db = getDb();
+  const receivables = db.prepare(
+    `SELECT d.doc_number AS Facture, c.name AS Client, d.issue_date AS Date_emission,
+            d.due_date AS Echeance, d.total_ttc AS Total_TTC_DA, d.amount_paid AS Regle_DA,
+            COALESCE((SELECT SUM(a.total_ttc) FROM commercial_documents a
+                      WHERE a.doc_type='avoir' AND a.linked_doc_id=d.id
+                        AND a.status NOT IN ('draft','cancelled')), 0) AS Avoirs_DA,
+            MAX(0, d.total_ttc-d.amount_paid-COALESCE((SELECT SUM(a.total_ttc)
+              FROM commercial_documents a WHERE a.doc_type='avoir' AND a.linked_doc_id=d.id
+              AND a.status NOT IN ('draft','cancelled')),0)) AS Reste_Du_DA
+     FROM commercial_documents d JOIN clients c ON c.id=d.client_id
+     WHERE d.doc_type='facture' AND d.status NOT IN ('draft','cancelled')
+       AND MAX(0, d.total_ttc-d.amount_paid-COALESCE((SELECT SUM(a.total_ttc)
+         FROM commercial_documents a WHERE a.doc_type='avoir' AND a.linked_doc_id=d.id
+         AND a.status NOT IN ('draft','cancelled')),0)) > 0
+     ORDER BY COALESCE(d.due_date,d.issue_date), d.id`
+  ).all();
+  const payables = db.prepare(
+    `SELECT pu.po_number AS Commande, pu.supplier_invoice_no AS Facture_Fournisseur,
+            s.name AS Fournisseur, pu.order_date AS Date_commande, pu.total_ttc AS Total_TTC_DA,
+            pu.amount_paid AS Regle_DA, MAX(0,pu.total_ttc-pu.amount_paid) AS Reste_Du_DA,
+            p.project_number AS Code_Chantier, p.title AS Chantier
+     FROM purchases pu JOIN suppliers s ON s.id=pu.supplier_id
+     LEFT JOIN projects p ON p.id=pu.project_id
+     WHERE pu.status IN ('ordered','received','partial_paid','paid')
+       AND MAX(0,pu.total_ttc-pu.amount_paid)>0
+     ORDER BY pu.order_date, pu.id`
+  ).all();
+  const advances = db.prepare(
+    `SELECT w.full_name AS Salarie, w.job_title AS Poste,
+            COALESCE(SUM(a.advance_amount),0) AS Avances_Versees_DA,
+            COALESCE((SELECT SUM(ps.advances_deducted) FROM payslips ps
+              JOIN payroll_periods pp ON pp.id=ps.payroll_period_id
+              WHERE ps.worker_id=w.id AND pp.status='approved'),0) AS Recuperees_DA,
+            MAX(0,COALESCE(SUM(a.advance_amount),0)-COALESCE((SELECT SUM(ps.advances_deducted)
+              FROM payslips ps JOIN payroll_periods pp ON pp.id=ps.payroll_period_id
+              WHERE ps.worker_id=w.id AND pp.status='approved'),0)) AS Solde_DA
+     FROM workers w LEFT JOIN attendance a ON a.worker_id=w.id AND a.approval_status='approved'
+     GROUP BY w.id HAVING Solde_DA>0 ORDER BY w.full_name COLLATE NOCASE`
+  ).all();
+  sendXlsx(res, 'dettes_creances_gestionpro_dz.xlsx', [
+    { name: 'Creances_Clients', rows: receivables },
+    { name: 'Dettes_Fournisseurs', rows: payables },
+    { name: 'Avances_Salaries', rows: advances },
+  ]);
 });
 
 // ==================== REPORTS ====================

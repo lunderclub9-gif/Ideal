@@ -18,8 +18,18 @@ export default function FleetPage({
   const [tools, setTools] = useState<any[]>([]);
   const [workers, setWorkers] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
+  const [vehicleModal, setVehicleModal] = useState(false);
+  const [editingVehicle, setEditingVehicle] = useState<any | null>(null);
+  const [vehicleForm, setVehicleForm] = useState({
+    asset_type: 'vehicle', name: '', brand: '', registration: '',
+    driver_worker_id: '', current_mileage: 0, current_engine_hours: 0,
+    usage_rate_per_day: 0, status: 'available', current_project_id: '',
+    insurance_expiry: '', inspection_expiry: '', notes: '',
+  });
   const [fuelModal, setFuelModal] = useState(false);
+  const [editingFuel, setEditingFuel] = useState<any | null>(null);
   const [repairModal, setRepairModal] = useState(false);
+  const [editingRepair, setEditingRepair] = useState<any | null>(null);
   const [checkoutTool, setCheckoutTool] = useState<any | null>(null);
   const [error, setError] = useState('');
 
@@ -44,9 +54,16 @@ export default function FleetPage({
     parts_cost: 0,
     labor_cost: 0,
     project_id: '',
+    repair_date: new Date().toISOString().slice(0, 10),
+    parts_used: '',
+    towing_cost: 0,
+    downtime_days: 0,
+    status: 'waiting',
+    notes: '',
   });
   const [coForm, setCoForm] = useState({ worker_id: '', project_id: '', expected_return_date: '' });
 
+  const canVehicles = hasPerm(permissions, 'vehicles:write');
   const canFuel = hasPerm(permissions, 'fuel:write');
   const canRepairs = hasPerm(permissions, 'repairs:write');
   const canMaterials = hasPerm(permissions, 'materials:write');
@@ -82,22 +99,106 @@ export default function FleetPage({
     load();
   }, []);
 
+  function openNewVehicle() {
+    setEditingVehicle(null);
+    setVehicleForm({ asset_type: 'vehicle', name: '', brand: '', registration: '', driver_worker_id: '', current_mileage: 0, current_engine_hours: 0, usage_rate_per_day: 0, status: 'available', current_project_id: '', insurance_expiry: '', inspection_expiry: '', notes: '' });
+    setVehicleModal(true);
+  }
+
+  function openEditVehicle(vehicle: any) {
+    setEditingVehicle(vehicle);
+    setVehicleForm({
+      asset_type: vehicle.asset_type || 'vehicle', name: vehicle.name || '', brand: vehicle.brand || '',
+      registration: vehicle.registration || '', driver_worker_id: vehicle.driver_worker_id ? String(vehicle.driver_worker_id) : '',
+      current_mileage: Number(vehicle.current_mileage || 0), current_engine_hours: Number(vehicle.current_engine_hours || 0),
+      usage_rate_per_day: Number(vehicle.usage_rate_per_day || 0), status: vehicle.status || 'available',
+      current_project_id: vehicle.current_project_id ? String(vehicle.current_project_id) : '',
+      insurance_expiry: vehicle.insurance_expiry || '', inspection_expiry: vehicle.inspection_expiry || '', notes: vehicle.notes || '',
+    });
+    setVehicleModal(true);
+  }
+
+  async function saveVehicle(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      const payload = { ...vehicleForm, driver_worker_id: vehicleForm.driver_worker_id || null, current_project_id: vehicleForm.current_project_id || null };
+      await apiFetch(editingVehicle ? `/vehicles/${editingVehicle.id}` : '/vehicles', {
+        method: editingVehicle ? 'PUT' : 'POST', body: JSON.stringify(payload),
+      });
+      setVehicleModal(false);
+      setEditingVehicle(null);
+      await load();
+    } catch (err: any) { setError(err.message); }
+  }
+
+  function openNewFuel() {
+    setEditingFuel(null);
+    setFuelForm({ date: new Date().toISOString().slice(0, 10), vehicle_id: '', driver_worker_id: '', liters: 50, price_per_liter: 29.01, odometer_before: 0, odometer_after: 0, project_id: '', fuel_station: 'Naftal', trip_purpose: '' });
+    setFuelModal(true);
+  }
+
+  function openEditFuel(entry: any) {
+    setEditingFuel(entry);
+    setFuelForm({
+      date: entry.date || new Date().toISOString().slice(0, 10),
+      vehicle_id: String(entry.vehicle_id),
+      driver_worker_id: entry.driver_worker_id ? String(entry.driver_worker_id) : '',
+      liters: Number(entry.liters || 0),
+      price_per_liter: Number(entry.price_per_liter || 0),
+      odometer_before: Number(entry.odometer_before || 0),
+      odometer_after: Number(entry.odometer_after || 0),
+      project_id: entry.project_id ? String(entry.project_id) : '',
+      fuel_station: entry.fuel_station || 'Naftal',
+      trip_purpose: entry.trip_purpose || '',
+    });
+    setFuelModal(true);
+  }
+
   async function saveFuel(e: React.FormEvent) {
     e.preventDefault();
     try {
-      await apiFetch('/fuel-entries', { method: 'POST', body: JSON.stringify(fuelForm) });
+      await apiFetch(editingFuel ? `/fuel-entries/${editingFuel.id}` : '/fuel-entries', { method: editingFuel ? 'PUT' : 'POST', body: JSON.stringify(fuelForm) });
       setFuelModal(false);
+      setEditingFuel(null);
       await load();
     } catch (err: any) {
       setError(err.message);
     }
   }
 
+  function openNewRepair() {
+    setEditingRepair(null);
+    setRepForm({ vehicle_id: '', problem_category: 'engine', description: '', priority: 'normal', workshop: '', parts_cost: 0, labor_cost: 0, towing_cost: 0, project_id: '', repair_date: new Date().toISOString().slice(0, 10), parts_used: '', downtime_days: 0, status: 'waiting', notes: '' });
+    setRepairModal(true);
+  }
+
+  function openEditRepair(order: any) {
+    setEditingRepair(order);
+    setRepForm({
+      vehicle_id: String(order.vehicle_id),
+      problem_category: order.problem_category || 'other',
+      description: order.description || '',
+      priority: order.priority || 'normal',
+      workshop: order.workshop || '',
+      parts_cost: Number(order.parts_cost || 0),
+      labor_cost: Number(order.labor_cost || 0),
+      towing_cost: Number(order.towing_cost || 0),
+      project_id: order.project_id ? String(order.project_id) : '',
+      repair_date: order.repair_date || new Date().toISOString().slice(0, 10),
+      parts_used: order.parts_used || '',
+      downtime_days: Number(order.downtime_days || 0),
+      status: order.status || 'waiting',
+      notes: order.notes || '',
+    });
+    setRepairModal(true);
+  }
+
   async function saveRepair(e: React.FormEvent) {
     e.preventDefault();
     try {
-      await apiFetch('/repair-orders', { method: 'POST', body: JSON.stringify(repForm) });
+      await apiFetch(editingRepair ? `/repair-orders/${editingRepair.id}` : '/repair-orders', { method: editingRepair ? 'PUT' : 'POST', body: JSON.stringify(repForm) });
       setRepairModal(false);
+      setEditingRepair(null);
       await load();
     } catch (err: any) {
       setError(err.message);
@@ -153,13 +254,14 @@ export default function FleetPage({
         subtitle="Suivi kilométrique, maintenance préventive, ordres de réparation, L/100km et affectation d’outillage"
         actions={
           <div className="flex flex-wrap gap-2">
+            {section === 'vehicles' && canVehicles && <button type="button" onClick={openNewVehicle} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-emerald-700 rounded-lg"><Plus className="w-3.5 h-3.5" /> Ajouter un véhicule</button>}
             {canFuel && (
-              <button type="button" onClick={() => setFuelModal(true)} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-blue-700 rounded-lg">
+              <button type="button" onClick={openNewFuel} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-blue-700 rounded-lg">
                 <Fuel className="w-3.5 h-3.5" /> Saisir plein carburant
               </button>
             )}
             {canRepairs && (
-              <button type="button" onClick={() => setRepairModal(true)} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border border-slate-300 dark:border-slate-700 rounded-lg">
+              <button type="button" onClick={openNewRepair} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border border-slate-300 dark:border-slate-700 rounded-lg">
                 <Wrench className="w-3.5 h-3.5" /> Signaler panne / OR
               </button>
             )}
@@ -201,6 +303,7 @@ export default function FleetPage({
                 </div>
                 <StatusText status={v.status} />
               </div>
+              {canVehicles && <div className="mt-3 flex justify-end"><button type="button" onClick={() => openEditVehicle(v)} className="px-3 py-1.5 text-xs border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800">Modifier le véhicule</button></div>}
               <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 grid grid-cols-3 gap-2 font-mono tabular-nums">
                 <div>
                   <div className="font-sans text-slate-500">Compteur</div>
@@ -276,11 +379,7 @@ export default function FleetPage({
                     <td className="p-3 text-right font-mono tabular-nums font-semibold">{formatDA(ro.total_cost)}</td>
                     <td className="p-3"><StatusText status={ro.status} /></td>
                     <td className="p-3 text-right">
-                      {canRepairs && ro.status !== 'completed' && (
-                        <button type="button" onClick={() => completeRepair(ro.id)} className="text-emerald-700 font-medium hover:underline">
-                          Clôturer
-                        </button>
-                      )}
+                      {canRepairs && <div className="inline-flex items-center gap-2"><button type="button" onClick={() => openEditRepair(ro)} className="inline-flex items-center gap-1 px-2 py-1.5 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">Modifier</button>{ro.status !== 'completed' && <button type="button" onClick={() => completeRepair(ro.id)} className="text-emerald-700 font-medium hover:underline">Clôturer</button>}</div>}
                     </td>
                   </tr>
                 ))}
@@ -302,6 +401,7 @@ export default function FleetPage({
                 <th className="p-3 text-right">Distance</th>
                 <th className="p-3 text-right">L / 100 km</th>
                 <th className="p-3 text-right">Coût</th>
+                {canFuel && <th className="p-3 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -316,6 +416,7 @@ export default function FleetPage({
                     {f.l_per_100 !== null ? `${f.l_per_100} L/100` : '—'}
                   </td>
                   <td className="p-3 text-right font-mono tabular-nums font-bold">{formatDA(f.total_cost)}</td>
+                  {canFuel && <td className="p-3 text-right"><button type="button" onClick={() => openEditFuel(f)} className="inline-flex items-center gap-1 px-2 py-1.5 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">Modifier</button></td>}
                 </tr>
               ))}
             </tbody>
@@ -364,12 +465,34 @@ export default function FleetPage({
         </div>
       )}
 
-      <Modal open={fuelModal} onClose={() => setFuelModal(false)} title="Enregistrer un plein de carburant">
+      <Modal open={vehicleModal} onClose={() => { setVehicleModal(false); setEditingVehicle(null); }} title={editingVehicle ? 'Modifier le véhicule / engin' : 'Ajouter un véhicule / engin'} maxWidth="max-w-2xl">
+        <form onSubmit={saveVehicle} className="space-y-3 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div><label className="block font-medium mb-1">Désignation *</label><input required value={vehicleForm.name} onChange={e => setVehicleForm({...vehicleForm,name:e.target.value})} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
+            <div><label className="block font-medium mb-1">Immatriculation / Code *</label><input required value={vehicleForm.registration} onChange={e => setVehicleForm({...vehicleForm,registration:e.target.value})} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
+            <div><label className="block font-medium mb-1">Type</label><select value={vehicleForm.asset_type} onChange={e => setVehicleForm({...vehicleForm,asset_type:e.target.value})} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950">{[['vehicle','Véhicule'],['truck','Camion'],['excavator','Pelle mécanique'],['mixer','Bétonnière'],['compressor','Compresseur'],['pump','Pompe'],['scaffolding','Échafaudage']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div>
+            <div><label className="block font-medium mb-1">Marque / Modèle</label><input value={vehicleForm.brand} onChange={e => setVehicleForm({...vehicleForm,brand:e.target.value})} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
+            <div><label className="block font-medium mb-1">Kilométrage</label><input type="number" min="0" value={vehicleForm.current_mileage} onChange={e => setVehicleForm({...vehicleForm,current_mileage:Number(e.target.value)})} className="w-full px-3 py-2 border rounded-lg" /></div>
+            <div><label className="block font-medium mb-1">Heures moteur</label><input type="number" min="0" value={vehicleForm.current_engine_hours} onChange={e => setVehicleForm({...vehicleForm,current_engine_hours:Number(e.target.value)})} className="w-full px-3 py-2 border rounded-lg" /></div>
+            <div><label className="block font-medium mb-1">Chauffeur</label><select value={vehicleForm.driver_worker_id} onChange={e => setVehicleForm({...vehicleForm,driver_worker_id:e.target.value})} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"><option value="">Non affecté</option>{workers.map(w=><option key={w.id} value={w.id}>{w.full_name}</option>)}</select></div>
+            <div><label className="block font-medium mb-1">Chantier</label><select value={vehicleForm.current_project_id} onChange={e => setVehicleForm({...vehicleForm,current_project_id:e.target.value})} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"><option value="">Dépôt</option>{projects.map(p=><option key={p.id} value={p.id}>{p.project_number} — {p.title}</option>)}</select></div>
+            <div><label className="block font-medium mb-1">Assurance jusqu’au</label><input type="date" value={vehicleForm.insurance_expiry} onChange={e => setVehicleForm({...vehicleForm,insurance_expiry:e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+            <div><label className="block font-medium mb-1">Contrôle technique jusqu’au</label><input type="date" value={vehicleForm.inspection_expiry} onChange={e => setVehicleForm({...vehicleForm,inspection_expiry:e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+            <div><label className="block font-medium mb-1">Statut</label><select value={vehicleForm.status} onChange={e => setVehicleForm({...vehicleForm,status:e.target.value})} className="w-full px-3 py-2 border rounded-lg"><option value="available">Disponible</option><option value="on_project">Sur chantier</option><option value="under_maintenance">En maintenance</option><option value="broken_down">En panne</option></select></div>
+            <div><label className="block font-medium mb-1">Coût d’utilisation / jour (DA)</label><input type="number" min="0" value={vehicleForm.usage_rate_per_day} onChange={e => setVehicleForm({...vehicleForm,usage_rate_per_day:Number(e.target.value)})} className="w-full px-3 py-2 border rounded-lg" /></div>
+          </div>
+          <div><label className="block font-medium mb-1">Notes</label><textarea value={vehicleForm.notes} onChange={e => setVehicleForm({...vehicleForm,notes:e.target.value})} rows={2} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
+          <div className="flex justify-end gap-2"><button type="button" onClick={()=>{setVehicleModal(false);setEditingVehicle(null);}} className="px-3 py-2 border rounded-lg">Annuler</button><button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg">{editingVehicle ? 'Enregistrer les modifications' : 'Ajouter le véhicule'}</button></div>
+        </form>
+      </Modal>
+
+      <Modal open={fuelModal} onClose={() => { setFuelModal(false); setEditingFuel(null); }} title={editingFuel ? "Modifier le plein de carburant" : "Enregistrer un plein de carburant"}>
         <form onSubmit={saveFuel} className="space-y-3 text-xs">
+          <div><label className="block font-medium mb-1">Date du plein *</label><input type="date" required value={fuelForm.date} onChange={e => setFuelForm({ ...fuelForm, date: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-medium mb-1">Véhicule / Engin *</label>
-              <select required value={fuelForm.vehicle_id} onChange={(e) => setFuelForm({ ...fuelForm, vehicle_id: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950">
+              <select required value={fuelForm.vehicle_id} disabled={!!editingFuel} onChange={(e) => setFuelForm({ ...fuelForm, vehicle_id: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950">
                 <option value="">Sélectionner...</option>
                 {vehicles.map((v) => <option key={v.id} value={v.id}>{v.name} ({v.registration})</option>)}
               </select>
@@ -380,6 +503,20 @@ export default function FleetPage({
                 <option value="">Frais parc général</option>
                 {projects.map((p) => <option key={p.id} value={p.id}>{p.project_number} — {p.title}</option>)}
               </select>
+            </div>
+            <div>
+              <label className="block font-medium mb-1">Conducteur</label>
+              <select value={fuelForm.driver_worker_id} onChange={e => setFuelForm({ ...fuelForm, driver_worker_id: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950">
+                <option value="">Non précisé</option>{workers.map(w => <option key={w.id} value={w.id}>{w.full_name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block font-medium mb-1">Station-service</label>
+              <input value={fuelForm.fuel_station} onChange={e => setFuelForm({ ...fuelForm, fuel_station: e.target.value })} className="w-full px-3 py-2 border rounded-lg" />
+            </div>
+            <div className="col-span-2">
+              <label className="block font-medium mb-1">Motif / trajet</label>
+              <input value={fuelForm.trip_purpose} onChange={e => setFuelForm({ ...fuelForm, trip_purpose: e.target.value })} className="w-full px-3 py-2 border rounded-lg" />
             </div>
             <div>
               <label className="block font-medium mb-1">Litres *</label>
@@ -399,18 +536,18 @@ export default function FleetPage({
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setFuelModal(false)} className="px-3 py-2 border rounded-lg">Annuler</button>
-            <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg">Enregistrer</button>
+            <button type="button" onClick={() => { setFuelModal(false); setEditingFuel(null); }} className="px-3 py-2 border rounded-lg">Annuler</button>
+            <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg">{editingFuel ? "Enregistrer les modifications" : "Enregistrer"}</button>
           </div>
         </form>
       </Modal>
 
-      <Modal open={repairModal} onClose={() => setRepairModal(false)} title="Nouvel ordre de réparation">
+      <Modal open={repairModal} onClose={() => { setRepairModal(false); setEditingRepair(null); }} title={editingRepair ? `Modifier l’ordre ${editingRepair.order_number}` : "Nouvel ordre de réparation"}>
         <form onSubmit={saveRepair} className="space-y-3 text-xs">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-medium mb-1">Véhicule / Engin *</label>
-              <select required value={repForm.vehicle_id} onChange={(e) => setRepForm({ ...repForm, vehicle_id: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950">
+              <select required value={repForm.vehicle_id} disabled={!!editingRepair} onChange={(e) => setRepForm({ ...repForm, vehicle_id: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950">
                 <option value="">Sélectionner...</option>
                 {vehicles.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
@@ -441,9 +578,22 @@ export default function FleetPage({
               <input type="number" value={repForm.labor_cost} onChange={(e) => setRepForm({ ...repForm, labor_cost: Number(e.target.value) })} className="w-full px-3 py-2 border rounded-lg font-mono" />
             </div>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="block font-medium mb-1">Date intervention</label><input type="date" value={repForm.repair_date} onChange={e => setRepForm({ ...repForm, repair_date: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
+            <div><label className="block font-medium mb-1">Priorité</label><select value={repForm.priority} onChange={e => setRepForm({ ...repForm, priority: e.target.value })} className="w-full px-3 py-2 border rounded-lg"><option value="low">Basse</option><option value="normal">Normale</option><option value="high">Haute</option><option value="urgent">Urgente</option></select></div>
+          </div>
+          <div><label className="block font-medium mb-1">Atelier</label><input value={repForm.workshop} onChange={e => setRepForm({ ...repForm, workshop: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
+          <div><label className="block font-medium mb-1">Pièces utilisées</label><input value={repForm.parts_used || ''} onChange={e => setRepForm({ ...repForm, parts_used: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="block font-medium mb-1">Remorquage (DA)</label><input type="number" min="0" value={repForm.towing_cost || 0} onChange={e => setRepForm({ ...repForm, towing_cost: Number(e.target.value) })} className="w-full px-3 py-2 border rounded-lg" /></div>
+            <div><label className="block font-medium mb-1">Jours d’immobilisation</label><input type="number" min="0" value={repForm.downtime_days || 0} onChange={e => setRepForm({ ...repForm, downtime_days: Number(e.target.value) })} className="w-full px-3 py-2 border rounded-lg" /></div>
+          </div>
+          {editingRepair && <div><label className="block font-medium mb-1">Statut de l’ordre</label><select value={repForm.status} onChange={e => setRepForm({ ...repForm, status: e.target.value })} className="w-full px-3 py-2 border rounded-lg"><option value="waiting">En attente</option><option value="in_progress">En cours</option><option value="completed">Terminé</option></select></div>}
+          <div><label className="block font-medium mb-1">Chantier imputé</label><select value={repForm.project_id || ''} onChange={e => setRepForm({ ...repForm, project_id: e.target.value })} className="w-full px-3 py-2 border rounded-lg"><option value="">Parc général</option>{projects.map(pr => <option key={pr.id} value={pr.id}>{pr.project_number} — {pr.title}</option>)}</select></div>
+          <div><label className="block font-medium mb-1">Notes complémentaires</label><textarea rows={2} value={repForm.notes || ''} onChange={e => setRepForm({ ...repForm, notes: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></div>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setRepairModal(false)} className="px-3 py-2 border rounded-lg">Annuler</button>
-            <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg">Créer l’OR</button>
+            <button type="button" onClick={() => { setRepairModal(false); setEditingRepair(null); }} className="px-3 py-2 border rounded-lg">Annuler</button>
+            <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg">{editingRepair ? "Enregistrer les modifications" : "Créer l’OR"}</button>
           </div>
         </form>
       </Modal>

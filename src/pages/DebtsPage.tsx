@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Search, RefreshCw, Wallet, TrendingDown, TrendingUp, Users, Clock3 } from 'lucide-react';
-import { apiFetch, formatDA, formatDateFr } from '../lib/api';
+import { AlertTriangle, Search, RefreshCw, Wallet, TrendingDown, TrendingUp, Users, Clock3, Download } from 'lucide-react';
+import { apiFetch, downloadWithAuth, formatDA, formatDateFr } from '../lib/api';
 import { PageHeader } from '../components/ui';
 
 type DebtRow = Record<string, any>;
@@ -53,7 +53,7 @@ export default function DebtsPage() {
       <PageHeader
         title="Dettes & Créances"
         subtitle={data ? `Situation calculée au ${formatDateFr(data.as_of)} à partir des factures, achats, règlements et avances enregistrés.` : 'Contrôle des soldes clients, fournisseurs et avances salariés.'}
-        actions={<button type="button" onClick={load} disabled={loading} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs border border-slate-300 dark:border-slate-700 rounded-lg disabled:opacity-50"><RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Actualiser</button>}
+        actions={<div className="flex flex-wrap items-center gap-2"><button type="button" onClick={() => downloadWithAuth('/finance/debts/export/xlsx', 'dettes_creances_gestionpro_dz.xlsx')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-teal-700 rounded-lg"><Download className="w-3.5 h-3.5" /> Exporter Excel</button><button type="button" onClick={load} disabled={loading} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs border border-slate-300 dark:border-slate-700 rounded-lg disabled:opacity-50"><RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Actualiser</button></div>}
       />
 
       {error && <div role="alert" className="p-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg">{error}</div>}

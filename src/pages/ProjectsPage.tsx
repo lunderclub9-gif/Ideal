@@ -11,6 +11,8 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
   const [selected, setSelected] = useState<any | null>(null);
   const [tab, setTab] = useState<'overview' | 'tasks' | 'avenants' | 'contracts' | 'costs'>('overview');
   const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<any>({});
   const [taskOpen, setTaskOpen] = useState(false);
   const [avenantOpen, setAvenantOpen] = useState(false);
   const [error, setError] = useState('');
@@ -56,6 +58,44 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
   useEffect(() => {
     loadList();
   }, []);
+
+  function openEditProject() {
+    if (!selected) return;
+    const p = selected.project;
+    setEditForm({
+      client_id: String(p.client_id || ''),
+      title: p.title || '',
+      address: p.address || '',
+      project_type: p.project_type || 'Travaux généraux BTP',
+      start_date: p.start_date || '',
+      expected_end_date: p.expected_end_date || '',
+      actual_end_date: p.actual_end_date || '',
+      status: p.status || 'in_progress',
+      expected_cost: Number(p.expected_cost || 0),
+      expected_selling_price: Number(p.expected_selling_price || 0),
+      progress_percent: Number(p.progress_percent || 0),
+      include_overhead: !!p.include_overhead,
+      notes: p.notes || '',
+    });
+    setEditOpen(true);
+  }
+
+  async function saveProject(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selected) return;
+    setError('');
+    try {
+      await apiFetch(`/projects/${selected.project.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ ...editForm, client_id: Number(editForm.client_id) }),
+      });
+      setEditOpen(false);
+      await openDetail(selected.project.id);
+      await loadList();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }
 
   async function handleCreateProject(e: React.FormEvent) {
     e.preventDefault();
@@ -169,6 +209,11 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
               <p className="text-xs text-slate-500">Client : {p.client_name} · {p.address}</p>
             </div>
           </div>
+          {canWrite && (
+            <button type="button" onClick={openEditProject} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-lg">
+              Modifier le chantier
+            </button>
+          )}
           {canWrite && (
             <label className="inline-flex items-center gap-2 text-xs font-medium cursor-pointer bg-white dark:bg-slate-900 px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg">
               <input
@@ -743,6 +788,49 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
             <button type="button" onClick={() => setCreateOpen(false)} className="px-3 py-2 border rounded-lg">Annuler</button>
             <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg font-medium">Créer le chantier</button>
           </div>
+        </form>
+      </Modal>
+
+      <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Modifier le chantier" maxWidth="max-w-2xl">
+        <form onSubmit={saveProject} className="space-y-3 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="sm:col-span-2">
+              <label className="block font-medium mb-1">Client *</label>
+              <select required value={editForm.client_id || ''} onChange={e => setEditForm({ ...editForm, client_id: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950">
+                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block font-medium mb-1">Intitulé *</label>
+              <input required value={editForm.title || ''} onChange={e => setEditForm({ ...editForm, title: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" />
+            </div>
+            <div>
+              <label className="block font-medium mb-1">Type de travaux</label>
+              <select value={editForm.project_type || ''} onChange={e => setEditForm({ ...editForm, project_type: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950">
+                {services.map(service => <option key={service.id} value={service.name}>{service.name}</option>)}
+                {editForm.project_type && !services.some(service => service.name === editForm.project_type) && <option value={editForm.project_type}>{editForm.project_type}</option>}
+              </select>
+            </div>
+            <div>
+              <label className="block font-medium mb-1">Statut</label>
+              <select value={editForm.status || 'in_progress'} onChange={e => setEditForm({ ...editForm, status: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950">
+                <option value="draft">Brouillon</option><option value="waiting_approval">En attente</option><option value="in_progress">En cours</option><option value="suspended">Suspendu</option><option value="completed">Terminé</option><option value="cancelled">Annulé</option>
+              </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block font-medium mb-1">Adresse</label>
+              <input value={editForm.address || ''} onChange={e => setEditForm({ ...editForm, address: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" />
+            </div>
+            <div><label className="block font-medium mb-1">Début</label><input type="date" value={editForm.start_date || ''} onChange={e => setEditForm({ ...editForm, start_date: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
+            <div><label className="block font-medium mb-1">Fin prévue</label><input type="date" value={editForm.expected_end_date || ''} onChange={e => setEditForm({ ...editForm, expected_end_date: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
+            <div><label className="block font-medium mb-1">Fin réelle</label><input type="date" value={editForm.actual_end_date || ''} onChange={e => setEditForm({ ...editForm, actual_end_date: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
+            <div><label className="block font-medium mb-1">Avancement (%)</label><input type="number" min="0" max="100" value={editForm.progress_percent ?? 0} onChange={e => setEditForm({ ...editForm, progress_percent: Number(e.target.value) })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
+            <div><label className="block font-medium mb-1">Coût prévisionnel (DA)</label><input type="number" min="0" value={editForm.expected_cost ?? 0} onChange={e => setEditForm({ ...editForm, expected_cost: Number(e.target.value) })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
+            <div><label className="block font-medium mb-1">Prix de vente HT (DA)</label><input type="number" min="0" value={editForm.expected_selling_price ?? 0} onChange={e => setEditForm({ ...editForm, expected_selling_price: Number(e.target.value) })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
+          </div>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={!!editForm.include_overhead} onChange={e => setEditForm({ ...editForm, include_overhead: e.target.checked })} /> Inclure les frais généraux</label>
+          <div><label className="block font-medium mb-1">Notes</label><textarea rows={3} value={editForm.notes || ''} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
+          <div className="flex justify-end gap-2"><button type="button" onClick={() => setEditOpen(false)} className="px-3 py-2 border rounded-lg">Annuler</button><button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg">Enregistrer les modifications</button></div>
         </form>
       </Modal>
     </div>

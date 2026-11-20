@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Download, FileSpreadsheet, FolderUp, HardDrive, Printer, RotateCcw, ShieldCheck, Upload } from 'lucide-react';
+import { Download, FileSpreadsheet, FolderUp, HardDrive, Printer, RotateCcw, ShieldCheck, Upload, Plus, Pencil } from 'lucide-react';
 import { apiFetch, downloadWithAuth, formatDA, formatDateFr, getToken, hasPerm } from '../lib/api';
-import { PageHeader, StatusText } from '../components/ui';
+import { Modal, PageHeader, StatusText } from '../components/ui';
 
 export function TaxesPage({ permissions }: { permissions: string[] }) {
   const [data, setData] = useState<any>(null);
@@ -309,6 +309,9 @@ export function SettingsPage({ permissions }: { permissions: string[] }) {
   const [importTarget, setImportTarget] = useState('clients');
   const [preview, setPreview] = useState<any>(null);
   const [msg, setMsg] = useState('');
+  const [userModal, setUserModal] = useState(false);
+  const [editingUser, setEditingUser] = useState<any | null>(null);
+  const [userForm, setUserForm] = useState({ name: '', username: '', role: 'supervisor', status: 'active', password: '' });
   const canWrite = hasPerm(permissions, 'settings:write');
 
   async function load() {
@@ -324,6 +327,37 @@ export function SettingsPage({ permissions }: { permissions: string[] }) {
   useEffect(() => {
     load();
   }, []);
+
+  function openNewUser() {
+    setEditingUser(null);
+    setUserForm({ name: '', username: '', role: 'supervisor', status: 'active', password: '' });
+    setUserModal(true);
+  }
+
+  function openEditUser(user: any) {
+    setEditingUser(user);
+    setUserForm({ name: user.name || '', username: user.username || '', role: user.role || 'supervisor', status: user.status || 'active', password: '' });
+    setUserModal(true);
+  }
+
+  async function saveUser(e: React.FormEvent) {
+    e.preventDefault();
+    setMsg('');
+    try {
+      const payload: any = { name: userForm.name, role: userForm.role, status: userForm.status };
+      if (!editingUser) Object.assign(payload, { username: userForm.username, password: userForm.password });
+      else if (userForm.password.trim()) payload.password = userForm.password;
+      await apiFetch(editingUser ? `/users/${editingUser.id}` : '/users', {
+        method: editingUser ? 'PUT' : 'POST',
+        body: JSON.stringify(payload),
+      });
+      setUserModal(false);
+      setMsg(editingUser ? 'Utilisateur mis à jour.' : 'Utilisateur créé.');
+      await load();
+    } catch (err: any) {
+      setMsg(err.message);
+    }
+  }
 
   async function saveCompany(e: React.FormEvent) {
     e.preventDefault();
@@ -453,27 +487,35 @@ export function SettingsPage({ permissions }: { permissions: string[] }) {
       )}
 
       {tab === 'users' && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-          <table className="w-full text-xs">
-            <thead className="bg-slate-50 dark:bg-slate-800/60">
-              <tr>
-                <th className="p-3 text-left">Nom</th>
-                <th className="p-3 text-left">Identifiant</th>
-                <th className="p-3 text-left">Rôle</th>
-                <th className="p-3 text-left">Statut</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {users.map((u) => (
-                <tr key={u.id}>
-                  <td className="p-3 font-semibold">{u.name}</td>
-                  <td className="p-3 font-mono">{u.username}</td>
-                  <td className="p-3 font-mono">{u.role}</td>
-                  <td className="p-3"><StatusText status={u.status} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-slate-500">Gérez les comptes, les rôles et l’accès des collaborateurs. Un compte désactivé ne peut plus se connecter.</p>
+            {canWrite && <button type="button" onClick={openNewUser} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-blue-700 rounded-lg"><Plus className="w-3.5 h-3.5" /> Ajouter un utilisateur</button>}
+          </div>
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+            <div className="overflow-x-auto"><table className="w-full text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-800/60"><tr>
+                <th className="p-3 text-left">Nom</th><th className="p-3 text-left">Identifiant</th><th className="p-3 text-left">Rôle</th><th className="p-3 text-left">Statut</th><th className="p-3 text-right">Actions</th>
+              </tr></thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {users.map((u) => <tr key={u.id}>
+                  <td className="p-3 font-semibold">{u.name}</td><td className="p-3 font-mono">{u.username}</td><td className="p-3">{({admin:'Administrateur',accountant:'Comptable',supervisor:'Superviseur',storekeeper:'Magasinier',driver:'Chauffeur'} as any)[u.role] || u.role}</td><td className="p-3"><StatusText status={u.status} /></td>
+                  <td className="p-3 text-right">{canWrite && <button type="button" onClick={() => openEditUser(u)} className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><Pencil className="w-3 h-3" /> Modifier</button>}</td>
+                </tr>)}
+                {users.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-500">Aucun utilisateur.</td></tr>}
+              </tbody>
+            </table></div>
+          </div>
+          <Modal open={userModal} onClose={() => setUserModal(false)} title={editingUser ? 'Modifier un utilisateur' : 'Créer un utilisateur'}>
+            <form onSubmit={saveUser} className="space-y-3 text-xs">
+              <div><label className="block font-medium mb-1">Nom complet *</label><input required value={userForm.name} onChange={e => setUserForm({ ...userForm, name: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>
+              {!editingUser && <div><label className="block font-medium mb-1">Identifiant *</label><input required autoComplete="off" value={userForm.username} onChange={e => setUserForm({ ...userForm, username: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" /></div>}
+              <div><label className="block font-medium mb-1">Rôle</label><select value={userForm.role} onChange={e => setUserForm({ ...userForm, role: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"><option value="admin">Administrateur</option><option value="accountant">Comptable</option><option value="supervisor">Superviseur</option><option value="storekeeper">Magasinier</option><option value="driver">Chauffeur</option></select></div>
+              {editingUser && <div><label className="block font-medium mb-1">Statut</label><select value={userForm.status} onChange={e => setUserForm({ ...userForm, status: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"><option value="active">Actif</option><option value="inactive">Désactivé</option></select></div>}
+              <div><label className="block font-medium mb-1">{editingUser ? 'Nouveau mot de passe (facultatif)' : 'Mot de passe *'}</label><input type="password" autoComplete="new-password" required={!editingUser} minLength={8} value={userForm.password} onChange={e => setUserForm({ ...userForm, password: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" />{editingUser && <p className="mt-1 text-[10px] text-slate-500">Laissez vide pour conserver le mot de passe actuel.</p>}</div>
+              <div className="flex justify-end gap-2"><button type="button" onClick={() => setUserModal(false)} className="px-3 py-2 border rounded-lg">Annuler</button><button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg">Enregistrer</button></div>
+            </form>
+          </Modal>
         </div>
       )}
 

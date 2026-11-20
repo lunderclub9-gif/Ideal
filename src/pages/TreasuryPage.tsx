@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeftRight, CheckCircle2, Lock, Plus } from 'lucide-react';
+import { ArrowLeftRight, CheckCircle2, Lock, Plus, Pencil } from 'lucide-react';
 import { apiFetch, formatDA, formatDateFr, hasPerm } from '../lib/api';
 import { Modal, PageHeader } from '../components/ui';
 
@@ -14,6 +14,8 @@ export default function TreasuryPage({
   const [treasury, setTreasury] = useState<any>(null);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
+  const [vehicles, setVehicles] = useState<any[]>([]);
+  const [editingExpense, setEditingExpense] = useState<any | null>(null);
   const [txOpen, setTxOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   const [expOpen, setExpOpen] = useState(false);
@@ -28,6 +30,7 @@ export default function TreasuryPage({
     amount: 0,
     payment_method: 'Espèces',
     project_id: '',
+    vehicle_id: '',
     is_overhead: false,
   });
 
@@ -40,14 +43,16 @@ export default function TreasuryPage({
 
   async function load() {
     try {
-      const [tr, ex, pr] = await Promise.all([
+      const [tr, ex, pr, vh] = await Promise.all([
         hasPerm(permissions, 'treasury:read') ? apiFetch('/treasury') : Promise.resolve(null),
         hasPerm(permissions, 'expenses:read') ? apiFetch('/expenses') : Promise.resolve([]),
-        apiFetch('/projects'),
+        hasPerm(permissions, 'projects:read') ? apiFetch('/projects') : Promise.resolve([]),
+        hasPerm(permissions, 'vehicles:read') ? apiFetch('/vehicles') : Promise.resolve([]),
       ]);
       setTreasury(tr);
       setExpenses(ex);
       setProjects(pr);
+      setVehicles(vh);
       if (tr) setCloseForm((c) => ({ ...c, counted_balance: tr.cashBalance }));
     } catch (e: any) {
       setError(e.message);
@@ -92,11 +97,33 @@ export default function TreasuryPage({
     }
   }
 
+  function openNewExpense() {
+    setEditingExpense(null);
+    setExpForm({ expense_date: new Date().toISOString().slice(0, 10), category: 'Restauration chantier', description: '', amount: 0, payment_method: 'Espèces', project_id: '', vehicle_id: '', is_overhead: false });
+    setExpOpen(true);
+  }
+
+  function openEditExpense(expense: any) {
+    setEditingExpense(expense);
+    setExpForm({
+      expense_date: expense.expense_date || new Date().toISOString().slice(0, 10),
+      category: expense.category || 'Divers',
+      description: expense.description || '',
+      amount: Number(expense.amount || 0),
+      payment_method: expense.payment_method || 'Espèces',
+      project_id: expense.project_id ? String(expense.project_id) : '',
+      vehicle_id: expense.vehicle_id ? String(expense.vehicle_id) : '',
+      is_overhead: !!expense.is_overhead,
+    });
+    setExpOpen(true);
+  }
+
   async function saveExpense(e: React.FormEvent) {
     e.preventDefault();
     try {
-      await apiFetch('/expenses', { method: 'POST', body: JSON.stringify(expForm) });
+      await apiFetch(editingExpense ? `/expenses/${editingExpense.id}` : '/expenses', { method: editingExpense ? 'PUT' : 'POST', body: JSON.stringify(expForm) });
       setExpOpen(false);
+      setEditingExpense(null);
       await load();
     } catch (err: any) {
       setError(err.message);
@@ -121,7 +148,7 @@ export default function TreasuryPage({
               </>
             )}
             {canWriteExpenses && (
-              <button type="button" onClick={() => setExpOpen(true)} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-emerald-700 rounded-lg">
+              <button type="button" onClick={openNewExpense} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-emerald-700 rounded-lg">
                 <Plus className="w-3.5 h-3.5" /> Nouvelle dépense
               </button>
             )}
@@ -219,7 +246,9 @@ export default function TreasuryPage({
                 <th className="p-3 text-left">Catégorie</th>
                 <th className="p-3 text-left">Libellé</th>
                 <th className="p-3 text-left">Imputation</th>
+                <th className="p-3 text-left">Véhicule / Paiement</th>
                 <th className="p-3 text-right">Montant</th>
+                {canWriteExpenses && <th className="p-3 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -229,7 +258,9 @@ export default function TreasuryPage({
                   <td className="p-3">{e.category}</td>
                   <td className="p-3 font-medium">{e.description}</td>
                   <td className="p-3">{e.project_number ? `${e.project_number} — ${e.project_title}` : 'Frais généraux'}</td>
+                  <td className="p-3"><div>{e.vehicle_name || '—'}</div><div className="text-[10px] text-slate-500">{e.payment_method || 'Espèces'}</div></td>
                   <td className="p-3 text-right font-mono tabular-nums font-bold">{formatDA(e.amount)}</td>
+                  {canWriteExpenses && <td className="p-3 text-right"><button type="button" onClick={() => openEditExpense(e)} className="inline-flex items-center gap-1 px-2 py-1.5 border border-slate-300 dark:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><Pencil className="w-3.5 h-3.5" /> Modifier</button></td>}
                 </tr>
               ))}
             </tbody>
@@ -285,8 +316,12 @@ export default function TreasuryPage({
         </form>
       </Modal>
 
-      <Modal open={expOpen} onClose={() => setExpOpen(false)} title="Enregistrer une dépense" maxWidth="max-w-md">
+      <Modal open={expOpen} onClose={() => { setExpOpen(false); setEditingExpense(null); }} title={editingExpense ? "Modifier une dépense" : "Enregistrer une dépense"} maxWidth="max-w-md">
         <form onSubmit={saveExpense} className="space-y-3 text-xs">
+          <div>
+            <label className="block font-medium mb-1">Date de dépense</label>
+            <input type="date" required value={expForm.expense_date} onChange={(e) => setExpForm({ ...expForm, expense_date: e.target.value })} className="w-full px-3 py-2 border rounded-lg" />
+          </div>
           <div>
             <label className="block font-medium mb-1">Catégorie</label>
             <select value={expForm.category} onChange={(e) => setExpForm({ ...expForm, category: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950">
@@ -314,9 +349,17 @@ export default function TreasuryPage({
               </select>
             </div>
           </div>
+          <div>
+            <label className="block font-medium mb-1">Mode de paiement</label>
+            <select value={expForm.payment_method} onChange={(e) => setExpForm({ ...expForm, payment_method: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"><option>Espèces</option><option>Virement</option><option>Chèque</option></select>
+          </div>
+          <div>
+            <label className="block font-medium mb-1">Véhicule lié</label>
+            <select value={expForm.vehicle_id || ''} onChange={(e) => setExpForm({ ...expForm, vehicle_id: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"><option value="">Aucun véhicule</option>{vehicles.map((v) => <option key={v.id} value={v.id}>{v.name} {v.registration ? `— ${v.registration}` : ''}</option>)}</select>
+          </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setExpOpen(false)} className="px-3 py-2 border rounded-lg">Annuler</button>
-            <button type="submit" className="px-4 py-2 text-white bg-emerald-700 rounded-lg">Enregistrer</button>
+            <button type="button" onClick={() => { setExpOpen(false); setEditingExpense(null); }} className="px-3 py-2 border rounded-lg">Annuler</button>
+            <button type="submit" className="px-4 py-2 text-white bg-emerald-700 rounded-lg">{editingExpense ? "Enregistrer les modifications" : "Enregistrer"}</button>
           </div>
         </form>
       </Modal>
