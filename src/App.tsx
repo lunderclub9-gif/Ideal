@@ -109,6 +109,9 @@ export default function App() {
   const [navSearch, setNavSearch] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
   const [setupRequired, setSetupRequired] = useState<boolean | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState('');
+  const [paletteData, setPaletteData] = useState<{ clients: any[]; projects: any[]; invoices: any[] } | null>(null);
 
   useEffect(() => {
     apiFetch<{ setupRequired: boolean }>('/auth/setup-status')
@@ -162,6 +165,11 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen(true);
+        return;
+      }
       if (!e.altKey) return;
       if (e.key === '1') navigate('dashboard');
       else if (e.key === '2' && hasPerm(permissions, 'projects:read')) navigate('projects');
@@ -171,6 +179,25 @@ export default function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [user, permissions]);
+
+  useEffect(() => {
+    if (!paletteOpen) return;
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setPaletteOpen(false); };
+    window.addEventListener('keydown', onEsc);
+    return () => window.removeEventListener('keydown', onEsc);
+  }, [paletteOpen]);
+
+  useEffect(() => {
+    if (!paletteOpen) return;
+    if (paletteData) return;
+    Promise.all([
+      apiFetch('/clients').catch(() => []),
+      apiFetch('/projects').catch(() => []),
+      apiFetch('/commercial-documents').catch(() => []),
+    ]).then(([clients, projects, invoices]) => {
+      setPaletteData({ clients: clients as any[], projects: projects as any[], invoices: invoices as any[] });
+    });
+  }, [paletteOpen, paletteData]);
 
   useEffect(() => {
     if (!user) return;
@@ -415,6 +442,70 @@ export default function App() {
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1440px] w-full mx-auto">{renderModule()}</main>
       </div>
+
+      {paletteOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-slate-950/40 no-print" onClick={() => setPaletteOpen(false)}>
+          <div className="w-full max-w-xl bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="p-3 border-b border-slate-200 dark:border-slate-800">
+              <input
+                autoFocus
+                value={paletteQuery}
+                onChange={(e) => setPaletteQuery(e.target.value)}
+                placeholder="Rechercher un client, un chantier ou une pièce commerciale…"
+                className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/30"
+              />
+              <p className="mt-1.5 text-[10px] text-slate-400">Ctrl+K pour ouvrir · Échap pour fermer</p>
+            </div>
+            <div className="max-h-96 overflow-y-auto p-2 text-xs">
+              {!paletteData && <div className="p-4 text-slate-500">Chargement…</div>}
+              {paletteData && (() => {
+                const q = paletteQuery.trim().toLocaleLowerCase('fr');
+                const clients = paletteData.clients.filter((c) => !q || String(c.name || '').toLocaleLowerCase('fr').includes(q));
+                const projects = paletteData.projects.filter((p) => !q || String(p.title || '').toLocaleLowerCase('fr').includes(q) || String(p.project_number || '').includes(q));
+                const invoices = paletteData.invoices.filter((d) => !q || String(d.doc_number || '').includes(q) || String(d.client_name || '').toLocaleLowerCase('fr').includes(q));
+                const total = clients.length + projects.length + invoices.length;
+                if (total === 0) return <div className="p-4 text-slate-500">Aucun résultat.</div>;
+                return (
+                  <div className="space-y-3">
+                    {clients.length > 0 && (
+                      <div>
+                        <div className="px-2 py-1 text-[10px] font-bold uppercase text-slate-400">Clients</div>
+                        {clients.slice(0, 8).map((c) => (
+                          <button key={`c-${c.id}`} type="button" onClick={() => { navigate('clients'); setPaletteOpen(false); }} className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800">
+                            <span className="font-medium">{c.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {projects.length > 0 && (
+                      <div>
+                        <div className="px-2 py-1 text-[10px] font-bold uppercase text-slate-400">Chantiers</div>
+                        {projects.slice(0, 8).map((p) => (
+                          <button key={`p-${p.id}`} type="button" onClick={() => { navigate('projects'); setPaletteOpen(false); }} className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800">
+                            <span className="font-mono mr-2">{p.project_number}</span>
+                            <span className="font-medium">{p.title}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {invoices.length > 0 && (
+                      <div>
+                        <div className="px-2 py-1 text-[10px] font-bold uppercase text-slate-400">Pièces commerciales</div>
+                        {invoices.slice(0, 8).map((d) => (
+                          <button key={`d-${d.id}`} type="button" onClick={() => { navigate('invoices'); setPaletteOpen(false); }} className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800">
+                            <span className="font-mono mr-2">{d.doc_number}</span>
+                            <span className="font-medium">{d.client_name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
