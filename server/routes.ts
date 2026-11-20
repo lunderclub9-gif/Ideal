@@ -3857,6 +3857,8 @@ router.post('/import/commit', requireAuth, requirePermission('settings:write'), 
       if (target === 'clients') {
         const name = String(r.Nom || r.name || r.RaisonSociale || '').trim();
         if (!name) throw new Error('Nom manquant');
+        const dup = db.prepare('SELECT id FROM clients WHERE name = ?').get(name);
+        if (dup) throw new Error('Client déjà existant');
         db.prepare("INSERT INTO clients (client_type, name, phone, email, address, nif, status) VALUES ('company', ?, ?, ?, ?, ?, 'active')").run(
           name,
           String(r.Téléphone || r.phone || ''),
@@ -3869,6 +3871,8 @@ router.post('/import/commit', requireAuth, requirePermission('settings:write'), 
         const name = String(r.Désignation || r.Nom || r.name || '').trim();
         const code = String(r.Code || r.code || `MAT-IMP-${Date.now()}-${i}`).trim();
         if (!name) throw new Error('Désignation manquante');
+        const dup = db.prepare('SELECT id FROM materials WHERE code = ?').get(code);
+        if (dup) throw new Error('Code matériau déjà existant');
         db.prepare(
           "INSERT INTO materials (name, code, category, unit, current_quantity, purchase_price, min_stock_level) VALUES (?, ?, ?, ?, ?, ?, ?)"
         ).run(
@@ -3884,6 +3888,8 @@ router.post('/import/commit', requireAuth, requirePermission('settings:write'), 
       } else if (target === 'workers') {
         const name = String(r.Nom || r.full_name || '').trim();
         if (!name) throw new Error('Nom manquant');
+        const dup = db.prepare('SELECT id FROM workers WHERE full_name = ?').get(name);
+        if (dup) throw new Error('Employé déjà existant');
         db.prepare(
           "INSERT INTO workers (full_name, job_title, wage_type, daily_wage, hire_date, phone, status) VALUES (?, ?, 'daily', ?, ?, ?, 'active')"
         ).run(
@@ -3897,6 +3903,8 @@ router.post('/import/commit', requireAuth, requirePermission('settings:write'), 
       } else if (target === 'suppliers') {
         const name = String(r.Nom || r.name || '').trim();
         if (!name) throw new Error('Nom manquant');
+        const dup = db.prepare('SELECT id FROM suppliers WHERE name = ?').get(name);
+        if (dup) throw new Error('Fournisseur déjà existant');
         db.prepare('INSERT INTO suppliers (name, phone, address, nif) VALUES (?, ?, ?, ?)').run(
           name,
           String(r.Téléphone || r.phone || ''),
