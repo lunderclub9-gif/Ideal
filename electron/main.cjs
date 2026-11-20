@@ -19,7 +19,20 @@ function publishUpdateStatus(patch) {
 
 function configureAutoUpdater() {
   // Microsoft Store packages receive updates through Store; electron-updater is for NSIS releases only.
-  if (process.windowsStore || !app.isPackaged || process.env.GESTIONPRO_SMOKE_TEST === '1') return;
+  if (process.windowsStore) {
+    const storeStatus = {
+      state: 'up-to-date',
+      version: app.getVersion(),
+      percent: 0,
+      message: 'Les mises à jour sont gérées automatiquement par Microsoft Store.'
+    };
+    ipcMain.handle('ideal:get-version', () => app.getVersion());
+    ipcMain.handle('ideal:get-update-status', () => storeStatus);
+    ipcMain.handle('ideal:check-updates', async () => storeStatus);
+    ipcMain.handle('ideal:install-update', async () => false);
+    return;
+  }
+  if (!app.isPackaged || process.env.GESTIONPRO_SMOKE_TEST === '1') return;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.allowPrerelease = false;
