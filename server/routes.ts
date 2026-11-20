@@ -515,7 +515,7 @@ router.put('/clients/:id', requireAuth, requirePermission('clients:write'), (req
   res.json(db.prepare('SELECT * FROM clients WHERE id = ?').get(id));
 });
 
-router.delete('/clients/:id', requireAuth, requirePermission('clients:delete'), (req: AuthedRequest, res) => {
+router.delete('/clients/:id', requireAuth, requirePermission('clients:delete'), requirePermission('lifecycle:delete'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM clients WHERE id = ?').get(id) as any;
@@ -535,7 +535,7 @@ router.delete('/clients/:id', requireAuth, requirePermission('clients:delete'), 
   res.json({ ok: true });
 });
 
-router.post('/clients/:id/archive', requireAuth, requirePermission('clients:write'), (req: AuthedRequest, res) => {
+router.post('/clients/:id/archive', requireAuth, requirePermission('clients:write'), requirePermission('lifecycle:archive'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM clients WHERE id = ?').get(id) as any;
@@ -545,7 +545,7 @@ router.post('/clients/:id/archive', requireAuth, requirePermission('clients:writ
   res.json({ ok: true });
 });
 
-router.post('/clients/:id/restore', requireAuth, requirePermission('clients:write'), (req: AuthedRequest, res) => {
+router.post('/clients/:id/restore', requireAuth, requirePermission('clients:write'), requirePermission('lifecycle:restore'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM clients WHERE id = ?').get(id) as any;
@@ -702,7 +702,7 @@ router.put('/projects/:id', requireAuth, requirePermission('projects:write'), (r
   res.json(db.prepare('SELECT * FROM projects WHERE id = ?').get(id));
 });
 
-router.delete('/projects/:id', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+router.delete('/projects/:id', requireAuth, requirePermission('projects:write'), requirePermission('lifecycle:delete'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as any;
@@ -722,7 +722,7 @@ router.delete('/projects/:id', requireAuth, requirePermission('projects:write'),
   res.json({ ok: true });
 });
 
-router.post('/projects/:id/archive', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+router.post('/projects/:id/archive', requireAuth, requirePermission('projects:write'), requirePermission('lifecycle:archive'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as any;
@@ -732,7 +732,7 @@ router.post('/projects/:id/archive', requireAuth, requirePermission('projects:wr
   res.json({ ok: true });
 });
 
-router.post('/projects/:id/restore', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+router.post('/projects/:id/restore', requireAuth, requirePermission('projects:write'), requirePermission('lifecycle:restore'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as any;
@@ -742,7 +742,7 @@ router.post('/projects/:id/restore', requireAuth, requirePermission('projects:wr
   res.json({ ok: true });
 });
 
-router.post('/projects/:id/cancel', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+router.post('/projects/:id/cancel', requireAuth, requirePermission('projects:write'), requirePermission('lifecycle:cancel'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as any;
@@ -761,7 +761,7 @@ router.post('/projects/:id/cancel', requireAuth, requirePermission('projects:wri
 });
 
 // --- VEHICLES ---
-router.delete('/vehicles/:id', requireAuth, requirePermission('vehicles:write'), (req: AuthedRequest, res) => {
+router.delete('/vehicles/:id', requireAuth, requirePermission('vehicles:write'), requirePermission('lifecycle:delete'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id) as any;
@@ -774,7 +774,7 @@ router.delete('/vehicles/:id', requireAuth, requirePermission('vehicles:write'),
   logAudit(req.user!, 'DELETE', 'vehicle', id, '', 'Suppression véhicule (période 7 jours)');
   res.json({ ok: true });
 });
-router.post('/vehicles/:id/archive', requireAuth, requirePermission('vehicles:write'), (req: AuthedRequest, res) => {
+router.post('/vehicles/:id/archive', requireAuth, requirePermission('vehicles:write'), requirePermission('lifecycle:archive'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id) as any;
@@ -783,7 +783,7 @@ router.post('/vehicles/:id/archive', requireAuth, requirePermission('vehicles:wr
   logAudit(req.user!, 'ARCHIVE', 'vehicle', id, row.status, 'Archivé');
   res.json({ ok: true });
 });
-router.post('/vehicles/:id/restore', requireAuth, requirePermission('vehicles:write'), (req: AuthedRequest, res) => {
+router.post('/vehicles/:id/restore', requireAuth, requirePermission('vehicles:write'), requirePermission('lifecycle:restore'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id) as any;
@@ -794,7 +794,7 @@ router.post('/vehicles/:id/restore', requireAuth, requirePermission('vehicles:wr
 });
 
 // --- WORKERS ---
-router.delete('/workers/:id', requireAuth, requirePermission('payroll:write'), (req: AuthedRequest, res) => {
+router.delete('/workers/:id', requireAuth, requirePermission('payroll:write'), requirePermission('lifecycle:delete'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM workers WHERE id = ?').get(id) as any;
@@ -807,7 +807,7 @@ router.delete('/workers/:id', requireAuth, requirePermission('payroll:write'), (
   logAudit(req.user!, 'DELETE', 'worker', id, '', 'Suppression employé (période 7 jours)');
   res.json({ ok: true });
 });
-router.post('/workers/:id/archive', requireAuth, requirePermission('payroll:write'), (req: AuthedRequest, res) => {
+router.post('/workers/:id/archive', requireAuth, requirePermission('payroll:write'), requirePermission('lifecycle:archive'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM workers WHERE id = ?').get(id) as any;
@@ -816,7 +816,7 @@ router.post('/workers/:id/archive', requireAuth, requirePermission('payroll:writ
   logAudit(req.user!, 'ARCHIVE', 'worker', id, row.status, 'Archivé');
   res.json({ ok: true });
 });
-router.post('/workers/:id/restore', requireAuth, requirePermission('payroll:write'), (req: AuthedRequest, res) => {
+router.post('/workers/:id/restore', requireAuth, requirePermission('payroll:write'), requirePermission('lifecycle:restore'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM workers WHERE id = ?').get(id) as any;
@@ -827,7 +827,7 @@ router.post('/workers/:id/restore', requireAuth, requirePermission('payroll:writ
 });
 
 // --- SUPPLIERS ---
-router.delete('/suppliers/:id', requireAuth, requirePermission('suppliers:write'), (req: AuthedRequest, res) => {
+router.delete('/suppliers/:id', requireAuth, requirePermission('suppliers:write'), requirePermission('lifecycle:delete'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id) as any;
@@ -841,7 +841,7 @@ router.delete('/suppliers/:id', requireAuth, requirePermission('suppliers:write'
   logAudit(req.user!, 'DELETE', 'supplier', id, '', 'Suppression fournisseur (période 7 jours)');
   res.json({ ok: true });
 });
-router.post('/suppliers/:id/archive', requireAuth, requirePermission('suppliers:write'), (req: AuthedRequest, res) => {
+router.post('/suppliers/:id/archive', requireAuth, requirePermission('suppliers:write'), requirePermission('lifecycle:archive'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id) as any;
@@ -850,7 +850,7 @@ router.post('/suppliers/:id/archive', requireAuth, requirePermission('suppliers:
   logAudit(req.user!, 'ARCHIVE', 'supplier', id, row.status, 'Archivé');
   res.json({ ok: true });
 });
-router.post('/suppliers/:id/restore', requireAuth, requirePermission('suppliers:write'), (req: AuthedRequest, res) => {
+router.post('/suppliers/:id/restore', requireAuth, requirePermission('suppliers:write'), requirePermission('lifecycle:restore'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id) as any;
@@ -861,7 +861,7 @@ router.post('/suppliers/:id/restore', requireAuth, requirePermission('suppliers:
 });
 
 // --- MATERIALS ---
-router.delete('/materials/:id', requireAuth, requirePermission('materials:write'), (req: AuthedRequest, res) => {
+router.delete('/materials/:id', requireAuth, requirePermission('materials:write'), requirePermission('lifecycle:delete'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM materials WHERE id = ?').get(id) as any;
@@ -874,7 +874,7 @@ router.delete('/materials/:id', requireAuth, requirePermission('materials:write'
   logAudit(req.user!, 'DELETE', 'material', id, '', 'Suppression matériau (période 7 jours)');
   res.json({ ok: true });
 });
-router.post('/materials/:id/archive', requireAuth, requirePermission('materials:write'), (req: AuthedRequest, res) => {
+router.post('/materials/:id/archive', requireAuth, requirePermission('materials:write'), requirePermission('lifecycle:archive'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM materials WHERE id = ?').get(id) as any;
@@ -883,7 +883,7 @@ router.post('/materials/:id/archive', requireAuth, requirePermission('materials:
   logAudit(req.user!, 'ARCHIVE', 'material', id, row.status, 'Archivé');
   res.json({ ok: true });
 });
-router.post('/materials/:id/restore', requireAuth, requirePermission('materials:write'), (req: AuthedRequest, res) => {
+router.post('/materials/:id/restore', requireAuth, requirePermission('materials:write'), requirePermission('lifecycle:restore'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM materials WHERE id = ?').get(id) as any;
@@ -1436,7 +1436,7 @@ router.post('/commercial-documents/:id/payments', requireAuth, requirePermission
   res.status(201).json(db.prepare('SELECT * FROM payments WHERE id = ?').get(payId));
 });
 
-router.post('/payments/:id/reverse', requireAuth, requirePermission('invoices:approve'), (req: AuthedRequest, res) => {
+router.post('/payments/:id/reverse', requireAuth, requirePermission('invoices:approve'), requirePermission('lifecycle:reverse'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const { reason } = req.body || {};
   const db = getDb();
@@ -2457,7 +2457,7 @@ router.post('/purchases', requireAuth, requirePermission('suppliers:write'), (re
   res.status(201).json(db.prepare('SELECT * FROM purchases WHERE id = ?').get(poId));
 });
 
-router.post('/purchases/:id/cancel', requireAuth, requirePermission('suppliers:write'), (req: AuthedRequest, res) => {
+router.post('/purchases/:id/cancel', requireAuth, requirePermission('suppliers:write'), requirePermission('lifecycle:cancel'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const purchase = db.prepare('SELECT * FROM purchases WHERE id=?').get(id) as any;
@@ -3064,7 +3064,7 @@ router.post('/treasury/transactions', requireAuth, requirePermission('treasury:w
   res.status(201).json(db.prepare('SELECT * FROM treasury_transactions WHERE id = ?').get(info.lastInsertRowid));
 });
 
-router.post('/treasury/transactions/:id/reverse', requireAuth, requirePermission('treasury:write'), (req: AuthedRequest, res) => {
+router.post('/treasury/transactions/:id/reverse', requireAuth, requirePermission('treasury:write'), requirePermission('lifecycle:reverse'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const { reason } = req.body || {};
   const db = getDb();
@@ -3217,7 +3217,7 @@ router.put('/expenses/:id', requireAuth, requirePermission('expenses:write'), (r
   res.json(db.prepare('SELECT * FROM expenses WHERE id=?').get(id));
 });
 
-router.post('/expenses/:id/cancel', requireAuth, requirePermission('expenses:write'), (req: AuthedRequest, res) => {
+router.post('/expenses/:id/cancel', requireAuth, requirePermission('expenses:write'), requirePermission('lifecycle:cancel'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id) as any;
@@ -3968,7 +3968,7 @@ router.post('/backups/restore', requireAuth, requirePermission('backup:manage'),
 });
 
 // --- INVOICES / COMMERCIAL DOCUMENTS ---
-router.delete('/commercial-documents/:id', requireAuth, requirePermission('invoices:write'), (req: AuthedRequest, res) => {
+router.delete('/commercial-documents/:id', requireAuth, requirePermission('invoices:write'), requirePermission('lifecycle:delete'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM commercial_documents WHERE id = ?').get(id) as any;
@@ -3989,7 +3989,7 @@ router.delete('/commercial-documents/:id', requireAuth, requirePermission('invoi
   logAudit(req.user!, 'DELETE', 'commercial_document', id, '', 'Suppression brouillon (période 7 jours)');
   res.json({ ok: true });
 });
-router.post('/commercial-documents/:id/archive', requireAuth, requirePermission('invoices:write'), (req: AuthedRequest, res) => {
+router.post('/commercial-documents/:id/archive', requireAuth, requirePermission('invoices:write'), requirePermission('lifecycle:archive'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM commercial_documents WHERE id = ?').get(id) as any;
@@ -3998,7 +3998,7 @@ router.post('/commercial-documents/:id/archive', requireAuth, requirePermission(
   logAudit(req.user!, 'ARCHIVE', 'commercial_document', id, row.status, 'Archivé');
   res.json({ ok: true });
 });
-router.post('/commercial-documents/:id/restore', requireAuth, requirePermission('invoices:write'), (req: AuthedRequest, res) => {
+router.post('/commercial-documents/:id/restore', requireAuth, requirePermission('invoices:write'), requirePermission('lifecycle:restore'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM commercial_documents WHERE id = ?').get(id) as any;
@@ -4008,7 +4008,7 @@ router.post('/commercial-documents/:id/restore', requireAuth, requirePermission(
   res.json({ ok: true });
 });
 
-router.post('/commercial-documents/:id/cancel', requireAuth, requirePermission('invoices:write'), (req: AuthedRequest, res) => {
+router.post('/commercial-documents/:id/cancel', requireAuth, requirePermission('invoices:write'), requirePermission('lifecycle:cancel'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   const row = db.prepare('SELECT * FROM commercial_documents WHERE id = ?').get(id) as any;
@@ -4027,7 +4027,7 @@ router.post('/commercial-documents/:id/cancel', requireAuth, requirePermission('
   res.json({ ok: true, status: 'cancelled' });
 });
 
-router.post('/lifecycle/review', requireAuth, requirePermission('audit:read'), (req: AuthedRequest, res) => {
+router.post('/lifecycle/review', requireAuth, requirePermission('audit:read'), requirePermission('lifecycle:review'), (req: AuthedRequest, res) => {
   const table = String(req.body?.table || '');
   const id = Number(req.body?.id);
   const allowed = ['clients','suppliers','workers','projects','vehicles','materials','services','commercial_documents'];
@@ -4051,24 +4051,24 @@ router.post('/lifecycle/review', requireAuth, requirePermission('audit:read'), (
   res.json({ ok: true });
 });
 
-router.get('/lifecycle/overview', requireAuth, requirePermission('dashboard:view'), (_req, res) => {
+router.get('/lifecycle/overview', requireAuth, requirePermission('dashboard:view'), requirePermission('lifecycle:view'), (_req, res) => {
   res.json(listLifecycleRecords());
 });
 
-router.get('/notifications', requireAuth, (_req, res) => {
+router.get('/notifications', requireAuth, requirePermission('lifecycle:view'), (_req, res) => {
   const db = getDb();
   const rows = db.prepare('SELECT * FROM notifications ORDER BY id DESC LIMIT 100').all();
   res.json(rows);
 });
 
-router.post('/notifications/:id/read', requireAuth, (req: AuthedRequest, res) => {
+router.post('/notifications/:id/read', requireAuth, requirePermission('lifecycle:view'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const db = getDb();
   db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ?').run(id);
   res.json({ ok: true });
 });
 
-router.post('/lifecycle/notifications/sync', requireAuth, requirePermission('audit:read'), (_req, res) => {
+router.post('/lifecycle/notifications/sync', requireAuth, requirePermission('audit:read'), requirePermission('lifecycle:review'), (_req, res) => {
   const created = syncRetentionNotifications();
   res.json({ created });
 });

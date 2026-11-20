@@ -83,7 +83,8 @@ export type PermissionAction =
   | 'reports:read' | 'reports:export'
   | 'settings:read' | 'settings:write'
   | 'backup:manage'
-  | 'audit:read';
+  | 'audit:read'
+  | 'lifecycle:view' | 'lifecycle:archive' | 'lifecycle:restore' | 'lifecycle:cancel' | 'lifecycle:reverse' | 'lifecycle:delete' | 'lifecycle:review';
 
 const ROLE_PERMISSIONS: Record<UserRole, Set<string>> = {
   admin: new Set(['*']),
@@ -102,6 +103,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Set<string>> = {
     'taxes:read', 'taxes:write',
     'documents:read', 'documents:write',
     'reports:read', 'reports:export',
+    'lifecycle:view', 'lifecycle:archive', 'lifecycle:restore', 'lifecycle:cancel', 'lifecycle:reverse', 'lifecycle:delete', 'lifecycle:review',
   ]),
   supervisor: new Set([
     'dashboard:view',
@@ -112,6 +114,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Set<string>> = {
     'vehicles:read', 'fuel:write', 'repairs:write',
     'documents:read', 'documents:write',
     'reports:read',
+    'lifecycle:view', 'lifecycle:archive', 'lifecycle:cancel',
   ]),
   storekeeper: new Set([
     'dashboard:view',
@@ -120,12 +123,14 @@ const ROLE_PERMISSIONS: Record<UserRole, Set<string>> = {
     'suppliers:read', 'suppliers:write',
     'vehicles:read',
     'documents:read', 'documents:write',
+    'lifecycle:view', 'lifecycle:archive',
   ]),
   driver: new Set([
     'dashboard:view',
     'projects:read',
     'vehicles:read', 'fuel:write', 'repairs:write',
     'documents:read',
+    'lifecycle:view',
   ]),
 };
 
