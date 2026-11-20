@@ -312,7 +312,8 @@ export default function App() {
         }`}
       >
         <div className="h-14 px-5 flex items-center justify-between border-b border-slate-200 dark:border-slate-800 shrink-0">
-          <span className="text-base font-bold tracking-tight font-display text-slate-900 dark:text-white whitespace-nowrap">
+          <span className="inline-flex items-center gap-2 text-base font-bold tracking-tight font-display text-slate-900 dark:text-white whitespace-nowrap">
+            <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-gradient-to-br from-teal-600 to-emerald-700 text-white text-[11px] font-extrabold shadow-sm">ID</span>
             IDEAL
           </span>
           <button
