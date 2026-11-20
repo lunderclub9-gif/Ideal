@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowRightLeft, CreditCard, FilePlus2, Plus, Printer, RotateCcw, Pencil, X } from 'lucide-react';
+import { ArrowRightLeft, CreditCard, FilePlus2, Plus, Printer, RotateCcw, Pencil } from 'lucide-react';
 import { apiFetch, formatDA, formatDateFr, hasPerm } from '../lib/api';
 import { CommercialPrintModal, EmptyState, Modal, PageHeader, PaymentReceiptPrintModal, StatusText } from '../components/ui';
 
