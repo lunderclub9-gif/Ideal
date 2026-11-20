@@ -131,10 +131,10 @@ export default function App() {
       setPermissions([]);
     };
     window.addEventListener('hashchange', onHash);
-    window.addEventListener('gestionpro-unauthorized', onUnauth);
+    window.addEventListener('ideal-unauthorized', onUnauth);
     return () => {
       window.removeEventListener('hashchange', onHash);
-      window.removeEventListener('gestionpro-unauthorized', onUnauth);
+      window.removeEventListener('ideal-unauthorized', onUnauth);
     };
   }, []);
 
@@ -209,7 +209,7 @@ export default function App() {
   }
 
   if (setupRequired === null) {
-    return <div className="min-h-screen flex items-center justify-center text-sm text-slate-500">Préparation de GestionPro DZ…</div>;
+    return <div className="min-h-screen flex items-center justify-center text-sm text-slate-500">Préparation de IDEAL…</div>;
   }
 
   if (setupRequired) {
@@ -313,7 +313,7 @@ export default function App() {
       >
         <div className="h-14 px-5 flex items-center justify-between border-b border-slate-200 dark:border-slate-800 shrink-0">
           <span className="text-base font-bold tracking-tight font-display text-slate-900 dark:text-white whitespace-nowrap">
-            GestionPro DZ
+            IDEAL
           </span>
           <button
             type="button"
@@ -385,7 +385,7 @@ export default function App() {
               <Menu className="w-4 h-4" />
             </button>
             <span className="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">
-              GestionPro DZ <span className="mx-1.5">/</span>
+              IDEAL <span className="mx-1.5">/</span>
               <span className="text-slate-900 dark:text-slate-100 font-semibold">
                 {currentNav?.label || 'Tableau de bord'}
               </span>

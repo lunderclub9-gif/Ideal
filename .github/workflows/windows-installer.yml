@@ -1,4 +1,4 @@
-name: Build GestionPro DZ for Windows
+name: Build IDEAL for Windows
 
 on:
   pull_request:
@@ -35,7 +35,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: gestionpro-windows-${{ github.ref }}
+  group: ideal-windows-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -57,7 +57,7 @@ jobs:
           $package = Get-Content package.json -Raw | ConvertFrom-Json
           $package.version = "0.1.${{ github.run_number }}"
           $package | ConvertTo-Json -Depth 100 | Out-File package.json -Encoding utf8NoBOM
-          Write-Host "Building GestionPro DZ version $($package.version)"
+          Write-Host "Building IDEAL version $($package.version)"
       - name: TypeScript check
         run: npm run lint
       - name: Verify French-only application interface
@@ -71,9 +71,9 @@ jobs:
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GestionPro-DZ-Windows-Setup
+          name: IDEAL-Windows-Setup
           path: |
-            release/GestionPro-DZ-Setup-*.exe
+            release/IDEAL-Setup-*.exe
             release/latest.yml
             release/*.blockmap
           if-no-files-found: error
@@ -83,14 +83,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: windows-build-${{ github.run_number }}
-          name: GestionPro DZ Windows Build ${{ github.run_number }}
+          name: IDEAL Windows Build ${{ github.run_number }}
           body: |
-            Automatic Windows x64 installer build for GestionPro DZ.
+            Automatic Windows x64 installer build for IDEAL.
             Install on Windows 10/11 x64. Application data is stored locally in the current Windows user's AppData folder.
             Updates are delivered through GitHub Releases. The application checks for stable updates automatically and preserves local AppData.
             This is an unsigned installer; Windows SmartScreen may display an unknown publisher warning.
           files: |
-            release/GestionPro-DZ-Setup-*.exe
+            release/IDEAL-Setup-*.exe
             release/latest.yml
             release/*.blockmap
           make_latest: true

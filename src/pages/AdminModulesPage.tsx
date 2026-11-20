@@ -297,7 +297,7 @@ export function ReportsPage({ permissions }: { permissions: string[] }) {
           </tbody></table></div>
         </div>
       </div>
-      <div className="text-[11px] text-slate-500">Document interne de gestion — les montants sont calculés à partir des mouvements et pièces enregistrés dans GestionPro DZ.</div>
+      <div className="text-[11px] text-slate-500">Document interne de gestion — les montants sont calculés à partir des mouvements et pièces enregistrés dans IDEAL.</div>
     </div>
   );}
 

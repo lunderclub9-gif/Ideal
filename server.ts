@@ -28,11 +28,11 @@ async function startServer() {
   const httpServer = app.listen(PORT, HOST, () => {
     const address = httpServer.address();
     const actualPort = typeof address === 'object' && address ? address.port : PORT;
-    console.log(`GESTIONPRO_SERVER_READY:${actualPort}`);
-    console.log(`GestionPro DZ prêt sur http://127.0.0.1:${actualPort}`);
+    console.log(`IDEAL_SERVER_READY:${actualPort}`);
+    console.log(`IDEAL prêt sur http://127.0.0.1:${actualPort}`);
   });
   httpServer.on('error', (error) => {
-    console.error('GESTIONPRO_SERVER_ERROR', error);
+    console.error('IDEAL_SERVER_ERROR', error);
     process.exitCode = 1;
   });
   const localDate = () => {
@@ -57,7 +57,7 @@ async function startServer() {
         createFullBackup('auto_daily', 'Sauvegarde automatique quotidienne');
       }
     } catch (error) {
-      console.error('GESTIONPRO_BACKUP_ERROR', error);
+      console.error('IDEAL_BACKUP_ERROR', error);
     }
   };
 
@@ -67,6 +67,6 @@ async function startServer() {
   backupTimer.unref();
 }
 startServer().catch((error) => {
-  console.error('GESTIONPRO_STARTUP_ERROR', error);
+  console.error('IDEAL_STARTUP_ERROR', error);
   process.exit(1);
 });

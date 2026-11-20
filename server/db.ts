@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 
-export const DATA_DIR = path.resolve(process.env.GESTIONPRO_DATA_DIR || path.resolve(process.cwd(), 'data'));
+export const DATA_DIR = path.resolve(process.env.IDEAL_DATA_DIR || process.env.GESTIONPRO_DATA_DIR || path.resolve(process.cwd(), 'data'));
 export const DB_PATH = path.join(DATA_DIR, 'gestionpro.db');
 export const DOCS_DIR = path.join(DATA_DIR, 'Documents');
 export const BACKUPS_DIR = path.join(DATA_DIR, 'backups');

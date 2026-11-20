@@ -3,10 +3,10 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, execFileSync } = require('node:child_process');
 
-const exe = path.resolve('release', 'win-unpacked', 'GestionPro DZ.exe');
-const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gestionpro-smoke-'));
+const exe = path.resolve('release', 'win-unpacked', 'IDEAL.exe');
+const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ideal-smoke-'));
 const appData = path.join(tempRoot, 'AppData', 'Roaming');
-const userData = path.join(appData, 'GestionPro-DZ');
+const userData = path.join(appData, 'IDEAL');
 const portFile = path.join(userData, 'server-port.txt');
 const startupLogFile = path.join(userData, 'startup.log');
 const serverBundle = path.resolve('release', 'win-unpacked', 'resources', 'app.asar.unpacked', 'dist-server', 'server.cjs');
@@ -53,10 +53,10 @@ async function run() {
   if (!fs.existsSync(serverBundle)) throw new Error('Packaged server bundle was not unpacked: ' + serverBundle);
   const releaseDir = path.resolve('release');
   const updateMetadata = path.join(releaseDir, 'latest.yml');
-  const installer = path.join(releaseDir, 'GestionPro-DZ-Setup-0.1.' + process.env.GITHUB_RUN_NUMBER + '.exe');
+  const installer = path.join(releaseDir, 'IDEAL-Setup-0.1.' + process.env.GITHUB_RUN_NUMBER + '.exe');
   if (!fs.existsSync(updateMetadata)) throw new Error('electron-updater metadata latest.yml is missing from the Windows build.');
   const metadataText = fs.readFileSync(updateMetadata, 'utf8');
-  if (!metadataText.includes('GestionPro-DZ-Setup-0.1.' + process.env.GITHUB_RUN_NUMBER + '.exe')) throw new Error('latest.yml does not reference the versioned installer.');
+  if (!metadataText.includes('IDEAL-Setup-0.1.' + process.env.GITHUB_RUN_NUMBER + '.exe')) throw new Error('latest.yml does not reference the versioned installer.');
   if (!fs.existsSync(installer)) throw new Error('Versioned installer is missing: ' + installer);
   if (!fs.existsSync(installer + '.blockmap')) throw new Error('Installer blockmap is missing; differential update cannot be published.');
 
@@ -64,7 +64,7 @@ async function run() {
   const page = await fetch(base + '/');
   if (!page.ok) throw new Error('Packaged UI returned HTTP ' + page.status);
   const html = await page.text();
-  if (!html.includes('GestionPro')) throw new Error('Packaged UI did not return the GestionPro application.');
+  if (!html.includes('IDEAL')) throw new Error('Packaged UI did not return the IDEAL application.');
 
   let response = await fetch(base + '/api/auth/setup-status');
   if (!response.ok) throw new Error('Setup status API returned HTTP ' + response.status);
