@@ -211,7 +211,15 @@ export default function ClientsPage({ permissions }: { permissions: string[] }) 
       </div>
 
       {filtered.length === 0 ? (
-        <EmptyState message="Aucun client trouvé pour ces critères." />
+        <EmptyState
+          message={clients.length === 0 ? 'Aucun client enregistré pour le moment.' : 'Aucun client ne correspond à ces critères.'}
+          hint={clients.length === 0 ? 'Commencez par créer votre premier client pour lancer la facturation et le suivi des chantiers.' : 'Modifiez la recherche ou le filtre, ou ajoutez un nouveau client.'}
+          action={canWrite && (
+            <button type="button" onClick={openCreate} className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg">
+              <Plus className="w-3.5 h-3.5" /> Nouveau client
+            </button>
+          )}
+        />
       ) : (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
           <div className="overflow-x-auto">

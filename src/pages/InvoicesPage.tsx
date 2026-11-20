@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowRightLeft, CreditCard, FilePlus2, Plus, Printer, RotateCcw, Pencil, X } from 'lucide-react';
 import { apiFetch, formatDA, formatDateFr, hasPerm } from '../lib/api';
-import { CommercialPrintModal, Modal, PageHeader, PaymentReceiptPrintModal, StatusText } from '../components/ui';
+import { CommercialPrintModal, EmptyState, Modal, PageHeader, PaymentReceiptPrintModal, StatusText } from '../components/ui';
 
 const TYPE_LABELS: Record<string, string> = {
   devis: 'Devis',
@@ -235,6 +235,17 @@ export default function InvoicesPage({ permissions }: { permissions: string[] })
         ))}
       </div>
 
+      {visibleDocs.length === 0 ? (
+        <EmptyState
+          message={docs.length === 0 ? 'Aucune pièce commerciale pour le moment.' : 'Aucune pièce ne correspond à ce filtre.'}
+          hint={docs.length === 0 ? 'Créez un devis ou une facture pour démarrer la chaîne commerciale (devis → facture → règlement).' : 'Modifiez le filtre de type de document.'}
+          action={canWrite && docs.length === 0 && (
+            <button type="button" onClick={openCreateDoc} className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg">
+              <Plus className="w-3.5 h-3.5" /> Nouvelle pièce commerciale
+            </button>
+          )}
+        />
+      ) : (
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
@@ -330,6 +341,7 @@ export default function InvoicesPage({ permissions }: { permissions: string[] })
           </table>
         </div>
       </div>
+      )}
 
       {/* Recent Payments & Reversals */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
