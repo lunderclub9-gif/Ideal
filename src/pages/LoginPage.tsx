@@ -33,7 +33,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
           <div>
             <div className="flex items-center gap-2.5 text-blue-400">
               <Building2 className="w-6 h-6" />
-              <span className="font-display font-bold text-xl tracking-tight text-white">IDEAL</span>
+              <span className="inline-flex items-center gap-2 font-display font-bold text-xl tracking-tight text-white"><span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-teal-400 to-emerald-500 text-white text-xs font-extrabold shadow">ID</span>IDEAL</span>
             </div>
             <h1 className="mt-6 text-2xl font-display font-semibold tracking-tight leading-snug">
               Gestion BTP &amp; Services 100% locale pour l’entreprise algérienne.
