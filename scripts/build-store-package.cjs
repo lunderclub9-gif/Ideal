@@ -8,7 +8,7 @@ if (!identityName || !publisher || !publisherDisplayName) {
   console.error('Missing Microsoft Store identity. Set IDEAL_STORE_IDENTITY_NAME, IDEAL_STORE_PUBLISHER, and IDEAL_STORE_PUBLISHER_DISPLAY_NAME using exact Partner Center values.');
   process.exit(2);
 }
-if (!/^[A-Za-z][A-Za-z0-9]*(\\.[A-Za-z][A-Za-z0-9]*)+$/.test(identityName)) {
+if (!/^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9]*)+$/.test(identityName)) {
   console.error('IDEAL_STORE_IDENTITY_NAME must be the exact dot-separated package identity from Partner Center.');
   process.exit(2);
 }
@@ -37,7 +37,7 @@ async function main() {
       }
     }
   });
-  const packages = artifacts.filter(file => /\\.appx$/i.test(file));
+  const packages = artifacts.filter(file => /\.appx$/i.test(file));
   if (packages.length === 0) throw new Error('No .appx package was produced.');
   for (const file of packages) console.log('STORE_PACKAGE_READY:', file);
 }
