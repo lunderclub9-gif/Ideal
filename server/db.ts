@@ -777,4 +777,55 @@ function runMigrations(db: Database.Database) {
     }
     db.prepare('INSERT INTO schema_migrations (version) VALUES (4)').run();
   }
+
+  // Version 5: extend lifecycle metadata to every business table + notifications.
+  const migration5 = db.prepare('SELECT version FROM schema_migrations WHERE version = 5').get();
+  if (!migration5) {
+    const allTables = [
+      'users','company_settings','tax_rules','reusable_lists','clients','suppliers','workers','projects',
+      'project_assignments','project_phases','project_tasks','change_orders','contracts','contract_milestones',
+      'services','materials','stock_movements','vehicles','fuel_entries','repair_orders','maintenance_rules',
+      'tools','tool_checkouts','commercial_documents','commercial_lines','purchases','purchase_lines',
+      'payments','attendance','payroll_periods','payslips','expenses','treasury_transactions','cash_closings','documents'
+    ];
+    for (const t of allTables) {
+      let cols: string[] = [];
+      try { cols = (db.pragma(`table_info(${t})`) as Array<{ name: string }>).map((c) => c.name); } catch { continue; }
+      if (cols.length === 0) continue;
+      const add = (name: string, sql: string) => { if (!cols.includes(name)) { db.exec(`ALTER TABLE ${t} ADD COLUMN ${name} ${sql}`); cols.push(name); } };
+      add('lifecycle_status', "TEXT NOT NULL DEFAULT 'active'");
+      add('archived_at', 'TEXT');
+      add('archived_by', 'INTEGER');
+      add('archive_reason', "TEXT DEFAULT ''");
+      add('deletion_eligible_until', 'TEXT');
+      add('updated_at', "TEXT NOT NULL DEFAULT ''");
+      add('retention_review_due_at', 'TEXT');
+      add('retention_reviewed_at', 'TEXT');
+      add('retention_reviewed_by', 'INTEGER');
+      add('retention_status', "TEXT NOT NULL DEFAULT 'none'");
+      if (cols.includes('created_at') && cols.includes('updated_at')) {
+        db.exec(`UPDATE ${t} SET updated_at = created_at WHERE updated_at = '' OR updated_at IS NULL`);
+      }
+      if (cols.includes('created_at')) {
+        db.exec(`UPDATE ${t} SET deletion_eligible_until = created_at WHERE deletion_eligible_until IS NULL`);
+      }
+      db.exec(`UPDATE ${t} SET lifecycle_status = 'active' WHERE lifecycle_status IS NULL OR lifecycle_status = ''`);
+      db.exec(`UPDATE ${t} SET retention_status = 'none' WHERE retention_status IS NULL OR retention_status = ''`);
+    }
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dedupe_key TEXT UNIQUE,
+        user_id INTEGER,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        entity_type TEXT,
+        entity_id INTEGER,
+        is_read INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (5)').run();
+  }
 }

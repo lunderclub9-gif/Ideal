@@ -1,11 +1,13 @@
 import express from 'express';
 import path from 'path';
 import { getDb } from './server/db.ts';
+import { syncRetentionNotifications } from './server/lifecycle.ts';
 import apiRouter from './server/routes.ts';
 import { createFullBackup } from './server/backup.ts';
 
 async function startServer() {
   getDb();
+  try { syncRetentionNotifications(); } catch (e) { console.error('LIFECYCLE_SYNC_ERROR', e); }
   const app = express();
   app.use(express.json({ limit: '15mb' }));
   app.use('/api', apiRouter);
@@ -65,6 +67,8 @@ async function startServer() {
   runDailyBackupIfDue();
   const backupTimer = setInterval(runDailyBackupIfDue, 60_000);
   backupTimer.unref();
+  const lifecycleTimer = setInterval(() => { try { syncRetentionNotifications(); } catch (e) { console.error('LIFECYCLE_SYNC_ERROR', e); } }, 60 * 60 * 1000);
+  lifecycleTimer.unref();
 }
 startServer().catch((error) => {
   console.error('IDEAL_STARTUP_ERROR', error);
