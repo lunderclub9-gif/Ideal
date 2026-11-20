@@ -24,6 +24,7 @@ await new Promise<void>((resolve, reject) => {
   server.on('exit', (code) => { if (!ready) reject(new Error(`server exited ${code}`)); });
 });
 const base = `http://127.0.0.1:${port}/api`;
+let closeTestDb: (() => void) | null = null;
 async function req(p: string, o: any = {}) {
   const r = await fetch(base + p, o);
   const t = await r.text();
@@ -40,8 +41,9 @@ try {
   let r = await req('/auth/setup', j('POST', { companyName: 'LC Test', legalForm: 'SARL', fullName: 'Admin', username: 'admin', password: 'Password1234' }));
   assert.equal(r.status, 201, 'setup');
   const token = r.data.token as string;
-  const { getDb } = await import('../server/db.ts');
-  const db = getDb();
+  const dbModule = await import('../server/db.ts');
+  closeTestDb = dbModule.closeDb;
+  const db = dbModule.getDb();
 
   // 7-day deletion: new client deletable
   r = await req('/clients', j('POST', { name: 'Client New' }, token));
@@ -132,5 +134,6 @@ try {
       server.once('exit', () => { clearTimeout(timer); resolve(); });
     });
   }
+  try { closeTestDb?.(); } catch {}
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }
