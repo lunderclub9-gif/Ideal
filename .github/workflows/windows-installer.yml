@@ -64,16 +64,22 @@ jobs:
         run: npm run check:french-ui
       - name: Test backup, restore and session protection
         run: npm run test:data-protection
+      - name: Test lifecycle policies in an isolated temporary database
+        run: npm run test:lifecycle
       - name: Build application and Windows installer
         run: npm run dist:win
       - name: Smoke test packaged Windows application
         run: node scripts/smoke-test-windows.cjs
+      - name: Verify installer metadata, signature and SHA-256
+        shell: pwsh
+        run: ./scripts/verify-windows-installer.ps1
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: IDEAL-Windows-Setup
           path: |
             release/IDEAL-Setup-*.exe
+            release/IDEAL-SHA256SUMS.txt
             release/latest.yml
             release/*.blockmap
           if-no-files-found: error
@@ -88,9 +94,12 @@ jobs:
             Automatic Windows x64 installer build for IDEAL.
             Install on Windows 10/11 x64. Application data is stored locally in the current Windows user's AppData folder.
             Updates are delivered through GitHub Releases. The application checks for stable updates automatically and preserves local AppData.
-            This is an unsigned installer; Windows SmartScreen may display an unknown publisher warning.
+            The release includes a SHA-256 checksum manifest for installer integrity verification.
+            This installer is not Authenticode-signed in the free GitHub distribution path; Windows SmartScreen may display an unknown-publisher or reputation warning.
+            Do not disable Windows Defender or SmartScreen globally. Verify the installer checksum and download source before installing.
           files: |
             release/IDEAL-Setup-*.exe
+            release/IDEAL-SHA256SUMS.txt
             release/latest.yml
             release/*.blockmap
           make_latest: true

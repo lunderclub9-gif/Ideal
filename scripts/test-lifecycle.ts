@@ -10,10 +10,11 @@ process.env.GESTIONPRO_DATA_DIR = dataDir;
 const port = 3099;
 const env = { ...process.env, HOST: '127.0.0.1', PORT: String(port), GESTIONPRO_DATA_DIR: dataDir, NODE_ENV: 'development' };
 
-const server = spawn('npx', ['tsx', 'server.ts'], { env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+const tsxCli = path.resolve('node_modules/tsx/dist/cli.mjs');
+const server = spawn(process.execPath, [tsxCli, 'server.ts'], { env, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
 let ready = false;
 await new Promise<void>((resolve, reject) => {
-  const timer = setTimeout(() => reject(new Error('server startup timeout')), 30000);
+  const timer = setTimeout(() => { server.kill('SIGTERM'); reject(new Error('server startup timeout')); }, 30000);
   server.stdout.on('data', (d) => {
     const s = d.toString();
     if (s.includes('IDEAL_SERVER_READY')) { ready = true; clearTimeout(timer); resolve(); }
@@ -23,6 +24,7 @@ await new Promise<void>((resolve, reject) => {
   server.on('exit', (code) => { if (!ready) reject(new Error(`server exited ${code}`)); });
 });
 const base = `http://127.0.0.1:${port}/api`;
+let closeTestDb: (() => void) | null = null;
 async function req(p: string, o: any = {}) {
   const r = await fetch(base + p, o);
   const t = await r.text();
@@ -39,8 +41,9 @@ try {
   let r = await req('/auth/setup', j('POST', { companyName: 'LC Test', legalForm: 'SARL', fullName: 'Admin', username: 'admin', password: 'Password1234' }));
   assert.equal(r.status, 201, 'setup');
   const token = r.data.token as string;
-  const { getDb } = await import('../server/db.ts');
-  const db = getDb();
+  const dbModule = await import('../server/db.ts');
+  closeTestDb = dbModule.closeDb;
+  const db = dbModule.getDb();
 
   // 7-day deletion: new client deletable
   r = await req('/clients', j('POST', { name: 'Client New' }, token));
@@ -121,9 +124,16 @@ try {
 } catch (e: any) {
   console.error('TEST FAILED:', e?.message || e);
   console.error(e?.stack);
+  process.exitCode = 1;
 } finally {
   try { process.kill(-server.pid!, 'SIGTERM'); } catch {}
-  try { server.kill('SIGTERM'); } catch {}
+  if (server.exitCode === null) {
+    try { server.kill('SIGTERM'); } catch {}
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 5000);
+      server.once('exit', () => { clearTimeout(timer); resolve(); });
+    });
+  }
+  try { closeTestDb?.(); } catch {}
   fs.rmSync(tempRoot, { recursive: true, force: true });
-  process.exit(0);
 }
