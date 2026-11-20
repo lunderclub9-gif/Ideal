@@ -742,6 +742,139 @@ router.post('/projects/:id/restore', requireAuth, requirePermission('projects:wr
   res.json({ ok: true });
 });
 
+// --- VEHICLES ---
+router.delete('/vehicles/:id', requireAuth, requirePermission('vehicles:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Véhicule introuvable.' }); return; }
+  const deps = vehicleDependencies(id);
+  if (deps.length > 0) { res.status(400).json({ error: `Suppression impossible : ${deps.join(', ')}.`, dependencies: deps }); return; }
+  const deadline = row.deletion_eligible_until || row.created_at;
+  if (!isDeletionEligible(deadline)) { res.status(400).json({ error: 'Suppression impossible : la période de 7 jours est dépassée. Archivez le véhicule à la place.' }); return; }
+  db.prepare('DELETE FROM vehicles WHERE id = ?').run(id);
+  logAudit(req.user!, 'DELETE', 'vehicle', id, '', 'Suppression véhicule (période 7 jours)');
+  res.json({ ok: true });
+});
+router.post('/vehicles/:id/archive', requireAuth, requirePermission('vehicles:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Véhicule introuvable.' }); return; }
+  archiveEntity('vehicles', id, req.user!.id, (req.body?.reason || 'Archivage manuel'));
+  logAudit(req.user!, 'ARCHIVE', 'vehicle', id, row.status, 'Archivé');
+  res.json({ ok: true });
+});
+router.post('/vehicles/:id/restore', requireAuth, requirePermission('vehicles:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Véhicule introuvable.' }); return; }
+  restoreEntity('vehicles', id);
+  logAudit(req.user!, 'RESTORE', 'vehicle', id, 'archived', 'Restauré');
+  res.json({ ok: true });
+});
+
+// --- WORKERS ---
+router.delete('/workers/:id', requireAuth, requirePermission('payroll:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM workers WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Employé introuvable.' }); return; }
+  const deps = workerDependencies(id);
+  if (deps.length > 0) { res.status(400).json({ error: `Suppression impossible : ${deps.join(', ')}.`, dependencies: deps }); return; }
+  const deadline = row.deletion_eligible_until || row.created_at;
+  if (!isDeletionEligible(deadline)) { res.status(400).json({ error: 'Suppression impossible : la période de 7 jours est dépassée. Archivez l’employé à la place.' }); return; }
+  db.prepare('DELETE FROM workers WHERE id = ?').run(id);
+  logAudit(req.user!, 'DELETE', 'worker', id, '', 'Suppression employé (période 7 jours)');
+  res.json({ ok: true });
+});
+router.post('/workers/:id/archive', requireAuth, requirePermission('payroll:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM workers WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Employé introuvable.' }); return; }
+  archiveEntity('workers', id, req.user!.id, (req.body?.reason || 'Archivage manuel'));
+  logAudit(req.user!, 'ARCHIVE', 'worker', id, row.status, 'Archivé');
+  res.json({ ok: true });
+});
+router.post('/workers/:id/restore', requireAuth, requirePermission('payroll:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM workers WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Employé introuvable.' }); return; }
+  restoreEntity('workers', id);
+  logAudit(req.user!, 'RESTORE', 'worker', id, 'archived', 'Restauré');
+  res.json({ ok: true });
+});
+
+// --- SUPPLIERS ---
+router.delete('/suppliers/:id', requireAuth, requirePermission('suppliers:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Fournisseur introuvable.' }); return; }
+  // deps: purchases
+  const purchases = (db.prepare('SELECT COUNT(*) c FROM purchases WHERE supplier_id = ?').get(id) as any).c;
+  if (purchases > 0) { res.status(400).json({ error: `Suppression impossible : ${purchases} achat(s).`, dependencies: [`${purchases} achat(s)`] }); return; }
+  const deadline = row.deletion_eligible_until || row.created_at;
+  if (!isDeletionEligible(deadline)) { res.status(400).json({ error: 'Suppression impossible : la période de 7 jours est dépassée. Archivez le fournisseur à la place.' }); return; }
+  db.prepare('DELETE FROM suppliers WHERE id = ?').run(id);
+  logAudit(req.user!, 'DELETE', 'supplier', id, '', 'Suppression fournisseur (période 7 jours)');
+  res.json({ ok: true });
+});
+router.post('/suppliers/:id/archive', requireAuth, requirePermission('suppliers:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Fournisseur introuvable.' }); return; }
+  archiveEntity('suppliers', id, req.user!.id, (req.body?.reason || 'Archivage manuel'));
+  logAudit(req.user!, 'ARCHIVE', 'supplier', id, row.status, 'Archivé');
+  res.json({ ok: true });
+});
+router.post('/suppliers/:id/restore', requireAuth, requirePermission('suppliers:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Fournisseur introuvable.' }); return; }
+  restoreEntity('suppliers', id);
+  logAudit(req.user!, 'RESTORE', 'supplier', id, 'archived', 'Restauré');
+  res.json({ ok: true });
+});
+
+// --- MATERIALS ---
+router.delete('/materials/:id', requireAuth, requirePermission('materials:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM materials WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Matériau introuvable.' }); return; }
+  const deps = materialDependencies(id);
+  if (deps.length > 0) { res.status(400).json({ error: `Suppression impossible : ${deps.join(', ')}.`, dependencies: deps }); return; }
+  const deadline = row.deletion_eligible_until || row.created_at;
+  if (!isDeletionEligible(deadline)) { res.status(400).json({ error: 'Suppression impossible : la période de 7 jours est dépassée. Archivez le matériau à la place.' }); return; }
+  db.prepare('DELETE FROM materials WHERE id = ?').run(id);
+  logAudit(req.user!, 'DELETE', 'material', id, '', 'Suppression matériau (période 7 jours)');
+  res.json({ ok: true });
+});
+router.post('/materials/:id/archive', requireAuth, requirePermission('materials:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM materials WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Matériau introuvable.' }); return; }
+  archiveEntity('materials', id, req.user!.id, (req.body?.reason || 'Archivage manuel'));
+  logAudit(req.user!, 'ARCHIVE', 'material', id, row.status, 'Archivé');
+  res.json({ ok: true });
+});
+router.post('/materials/:id/restore', requireAuth, requirePermission('materials:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM materials WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Matériau introuvable.' }); return; }
+  restoreEntity('materials', id);
+  logAudit(req.user!, 'RESTORE', 'material', id, 'archived', 'Restauré');
+  res.json({ ok: true });
+});
+
 router.post('/projects/:id/phases', requireAuth, requirePermission('projects:write'), (req, res) => {
   const id = Number(req.params.id);
   const { name, sort_order, status } = req.body || {};
@@ -1037,8 +1170,8 @@ router.post('/commercial-documents', requireAuth, requirePermission('invoices:wr
   const tx = db.transaction(() => {
     const info = db
       .prepare(
-        `INSERT INTO commercial_documents (doc_type, doc_number, client_id, project_id, linked_doc_id, issue_date, due_date, status, discount_percent, total_ht, total_tva, total_ttc, amount_paid, notes, created_by, locked_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
+        `INSERT INTO commercial_documents (doc_type, doc_number, client_id, project_id, linked_doc_id, issue_date, due_date, status, discount_percent, total_ht, total_tva, total_ttc, amount_paid, notes, created_by, locked_at, lifecycle_status, deletion_eligible_until)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 'new', datetime('now', '+7 days'))`
       )
       .run(
         docType,
@@ -1150,8 +1283,8 @@ router.post('/commercial-documents/:id/convert-to-invoice', requireAuth, require
   const newId = db.transaction(() => {
     const info = db
       .prepare(
-        `INSERT INTO commercial_documents (doc_type, doc_number, client_id, project_id, linked_doc_id, issue_date, due_date, status, discount_percent, total_ht, total_tva, total_ttc, amount_paid, notes, created_by, locked_at)
-         VALUES ('facture', ?, ?, ?, ?, ?, ?, 'issued', ?, ?, ?, ?, 0, ?, ?, datetime('now'))`
+        `INSERT INTO commercial_documents (doc_type, doc_number, client_id, project_id, linked_doc_id, issue_date, due_date, status, discount_percent, total_ht, total_tva, total_ttc, amount_paid, notes, created_by, locked_at, lifecycle_status, deletion_eligible_until)
+         VALUES ('facture', ?, ?, ?, ?, ?, ?, 'issued', ?, ?, ?, ?, 0, ?, ?, datetime('now'), 'new', datetime('now', '+7 days'))`
       )
       .run(invNumber, src.client_id, src.project_id, src.id, today, due, src.discount_percent, src.total_ht, src.total_tva, src.total_ttc, `Convertie depuis ${src.doc_number}`, req.user!.id);
     const invId = info.lastInsertRowid as number;
@@ -1185,8 +1318,8 @@ router.post('/commercial-documents/:id/credit-note', requireAuth, requirePermiss
   const avoId = db.transaction(() => {
     const info = db
       .prepare(
-        `INSERT INTO commercial_documents (doc_type, doc_number, client_id, project_id, linked_doc_id, issue_date, status, discount_percent, total_ht, total_tva, total_ttc, amount_paid, notes, created_by, locked_at)
-         VALUES ('avoir', ?, ?, ?, ?, ?, 'issued', ?, ?, ?, ?, 0, ?, ?, datetime('now'))`
+        `INSERT INTO commercial_documents (doc_type, doc_number, client_id, project_id, linked_doc_id, issue_date, status, discount_percent, total_ht, total_tva, total_ttc, amount_paid, notes, created_by, locked_at, lifecycle_status, deletion_eligible_until)
+         VALUES ('avoir', ?, ?, ?, ?, ?, 'issued', ?, ?, ?, ?, 0, ?, ?, datetime('now'), 'new', datetime('now', '+7 days'))`
       )
       .run(
         avoNumber,
@@ -1509,8 +1642,8 @@ router.post('/workers', requireAuth, requirePermission('payroll:write'), (req: A
   }
   const db = getDb();
   const info = db.prepare(
-    `INSERT INTO workers (full_name, job_title, wage_type, daily_wage, hourly_rate, monthly_salary, work_schedule, hire_date, cnas_number, phone, address, status, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO workers (full_name, job_title, wage_type, daily_wage, hourly_rate, monthly_salary, work_schedule, hire_date, cnas_number, phone, address, status, notes, lifecycle_status, deletion_eligible_until)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', datetime('now', '+7 days'))`
   ).run(
     fullName, jobTitle, wageType, amounts[0], amounts[1], amounts[2],
     String(b.work_schedule || '08:00 - 16:30'), hireDate,
@@ -2036,8 +2169,8 @@ router.post('/materials', requireAuth, requirePermission('materials:write'), (re
   const db = getDb();
   const info = db
     .prepare(
-      `INSERT INTO materials (name, code, category, unit, current_quantity, purchase_price, selling_price, min_stock_level, preferred_supplier_id, storage_location)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO materials (name, code, category, unit, current_quantity, purchase_price, selling_price, min_stock_level, preferred_supplier_id, storage_location, lifecycle_status, deletion_eligible_until)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', datetime('now', '+7 days'))`
     )
     .run(
       b.name.trim(),
@@ -2191,8 +2324,8 @@ router.post('/suppliers', requireAuth, requirePermission('suppliers:write'), (re
   const db = getDb();
   const info = db
     .prepare(
-      `INSERT INTO suppliers (name, contact_name, phone, email, address, nif, nis, rc, ai, payment_terms, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO suppliers (name, contact_name, phone, email, address, nif, nis, rc, ai, payment_terms, notes, lifecycle_status, deletion_eligible_until)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', datetime('now', '+7 days'))`
     )
     .run(b.name.trim(), b.contact_name || '', b.phone || '', b.email || '', b.address || '', b.nif || '', b.nis || '', b.rc || '', b.ai || '', b.payment_terms || '30 jours', b.notes || '');
   logAudit(req.user!, 'CREATE', 'supplier', info.lastInsertRowid, '', b.name.trim());
@@ -2433,8 +2566,8 @@ router.post('/vehicles', requireAuth, requirePermission('vehicles:write'), (req:
   const db = getDb();
   const info = db
     .prepare(
-      `INSERT INTO vehicles (asset_type, name, brand, registration, driver_worker_id, current_mileage, current_engine_hours, usage_rate_per_day, status, current_project_id, insurance_expiry, inspection_expiry, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO vehicles (asset_type, name, brand, registration, driver_worker_id, current_mileage, current_engine_hours, usage_rate_per_day, status, current_project_id, insurance_expiry, inspection_expiry, notes, lifecycle_status, deletion_eligible_until)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', datetime('now', '+7 days'))`
     )
     .run(
       b.asset_type || 'vehicle',
@@ -3738,6 +3871,47 @@ router.post('/backups/restore', requireAuth, requirePermission('backup:manage'),
   } catch (err: any) {
     res.status(400).json({ error: err.message || 'Échec lors de la restauration de l’archive.' });
   }
+});
+
+// --- INVOICES / COMMERCIAL DOCUMENTS ---
+router.delete('/commercial-documents/:id', requireAuth, requirePermission('invoices:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM commercial_documents WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Pièce introuvable.' }); return; }
+  if (row.status !== 'draft') {
+    res.status(400).json({ error: 'Suppression impossible : seuls les brouillons peuvent être supprimés. Utilisez l’annulation pour une pièce émise.' });
+    return;
+  }
+  const payments = (db.prepare('SELECT COUNT(*) c FROM payments WHERE doc_id = ?').get(id) as any).c;
+  if (payments > 0) { res.status(400).json({ error: 'Suppression impossible : des règlements sont liés.' }); return; }
+  const deadline = row.deletion_eligible_until || row.created_at;
+  if (row.deletion_eligible_until && !isDeletionEligible(deadline)) {
+    res.status(400).json({ error: 'Suppression impossible : la période de 7 jours est dépassée.' });
+    return;
+  }
+  db.prepare('DELETE FROM commercial_documents WHERE id = ?').run(id);
+  db.prepare('DELETE FROM commercial_lines WHERE doc_id = ?').run(id);
+  logAudit(req.user!, 'DELETE', 'commercial_document', id, '', 'Suppression brouillon (période 7 jours)');
+  res.json({ ok: true });
+});
+router.post('/commercial-documents/:id/archive', requireAuth, requirePermission('invoices:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM commercial_documents WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Pièce introuvable.' }); return; }
+  archiveEntity('commercial_documents', id, req.user!.id, (req.body?.reason || 'Archivage manuel'));
+  logAudit(req.user!, 'ARCHIVE', 'commercial_document', id, row.status, 'Archivé');
+  res.json({ ok: true });
+});
+router.post('/commercial-documents/:id/restore', requireAuth, requirePermission('invoices:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM commercial_documents WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Pièce introuvable.' }); return; }
+  restoreEntity('commercial_documents', id);
+  logAudit(req.user!, 'RESTORE', 'commercial_document', id, 'archived', 'Restauré');
+  res.json({ ok: true });
 });
 
 export default router;
