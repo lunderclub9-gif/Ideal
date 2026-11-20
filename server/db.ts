@@ -724,7 +724,7 @@ function runMigrations(db: Database.Database) {
   // Version 3: Smart Lifecycle Management columns (additive, idempotent).
   const migration3 = db.prepare('SELECT version FROM schema_migrations WHERE version = 3').get();
   if (!migration3) {
-    const lifecycleTables = ['clients', 'suppliers', 'workers', 'projects', 'vehicles', 'materials', 'services'];
+    const lifecycleTables = ['clients', 'suppliers', 'workers', 'projects', 'vehicles', 'materials', 'services', 'commercial_documents'];
     for (const t of lifecycleTables) {
       const cols = (db.pragma(`table_info(${t})`) as Array<{ name: string }>).map((c) => c.name);
       if (!cols.includes('lifecycle_status')) {
