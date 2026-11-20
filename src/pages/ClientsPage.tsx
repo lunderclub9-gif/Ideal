@@ -223,7 +223,7 @@ export default function ClientsPage({ permissions }: { permissions: string[] }) 
       ) : (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="w-full text-xs min-w-[680px]">
               <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300">
                 <tr>
                   <th className="p-3 text-left font-medium">Client</th>
