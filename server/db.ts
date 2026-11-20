@@ -828,4 +828,19 @@ function runMigrations(db: Database.Database) {
     `);
     db.prepare('INSERT INTO schema_migrations (version) VALUES (5)').run();
   }
+
+  // Version 6: cancellation/reversal status for expenses and treasury.
+  const migration6 = db.prepare('SELECT version FROM schema_migrations WHERE version = 6').get();
+  if (!migration6) {
+    const addCol = (t: string, name: string, sql: string) => {
+      const cols = (db.pragma(`table_info(${t})`) as Array<{ name: string }>).map((c) => c.name);
+      if (!cols.includes(name)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${name} ${sql}`);
+    };
+    addCol('expenses', 'status', "TEXT NOT NULL DEFAULT 'active'");
+    addCol('treasury_transactions', 'status', "TEXT NOT NULL DEFAULT 'active'");
+    addCol('treasury_transactions', 'reversed_transaction_id', 'INTEGER');
+    db.exec("UPDATE expenses SET status='active' WHERE status IS NULL OR status=''");
+    db.exec("UPDATE treasury_transactions SET status='active' WHERE status IS NULL OR status=''");
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (6)').run();
+  }
 }

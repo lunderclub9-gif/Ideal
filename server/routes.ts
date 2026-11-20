@@ -742,6 +742,24 @@ router.post('/projects/:id/restore', requireAuth, requirePermission('projects:wr
   res.json({ ok: true });
 });
 
+router.post('/projects/:id/cancel', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Chantier introuvable.' }); return; }
+  if (row.status === 'cancelled') { res.status(400).json({ error: 'Ce chantier est déjà annulé.' }); return; }
+  if (row.status === 'completed') { res.status(400).json({ error: 'Un chantier terminé ne peut pas être annulé.' }); return; }
+  const inv = (db.prepare("SELECT COUNT(*) c FROM commercial_documents WHERE project_id = ? AND status NOT IN ('draft','cancelled')").get(id) as any).c;
+  if (inv > 0) { res.status(400).json({ error: 'Annulation impossible : des pièces commerciales sont liées à ce chantier.' }); return; }
+  const exp = (db.prepare('SELECT COUNT(*) c FROM expenses WHERE project_id = ?').get(id) as any).c;
+  if (exp > 0) { res.status(400).json({ error: 'Annulation impossible : des dépenses sont liées à ce chantier.' }); return; }
+  const stock = (db.prepare('SELECT COUNT(*) c FROM stock_movements WHERE project_id = ?').get(id) as any).c;
+  if (stock > 0) { res.status(400).json({ error: 'Annulation impossible : des mouvements de stock sont liés à ce chantier.' }); return; }
+  db.prepare("UPDATE projects SET status='cancelled', updated_at=? WHERE id=?").run(new Date().toISOString().slice(0,19).replace('T',' '), id);
+  logAudit(req.user!, 'CANCEL', 'project', row.project_number, row.status, 'cancelled');
+  res.json({ ok: true, status: 'cancelled' });
+});
+
 // --- VEHICLES ---
 router.delete('/vehicles/:id', requireAuth, requirePermission('vehicles:write'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
@@ -3046,6 +3064,51 @@ router.post('/treasury/transactions', requireAuth, requirePermission('treasury:w
   res.status(201).json(db.prepare('SELECT * FROM treasury_transactions WHERE id = ?').get(info.lastInsertRowid));
 });
 
+router.post('/treasury/transactions/:id/reverse', requireAuth, requirePermission('treasury:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const { reason } = req.body || {};
+  const db = getDb();
+  const orig = db.prepare('SELECT * FROM treasury_transactions WHERE id = ?').get(id) as any;
+  if (!orig) { res.status(404).json({ error: 'Transaction introuvable.' }); return; }
+  if (orig.status === 'reversed') { res.status(400).json({ error: 'Cette transaction est déjà contre-passée.' }); return; }
+  if (orig.reversed_transaction_id) { res.status(400).json({ error: 'Cette transaction a déjà fait l’objet d’une contre-passation.' }); return; }
+
+  let revType = orig.tx_type;
+  if (orig.tx_type === 'cash_inflow') revType = 'cash_outflow';
+  else if (orig.tx_type === 'cash_outflow') revType = 'cash_inflow';
+  else if (orig.tx_type === 'bank_inflow') revType = 'bank_outflow';
+  else if (orig.tx_type === 'bank_outflow') revType = 'bank_inflow';
+  const revAccount = orig.tx_type === 'internal_transfer' ? orig.to_account : orig.account;
+  const revToAccount = orig.tx_type === 'internal_transfer' ? orig.account : orig.to_account;
+
+  const newId = db.transaction(() => {
+    const info = db
+      .prepare(
+        `INSERT INTO treasury_transactions (tx_date, tx_type, account, to_account, category, amount, payment_method, project_id, notes, user_id, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`
+      )
+      .run(
+        new Date().toISOString().slice(0, 10),
+        revType,
+        revAccount,
+        revToAccount,
+        'Contre-passation',
+        orig.amount,
+        orig.payment_method,
+        orig.project_id,
+        reason || `Contre-passation de la transaction #${id}`,
+        req.user!.id
+      );
+    const nid = Number(info.lastInsertRowid);
+    db.prepare("UPDATE treasury_transactions SET status='reversed', reversed_transaction_id=? WHERE id=?").run(nid, id);
+    db.prepare('UPDATE treasury_transactions SET reversed_transaction_id=? WHERE id=?').run(id, nid);
+    return nid;
+  })();
+
+  logAudit(req.user!, 'REVERSE', 'treasury', id, orig.tx_type, `Contre-passée par #${newId}`);
+  res.status(201).json(db.prepare('SELECT * FROM treasury_transactions WHERE id = ?').get(newId));
+});
+
 router.post('/treasury/reconcile', requireAuth, requirePermission('treasury:write'), (req: AuthedRequest, res) => {
   const { id, bank_statement_ref, reconciled } = req.body || {};
   const db = getDb();
@@ -3152,6 +3215,37 @@ router.put('/expenses/:id', requireAuth, requirePermission('expenses:write'), (r
   })();
   logAudit(req.user!, 'UPDATE', 'expense', id, `${old.category}: ${old.amount} DA`, `${b.category}: ${amount} DA`);
   res.json(db.prepare('SELECT * FROM expenses WHERE id=?').get(id));
+});
+
+router.post('/expenses/:id/cancel', requireAuth, requirePermission('expenses:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Dépense introuvable.' }); return; }
+  if (row.status === 'cancelled') { res.status(400).json({ error: 'Cette dépense est déjà annulée.' }); return; }
+  const linked = db.prepare('SELECT * FROM treasury_transactions WHERE linked_expense_id = ?').get(id) as any;
+  if (linked?.bank_reconciled) {
+    res.status(400).json({ error: 'Cette dépense est déjà rapprochée. Créez une opération de régularisation.' }); return;
+  }
+  db.transaction(() => {
+    db.prepare("UPDATE expenses SET status='cancelled' WHERE id = ?").run(id);
+    if (linked && linked.status !== 'reversed') {
+      const revType = linked.tx_type === 'cash_outflow' ? 'cash_inflow' : linked.tx_type === 'bank_outflow' ? 'bank_inflow' : linked.tx_type;
+      const revAccount = linked.account;
+      db.prepare(
+        `INSERT INTO treasury_transactions (tx_date, tx_type, account, to_account, category, amount, payment_method, project_id, notes, user_id, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`
+      ).run(
+        new Date().toISOString().slice(0, 10), revType, revAccount, linked.to_account, 'Annulation dépense', linked.amount,
+        linked.payment_method, linked.project_id, `Annulation dépense #${id}`, req.user!.id
+      );
+      db.prepare("UPDATE treasury_transactions SET status='reversed', reversed_transaction_id=? WHERE id=?").run(
+        Number((db.prepare('SELECT last_insert_rowid() AS id').get() as any).id), linked.id
+      );
+    }
+  })();
+  logAudit(req.user!, 'CANCEL', 'expense', id, `${row.category}: ${row.amount} DA`, 'cancelled');
+  res.json({ ok: true, status: 'cancelled' });
 });
 
 router.post('/expenses', requireAuth, requirePermission('expenses:write'), (req: AuthedRequest, res) => {
@@ -3912,6 +4006,25 @@ router.post('/commercial-documents/:id/restore', requireAuth, requirePermission(
   restoreEntity('commercial_documents', id);
   logAudit(req.user!, 'RESTORE', 'commercial_document', id, 'archived', 'Restauré');
   res.json({ ok: true });
+});
+
+router.post('/commercial-documents/:id/cancel', requireAuth, requirePermission('invoices:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM commercial_documents WHERE id = ?').get(id) as any;
+  if (!row) { res.status(404).json({ error: 'Pièce introuvable.' }); return; }
+  if (row.status === 'cancelled') { res.status(400).json({ error: 'Cette pièce est déjà annulée.' }); return; }
+  if (row.status !== 'draft') {
+    res.status(400).json({ error: 'Seuls les brouillons peuvent être annulés. Utilisez une facture d’avoir pour une pièce émise.' });
+    return;
+  }
+  if (Number(row.amount_paid || 0) > 0) {
+    res.status(400).json({ error: 'Annulation impossible : des règlements sont liés.' });
+    return;
+  }
+  db.prepare("UPDATE commercial_documents SET status='cancelled', updated_at=? WHERE id=?").run(new Date().toISOString().slice(0,19).replace('T',' '), id);
+  logAudit(req.user!, 'CANCEL', 'commercial_document', row.doc_number, row.status, 'cancelled');
+  res.json({ ok: true, status: 'cancelled' });
 });
 
 router.post('/lifecycle/review', requireAuth, requirePermission('audit:read'), (req: AuthedRequest, res) => {
