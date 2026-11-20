@@ -83,14 +83,45 @@ export function materialDependencies(materialId: number): string[] {
   return deps;
 }
 
+export const RETENTION_REVIEW_DAYS = 365;
+
+export function reviewDueDate(archivedAt: string): string {
+  return addDays(archivedAt, RETENTION_REVIEW_DAYS);
+}
+
+export function isReviewDue(due: string | null): boolean {
+  if (!due) return false;
+  return new Date().toISOString().slice(0, 19).replace('T', ' ') >= due;
+}
+
 export function archiveEntity(table: string, id: number, userId: number, reason: string): void {
   const db = getDb();
-  db.prepare(`UPDATE ${table} SET lifecycle_status='archived', archived_at=?, archived_by=?, archive_reason=?, updated_at=? WHERE id=?`)
-    .run(nowIso(), userId, reason, nowIso(), id);
+  const now = nowIso();
+  const due = reviewDueDate(now);
+  db.prepare(`UPDATE ${table} SET lifecycle_status='archived', archived_at=?, archived_by=?, archive_reason=?, updated_at=?, retention_review_due_at=?, retention_status='scheduled', retention_reviewed_at=NULL, retention_reviewed_by=NULL WHERE id=?`)
+    .run(now, userId, reason, now, due, id);
 }
 
 export function restoreEntity(table: string, id: number): void {
   const db = getDb();
-  db.prepare(`UPDATE ${table} SET lifecycle_status='active', archived_at=NULL, archived_by=NULL, archive_reason='', updated_at=? WHERE id=?`)
+  db.prepare(`UPDATE ${table} SET lifecycle_status='active', archived_at=NULL, archived_by=NULL, archive_reason='', updated_at=?, retention_review_due_at=NULL, retention_reviewed_at=NULL, retention_reviewed_by=NULL, retention_status='none', protected_reason='' WHERE id=?`)
     .run(nowIso(), id);
+}
+
+export function markReviewed(table: string, id: number, userId: number): void {
+  const db = getDb();
+  db.prepare(`UPDATE ${table} SET retention_status='reviewed', retention_reviewed_at=?, retention_reviewed_by=?, updated_at=? WHERE id=?`)
+    .run(nowIso(), userId, nowIso(), id);
+}
+
+export function protectedReason(table: string, row: any): string {
+  if (table === 'commercial_documents' && row && row.status && row.status !== 'draft') {
+    return 'Pièce émise : conservation réglementaire, suppression définitive interdite.';
+  }
+  if (row && row.protected_reason) return row.protected_reason;
+  return '';
+}
+
+export function isProtected(table: string, row: any): boolean {
+  return protectedReason(table, row).length > 0;
 }

@@ -752,4 +752,32 @@ function runMigrations(db: Database.Database) {
     }
     db.prepare('INSERT INTO schema_migrations (version) VALUES (3)').run();
   }
+
+  // Version 4: one-year retention review for archived records (additive, idempotent).
+  const migration4 = db.prepare('SELECT version FROM schema_migrations WHERE version = 4').get();
+  if (!migration4) {
+    const retentionTables = ['clients', 'suppliers', 'workers', 'projects', 'vehicles', 'materials', 'services', 'commercial_documents'];
+    for (const t of retentionTables) {
+      const cols = (db.pragma(`table_info(${t})`) as Array<{ name: string }>).map((c) => c.name);
+      if (!cols.includes('retention_review_due_at')) {
+        db.exec(`ALTER TABLE ${t} ADD COLUMN retention_review_due_at TEXT`);
+      }
+      if (!cols.includes('retention_reviewed_at')) {
+        db.exec(`ALTER TABLE ${t} ADD COLUMN retention_reviewed_at TEXT`);
+      }
+      if (!cols.includes('retention_reviewed_by')) {
+        db.exec(`ALTER TABLE ${t} ADD COLUMN retention_reviewed_by INTEGER`);
+      }
+      if (!cols.includes('retention_status')) {
+        db.exec(`ALTER TABLE ${t} ADD COLUMN retention_status TEXT NOT NULL DEFAULT 'none'`);
+      }
+      if (!cols.includes('protected_reason')) {
+        db.exec(`ALTER TABLE ${t} ADD COLUMN protected_reason TEXT DEFAULT ''`);
+      }
+      // Backfill: archived records get a 1-year review deadline.
+      db.exec(`UPDATE ${t} SET retention_review_due_at = datetime(archived_at, '+365 days') WHERE archived_at IS NOT NULL AND retention_review_due_at IS NULL`);
+      db.exec(`UPDATE ${t} SET retention_status = CASE WHEN archived_at IS NOT NULL THEN 'scheduled' ELSE 'none' END WHERE retention_status IS NULL OR retention_status = ''`);
+    }
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (4)').run();
+  }
 }
