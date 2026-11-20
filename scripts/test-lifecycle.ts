@@ -14,7 +14,7 @@ const tsxCli = path.resolve('node_modules/tsx/dist/cli.mjs');
 const server = spawn(process.execPath, [tsxCli, 'server.ts'], { env, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
 let ready = false;
 await new Promise<void>((resolve, reject) => {
-  const timer = setTimeout(() => reject(new Error('server startup timeout')), 30000);
+  const timer = setTimeout(() => { server.kill('SIGTERM'); reject(new Error('server startup timeout')); }, 30000);
   server.stdout.on('data', (d) => {
     const s = d.toString();
     if (s.includes('IDEAL_SERVER_READY')) { ready = true; clearTimeout(timer); resolve(); }
