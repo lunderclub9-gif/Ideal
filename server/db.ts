@@ -771,9 +771,6 @@ function runMigrations(db: Database.Database) {
       if (!cols.includes('retention_status')) {
         db.exec(`ALTER TABLE ${t} ADD COLUMN retention_status TEXT NOT NULL DEFAULT 'none'`);
       }
-      if (!cols.includes('protected_reason')) {
-        db.exec(`ALTER TABLE ${t} ADD COLUMN protected_reason TEXT DEFAULT ''`);
-      }
       // Backfill: archived records get a 1-year review deadline.
       db.exec(`UPDATE ${t} SET retention_review_due_at = datetime(archived_at, '+365 days') WHERE archived_at IS NOT NULL AND retention_review_due_at IS NULL`);
       db.exec(`UPDATE ${t} SET retention_status = CASE WHEN archived_at IS NOT NULL THEN 'scheduled' ELSE 'none' END WHERE retention_status IS NULL OR retention_status = ''`);

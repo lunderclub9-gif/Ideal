@@ -25,7 +25,7 @@ import {
 } from './calculations.ts';
 import { createFullBackup, listBackups, restoreFromZip, verifyBackupArchive } from './backup.ts';
 import { DOCS_DIR, getDb } from './db.ts';
-import { archiveEntity, clientDependencies, isDeletionEligible, projectDependencies, restoreEntity, vehicleDependencies, workerDependencies, materialDependencies, daysRemaining, deletionDeadline, markReviewed, isReviewDue, protectedReason } from './lifecycle.ts';
+import { archiveEntity, clientDependencies, isDeletionEligible, projectDependencies, restoreEntity, vehicleDependencies, workerDependencies, materialDependencies, markReviewed, isReviewDue } from './lifecycle.ts';
 
 const router = express.Router();
 
@@ -3879,11 +3879,6 @@ router.delete('/commercial-documents/:id', requireAuth, requirePermission('invoi
   const db = getDb();
   const row = db.prepare('SELECT * FROM commercial_documents WHERE id = ?').get(id) as any;
   if (!row) { res.status(404).json({ error: 'Pièce introuvable.' }); return; }
-  const pReason = protectedReason('commercial_documents', row);
-  if (pReason) {
-    res.status(400).json({ error: pReason, protected: true });
-    return;
-  }
   if (row.status !== 'draft') {
     res.status(400).json({ error: 'Suppression impossible : seuls les brouillons peuvent être supprimés. Utilisez l’annulation pour une pièce émise.' });
     return;

@@ -2,29 +2,19 @@ import { getDb } from './db';
 
 export const LIFECYCLE_NEW_DAYS = 7;
 
-export function addDays(iso: string, days: number): string {
+function addDays(iso: string, days: number): string {
   const d = new Date(iso.replace(' ', 'T') + (iso.includes('T') ? '' : 'Z'));
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 19).replace('T', ' ');
 }
 
-export function nowIso(): string {
+function nowIso(): string {
   return new Date().toISOString().slice(0, 19).replace('T', ' ');
-}
-
-export function deletionDeadline(createdAt: string): string {
-  return addDays(createdAt, LIFECYCLE_NEW_DAYS);
 }
 
 export function isDeletionEligible(deadline: string | null): boolean {
   if (!deadline) return false;
   return new Date().toISOString().slice(0, 19).replace('T', ' ') <= deadline;
-}
-
-export function daysRemaining(deadline: string | null): number {
-  if (!deadline) return 0;
-  const ms = new Date(deadline.replace(' ', 'T') + 'Z').getTime() - Date.now();
-  return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
 }
 
 export function clientDependencies(clientId: number): string[] {
@@ -83,12 +73,6 @@ export function materialDependencies(materialId: number): string[] {
   return deps;
 }
 
-export const RETENTION_REVIEW_DAYS = 365;
-
-export function reviewDueDate(archivedAt: string): string {
-  return addDays(archivedAt, RETENTION_REVIEW_DAYS);
-}
-
 export function isReviewDue(due: string | null): boolean {
   if (!due) return false;
   return new Date().toISOString().slice(0, 19).replace('T', ' ') >= due;
@@ -97,14 +81,14 @@ export function isReviewDue(due: string | null): boolean {
 export function archiveEntity(table: string, id: number, userId: number, reason: string): void {
   const db = getDb();
   const now = nowIso();
-  const due = reviewDueDate(now);
+  const due = addDays(now, 365);
   db.prepare(`UPDATE ${table} SET lifecycle_status='archived', archived_at=?, archived_by=?, archive_reason=?, updated_at=?, retention_review_due_at=?, retention_status='scheduled', retention_reviewed_at=NULL, retention_reviewed_by=NULL WHERE id=?`)
     .run(now, userId, reason, now, due, id);
 }
 
 export function restoreEntity(table: string, id: number): void {
   const db = getDb();
-  db.prepare(`UPDATE ${table} SET lifecycle_status='active', archived_at=NULL, archived_by=NULL, archive_reason='', updated_at=?, retention_review_due_at=NULL, retention_reviewed_at=NULL, retention_reviewed_by=NULL, retention_status='none', protected_reason='' WHERE id=?`)
+  db.prepare(`UPDATE ${table} SET lifecycle_status='active', archived_at=NULL, archived_by=NULL, archive_reason='', updated_at=?, retention_review_due_at=NULL, retention_reviewed_at=NULL, retention_reviewed_by=NULL, retention_status='none' WHERE id=?`)
     .run(nowIso(), id);
 }
 
@@ -114,14 +98,3 @@ export function markReviewed(table: string, id: number, userId: number): void {
     .run(nowIso(), userId, nowIso(), id);
 }
 
-export function protectedReason(table: string, row: any): string {
-  if (table === 'commercial_documents' && row && row.status && row.status !== 'draft') {
-    return 'Pièce émise : conservation réglementaire, suppression définitive interdite.';
-  }
-  if (row && row.protected_reason) return row.protected_reason;
-  return '';
-}
-
-export function isProtected(table: string, row: any): boolean {
-  return protectedReason(table, row).length > 0;
-}
