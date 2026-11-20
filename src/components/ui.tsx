@@ -98,10 +98,12 @@ export function PageHeader({
   );
 }
 
-export function EmptyState({ message }: { message: string }) {
+export function EmptyState({ message, hint, action }: { message: string; hint?: string; action?: React.ReactNode }) {
   return (
     <div role="status" className="py-12 px-4 text-center text-xs text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl">
-      {message}
+      <div className="font-medium text-slate-700 dark:text-slate-200">{message}</div>
+      {hint && <div className="mt-1.5 text-[11px] text-slate-500">{hint}</div>}
+      {action && <div className="mt-4 flex justify-center">{action}</div>}
     </div>
   );
 }
