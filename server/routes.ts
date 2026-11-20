@@ -3985,7 +3985,7 @@ router.delete('/commercial-documents/:id', requireAuth, requirePermission('invoi
     if (row.status !== 'draft') {
       return { status: 400, error: 'Suppression impossible : seuls les brouillons peuvent être supprimés. Utilisez l’annulation pour une pièce émise.' };
     }
-    const payments = (db.prepare('SELECT COUNT(*) c FROM payments WHERE doc_id = ?').get(id) as any).c;
+    const payments = (db.prepare('SELECT COUNT(*) c FROM payments WHERE document_id = ?').get(id) as any).c;
     if (payments > 0) return { status: 400, error: 'Suppression impossible : des règlements sont liés.' };
     const deadline = row.deletion_eligible_until || row.created_at;
     if (!isDeletionEligible(deadline)) {
