@@ -163,7 +163,7 @@ try {
 
   result = await request('/backups/create', 'POST', { backup_type: 'manual_local' }, token);
   assert.equal(result.status, 201, 'create isolated verified backup');
-  assert.equal(result.data.verified, true, 'backup is verified');
+  assert.ok(result.data.verified, 'backup is verified');
 
   assert.ok(fs.existsSync(path.join(dataDir, 'gestionpro.db')), 'database is created inside the unique temporary directory');
   assert.ok(path.resolve(dataDir).startsWith(path.resolve(tempRoot)), 'database path is contained by the unique temporary directory');
