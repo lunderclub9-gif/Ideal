@@ -9,7 +9,7 @@ const dataDir = path.join(tempRoot, 'data');
 process.env.IDEAL_DATA_DIR = dataDir;
 process.env.GESTIONPRO_DATA_DIR = dataDir;
 const port = 3099;
-const env = { ...process.env, IDEAL_DATA_DIR: dataDir, GESTIONPRO_DATA_DIR: dataDir, HOST: '127.0.0.1', PORT: String(port), GESTIONPRO_DATA_DIR: dataDir, NODE_ENV: 'development' };
+const env = { ...process.env, IDEAL_DATA_DIR: dataDir, GESTIONPRO_DATA_DIR: dataDir, HOST: '127.0.0.1', PORT: String(port), NODE_ENV: 'development' };
 
 const tsxCli = path.resolve('node_modules/tsx/dist/cli.mjs');
 const server = spawn(process.execPath, [tsxCli, 'server.ts'], { env, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
