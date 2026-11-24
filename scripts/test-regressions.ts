@@ -61,6 +61,83 @@ async function request(route: string, method = 'GET', body?: unknown, token?: st
   return { status: response.status, data };
 }
 
+// Separate OS process that reserves numbers through the real numbering code, so the
+// suite can prove that two instances sharing one database never collide.
+const numberingWorkerPath = path.join(tempRoot, 'numbering-worker.ts');
+fs.writeFileSync(
+  numberingWorkerPath,
+  `import { getDb } from '${path.resolve('server/db.ts').replace(/\\/g, '/')}';
+import { generateNextNumber } from '${path.resolve('server/calculations.ts').replace(/\\/g, '/')}';
+
+const mode = process.argv[2];
+const db = getDb();
+const next = () => db.transaction(() => generateNextNumber('FAC', 'commercial_documents', 'doc_number', "AND doc_type = 'facture'"))();
+
+if (mode === 'seed') {
+  // A document numbered before the sequence existed must be counted, not overwritten.
+  const exercise = new Date().getFullYear();
+  const legacy = \`LEG-\${exercise}-0007\`;
+  db.prepare(
+    \`INSERT INTO commercial_documents (doc_type, doc_number, client_id, issue_date, status, discount_percent, total_ht, total_tva, total_ttc, amount_paid, notes, created_by, lifecycle_status, deletion_eligible_until)
+     VALUES ('facture', ?, ?, date('now'), 'draft', 0, 0, 0, 0, 0, 'numérotation héritée', 1, 'new', datetime('now', '+7 days'))\`
+  ).run(legacy, Number(process.argv[3]));
+  const reserved = db.transaction(() => generateNextNumber('LEG', 'commercial_documents', 'doc_number', "AND doc_type = 'facture'"))();
+  console.log('SEED:' + JSON.stringify({ legacy, reserved }));
+} else if (mode === 'rollback') {
+  let reserved = '';
+  try {
+    db.transaction(() => {
+      reserved = next();
+      throw new Error('document insert failed after numbering');
+    })();
+  } catch {
+    // expected: the whole transaction, numbering included, rolled back
+  }
+  const row = db
+    .prepare('SELECT last_value FROM document_sequences WHERE prefix = ? AND exercise = ?')
+    .get('FAC', new Date().getFullYear()) as { last_value: number };
+  console.log('ROLLBACK:' + JSON.stringify({ reserved, lastValue: Number(row.last_value) }));
+} else {
+  const clientId = Number(process.argv[3]);
+  const insert = db.prepare(
+    \`INSERT INTO commercial_documents (doc_type, doc_number, client_id, issue_date, status, discount_percent, total_ht, total_tva, total_ttc, amount_paid, notes, created_by, lifecycle_status, deletion_eligible_until)
+     VALUES ('facture', ?, ?, date('now'), 'draft', 0, 100, 19, 119, 0, 'test concurrence', 1, 'new', datetime('now', '+7 days'))\`
+  );
+  const numbers: string[] = [];
+  for (let i = 0; i < 12; i += 1) {
+    numbers.push(
+      db.transaction(() => {
+        const number = next();
+        insert.run(number, clientId);
+        return number;
+      })()
+    );
+  }
+  console.log('NUMBERS:' + JSON.stringify(numbers));
+}
+
+db.close();
+`
+);
+
+function runNumberingWorker(mode: string, clientIdArg?: string): Promise<{ code: number | null; out: string; err: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(
+      process.execPath,
+      [path.resolve('node_modules/tsx/dist/cli.mjs'), numberingWorkerPath, mode, ...(clientIdArg ? [clientIdArg] : [])],
+      {
+        env: { ...process.env, IDEAL_DATA_DIR: dataDir, GESTIONPRO_DATA_DIR: dataDir },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }
+    );
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (chunk) => { out += chunk.toString(); });
+    child.stderr.on('data', (chunk) => { err += chunk.toString(); });
+    child.once('exit', (code) => resolve({ code, out, err }));
+  });
+}
+
 try {
   await new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('Regression server startup timed out.')), 45000);
@@ -212,6 +289,70 @@ try {
   assert.equal(r.data.status, 'partial', 'partial receipt sets partial status');
   r = await request(`/contracts/milestones/${firstMilestone.id}`, 'PUT', { received_amount: 40000 }, token);
   assert.equal(r.data.status, 'paid', 'full receipt sets paid status');
+
+  // -------- Document numbering: atomic, unique and gap-free per exercise --------
+  const numberingYear = new Date().getFullYear();
+  const invoiceBody = {
+    doc_type: 'facture',
+    client_id: clientId,
+    issue_date: today,
+    lines: [{ description: 'Prestation numérotation', quantity: 1, unit_price: 100, tva_rate: 19 }],
+  };
+  const seqOf = (number: string) => Number(String(number).split('-').pop());
+  const prefixOf = (number: string) => String(number).slice(0, String(number).lastIndexOf('-'));
+
+  r = await request('/commercial-documents', 'POST', invoiceBody, token);
+  assert.equal(r.status, 201, 'create the first numbered invoice');
+  const baseNumber = String(r.data.doc_number);
+  assert.match(baseNumber, new RegExp(`^FAC-${numberingYear}-\\d{4}$`), 'invoice number is PREFIX-EXERCICE-SEQUENCE');
+  assert.equal(prefixOf(baseNumber), `FAC-${numberingYear}`, 'invoice number carries the current exercise');
+
+  const seedRun = await runNumberingWorker('seed', String(clientId));
+  assert.equal(seedRun.code, 0, `legacy numbering worker exits cleanly (${seedRun.err.slice(0, 200)})`);
+  const seedState = JSON.parse(seedRun.out.trim().replace(/^SEED:/, ''));
+  assert.equal(
+    seedState.reserved,
+    `LEG-${numberingYear}-0008`,
+    'numbering continues after numbers issued before the sequence existed'
+  );
+
+  // A write that fails after numbering must hand its number back, not burn it.
+  const rollbackRun = await runNumberingWorker('rollback');
+  assert.equal(rollbackRun.code, 0, `rollback worker exits cleanly (${rollbackRun.err.slice(0, 200)})`);
+  const rollbackState = JSON.parse(rollbackRun.out.trim().replace(/^ROLLBACK:/, ''));
+  assert.equal(
+    rollbackState.lastValue,
+    seqOf(rollbackState.reserved) - 1,
+    'a failed document insert rolls its sequence increment back'
+  );
+
+  r = await request('/commercial-documents', 'POST', invoiceBody, token);
+  assert.equal(r.status, 201, 'create an invoice after the failed attempt');
+  const secondNumber = String(r.data.doc_number);
+  assert.equal(secondNumber, rollbackState.reserved, 'the rolled back number is reused instead of skipped');
+  assert.equal(seqOf(secondNumber), seqOf(baseNumber) + 1, 'numbering stays gap-free after a rolled back attempt');
+
+  // Two browsers saving at the same moment must never receive the same number.
+  const parallel = await Promise.all(
+    Array.from({ length: 6 }, () => request('/commercial-documents', 'POST', invoiceBody, token))
+  );
+  assert.ok(parallel.every((p) => p.status === 201), 'parallel invoice creates all succeed');
+  const parallelNumbers = parallel.map((p) => String(p.data.doc_number));
+
+  // Two separate processes sharing the database (a second app instance) must not collide either.
+  const workers = await Promise.all([runNumberingWorker('concurrent', String(clientId)), runNumberingWorker('concurrent', String(clientId))]);
+  workers.forEach((w) => assert.equal(w.code, 0, `concurrency worker exits cleanly (${w.err.slice(0, 200)})`));
+  const workerNumbers = workers.flatMap((w) => JSON.parse(w.out.trim().replace(/^NUMBERS:/, '')) as string[]);
+  assert.equal(workerNumbers.length, 24, 'concurrency workers wrote their documents');
+
+  const allNumbers = [baseNumber, secondNumber, ...parallelNumbers, ...workerNumbers];
+  assert.equal(new Set(allNumbers).size, allNumbers.length, 'no document number is issued twice, even across processes');
+
+  const sequences = allNumbers.map(seqOf).sort((a, b) => a - b);
+  assert.equal(sequences[0], seqOf(baseNumber), 'numbering resumes at the first issued number');
+  sequences.forEach((value, index) => {
+    assert.equal(value, seqOf(baseNumber) + index, 'issued invoice numbers form one continuous sequence per exercise');
+  });
 
   // -------- BOQ: versions, sections, items, rate analysis and approval --------
   r = await request(`/projects/${projectId}/boq`, 'GET', undefined, token);

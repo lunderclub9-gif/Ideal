@@ -40,6 +40,9 @@ export function getDb(): Database.Database {
     ensureDirectories();
     dbInstance = new Database(DB_PATH);
     dbInstance.pragma('journal_mode = WAL');
+    // A shared office install writes from several browsers at once: wait for the
+    // write lock instead of surfacing SQLITE_BUSY in the middle of a save.
+    dbInstance.pragma('busy_timeout = 5000');
     dbInstance.pragma('foreign_keys = ON');
     runMigrations(dbInstance);
   }
@@ -903,5 +906,43 @@ function runMigrations(db: Database.Database) {
       CREATE INDEX IF NOT EXISTS idx_boq_resources_item ON boq_item_resources(item_id);
     `);
     db.prepare('INSERT INTO schema_migrations (version) VALUES (7)').run();
+  }
+
+  // Version 8: atomic document numbering. A sequence per prefix and fiscal exercise
+  // replaces the read-then-insert race that let two users obtain the same invoice number.
+  // Additive only; existing numbers are seeded from the documents on first use.
+  const migration8 = db.prepare('SELECT version FROM schema_migrations WHERE version = 8').get();
+  if (!migration8) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS document_sequences (
+        prefix TEXT NOT NULL,
+        exercise INTEGER NOT NULL,
+        last_value INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (prefix, exercise)
+      );
+    `);
+
+    // A duplicated document number is a legal defect, so let the database refuse one.
+    // Installs that already contain duplicates keep working (the upgrade must not block
+    // on legacy data) and the conflict is reported instead of silently ignored.
+    const duplicate = db
+      .prepare(
+        `SELECT doc_type, doc_number, COUNT(*) AS occurrences
+         FROM commercial_documents
+         GROUP BY doc_type, doc_number
+         HAVING COUNT(*) > 1
+         LIMIT 1`
+      )
+      .get() as { doc_type: string; doc_number: string; occurrences: number } | undefined;
+    if (duplicate) {
+      console.warn(
+        `[migrations] duplicate document number left unchanged: ${duplicate.doc_type} ${duplicate.doc_number} (${duplicate.occurrences} occurrences)`
+      );
+    } else {
+      db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_commercial_documents_number ON commercial_documents(doc_type, doc_number)');
+    }
+
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (8)').run();
   }
 }

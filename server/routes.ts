@@ -644,29 +644,36 @@ router.post('/projects', requireAuth, requirePermission('projects:write'), (req:
   }
   const db = getDb();
   const settings = db.prepare('SELECT prefix_project FROM company_settings WHERE id = 1').get() as { prefix_project: string };
-  const projectNumber = b.project_number?.trim() || generateNextNumber(settings?.prefix_project || 'CH', 'projects', 'project_number');
+  let projectNumber = b.project_number?.trim() || '';
 
   const info = db
-    .prepare(
-      `INSERT INTO projects (project_number, client_id, title, address, project_type, start_date, expected_end_date, status, manager_user_id, expected_cost, expected_selling_price, progress_percent, include_overhead, notes, lifecycle_status, deletion_eligible_until)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', datetime('now', '+7 days'))`
-    )
-    .run(
-      projectNumber,
-      Number(b.client_id),
-      b.title.trim(),
-      b.address || '',
-      b.project_type || 'Travaux généraux BTP',
-      b.start_date || new Date().toISOString().slice(0, 10),
-      b.expected_end_date || null,
-      b.status || 'in_progress',
-      b.manager_user_id ? Number(b.manager_user_id) : req.user!.id,
-      Number(b.expected_cost || 0),
-      Number(b.expected_selling_price || 0),
-      Number(b.progress_percent || 0),
-      b.include_overhead ? 1 : 0,
-      b.notes || ''
-    );
+    .transaction(() => {
+      if (!projectNumber) {
+        projectNumber = generateNextNumber(settings?.prefix_project || 'CH', 'projects', 'project_number');
+      }
+      return db
+        .prepare(
+          `INSERT INTO projects (project_number, client_id, title, address, project_type, start_date, expected_end_date, status, manager_user_id, expected_cost, expected_selling_price, progress_percent, include_overhead, notes, lifecycle_status, deletion_eligible_until)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', datetime('now', '+7 days'))`
+        )
+        .run(
+          projectNumber,
+          Number(b.client_id),
+          b.title.trim(),
+          b.address || '',
+          b.project_type || 'Travaux généraux BTP',
+          b.start_date || new Date().toISOString().slice(0, 10),
+          b.expected_end_date || null,
+          b.status || 'in_progress',
+          b.manager_user_id ? Number(b.manager_user_id) : req.user!.id,
+          Number(b.expected_cost || 0),
+          Number(b.expected_selling_price || 0),
+          Number(b.progress_percent || 0),
+          b.include_overhead ? 1 : 0,
+          b.notes || ''
+        );
+    })
+    .immediate();
   logAudit(req.user!, 'CREATE', 'project', projectNumber, '', b.title.trim());
   res.status(201).json(db.prepare('SELECT * FROM projects WHERE id = ?').get(info.lastInsertRowid));
 });
@@ -1178,7 +1185,7 @@ router.post('/commercial-documents', requireAuth, requirePermission('invoices:wr
   const settings = db.prepare('SELECT * FROM company_settings WHERE id = 1').get() as any;
   const prefixCol = DOC_PREFIX_MAP[docType] || 'prefix_quote';
   const prefix = settings?.[prefixCol] || 'DOC';
-  const docNumber = generateNextNumber(prefix, 'commercial_documents', 'doc_number', `AND doc_type = '${docType}'`);
+  let docNumber = '';
 
   const discount = Number(b.discount_percent || 0);
   const calc = computeDocLines(b.lines, discount);
@@ -1186,6 +1193,7 @@ router.post('/commercial-documents', requireAuth, requirePermission('invoices:wr
   const lockedAt = b.issue_immediately ? new Date().toISOString() : null;
 
   const tx = db.transaction(() => {
+    docNumber = generateNextNumber(prefix, 'commercial_documents', 'doc_number', `AND doc_type = '${docType}'`);
     const info = db
       .prepare(
         `INSERT INTO commercial_documents (doc_type, doc_number, client_id, project_id, linked_doc_id, issue_date, due_date, status, discount_percent, total_ht, total_tva, total_ttc, amount_paid, notes, created_by, locked_at, lifecycle_status, deletion_eligible_until)
@@ -1294,11 +1302,12 @@ router.post('/commercial-documents/:id/convert-to-invoice', requireAuth, require
   }
   const lines = db.prepare('SELECT * FROM commercial_lines WHERE document_id = ? ORDER BY sort_order ASC').all(id) as any[];
   const settings = db.prepare('SELECT prefix_invoice FROM company_settings WHERE id = 1').get() as { prefix_invoice: string };
-  const invNumber = generateNextNumber(settings?.prefix_invoice || 'FAC', 'commercial_documents', 'doc_number', "AND doc_type = 'facture'");
+  let invNumber = '';
   const today = new Date().toISOString().slice(0, 10);
   const due = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
 
   const newId = db.transaction(() => {
+    invNumber = generateNextNumber(settings?.prefix_invoice || 'FAC', 'commercial_documents', 'doc_number', "AND doc_type = 'facture'");
     const info = db
       .prepare(
         `INSERT INTO commercial_documents (doc_type, doc_number, client_id, project_id, linked_doc_id, issue_date, due_date, status, discount_percent, total_ht, total_tva, total_ttc, amount_paid, notes, created_by, locked_at, lifecycle_status, deletion_eligible_until)
@@ -1331,9 +1340,10 @@ router.post('/commercial-documents/:id/credit-note', requireAuth, requirePermiss
   }
   const lines = db.prepare('SELECT * FROM commercial_lines WHERE document_id = ? ORDER BY sort_order ASC').all(id) as any[];
   const settings = db.prepare('SELECT prefix_credit FROM company_settings WHERE id = 1').get() as { prefix_credit: string };
-  const avoNumber = generateNextNumber(settings?.prefix_credit || 'AVO', 'commercial_documents', 'doc_number', "AND doc_type = 'avoir'");
+  let avoNumber = '';
 
   const avoId = db.transaction(() => {
+    avoNumber = generateNextNumber(settings?.prefix_credit || 'AVO', 'commercial_documents', 'doc_number', "AND doc_type = 'avoir'");
     const info = db
       .prepare(
         `INSERT INTO commercial_documents (doc_type, doc_number, client_id, project_id, linked_doc_id, issue_date, status, discount_percent, total_ht, total_tva, total_ttc, amount_paid, notes, created_by, locked_at, lifecycle_status, deletion_eligible_until)
@@ -1407,9 +1417,10 @@ router.post('/commercial-documents/:id/payments', requireAuth, requirePermission
   }
 
   const settings = db.prepare('SELECT prefix_receipt FROM company_settings WHERE id = 1').get() as { prefix_receipt: string };
-  const receiptNumber = generateNextNumber(settings?.prefix_receipt || 'REC', 'payments', 'receipt_number', "AND direction = 'inflow'");
+  let receiptNumber = '';
 
   const payId = db.transaction(() => {
+    receiptNumber = generateNextNumber(settings?.prefix_receipt || 'REC', 'payments', 'receipt_number', "AND direction = 'inflow'");
     const pInfo = db
       .prepare(
         `INSERT INTO payments (receipt_number, direction, client_id, document_id, payment_date, amount, payment_method, reference, notes, user_id)
@@ -2392,7 +2403,7 @@ router.post('/purchases', requireAuth, requirePermission('suppliers:write'), (re
   }
   const db = getDb();
   const settings = db.prepare('SELECT prefix_po FROM company_settings WHERE id = 1').get() as { prefix_po: string };
-  const poNumber = generateNextNumber(settings?.prefix_po || 'BC', 'purchases', 'po_number');
+  let poNumber = '';
 
   let sumHt = 0;
   let sumTva = 0;
@@ -2415,6 +2426,7 @@ router.post('/purchases', requireAuth, requirePermission('suppliers:write'), (re
   });
 
   const poId = db.transaction(() => {
+    poNumber = generateNextNumber(settings?.prefix_po || 'BC', 'purchases', 'po_number');
     const info = db
       .prepare(
         `INSERT INTO purchases (po_number, supplier_invoice_no, supplier_id, project_id, order_date, status, total_ht, total_tva, total_ttc, amount_paid, notes, created_by)
@@ -2771,9 +2783,10 @@ router.post('/repair-orders', requireAuth, requirePermission('repairs:write'), (
   const labor = Number(b.labor_cost || 0);
   const towing = Number(b.towing_cost || 0);
   const total = round2(parts + labor + towing);
-  const orderNumber = generateNextNumber('OR', 'repair_orders', 'order_number');
+  let orderNumber = '';
 
   const id = db.transaction(() => {
+    orderNumber = generateNextNumber('OR', 'repair_orders', 'order_number');
     const info = db
       .prepare(
         `INSERT INTO repair_orders (order_number, vehicle_id, repair_date, problem_category, description, priority, workshop, parts_used, parts_cost, labor_cost, towing_cost, total_cost, downtime_days, status, project_id, notes)
@@ -2870,8 +2883,9 @@ router.post('/maintenance-rules/:id/create-order', requireAuth, requirePermissio
     res.status(404).json({ error: 'Règle de maintenance introuvable.' });
     return;
   }
-  const orderNumber = generateNextNumber('OR', 'repair_orders', 'order_number');
+  let orderNumber = '';
   const roId = db.transaction(() => {
+    orderNumber = generateNextNumber('OR', 'repair_orders', 'order_number');
     const info = db
       .prepare(
         `INSERT INTO repair_orders (order_number, vehicle_id, repair_date, problem_category, description, priority, status, notes)
