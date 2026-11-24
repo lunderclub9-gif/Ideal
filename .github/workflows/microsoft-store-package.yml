@@ -48,6 +48,9 @@ jobs:
         run: npm run lint
       - name: Verify French-only application interface
         run: npm run check:french-ui
+      # Must pass before packaging: a migration that loses a customer's rows cannot be undone.
+      - name: Migrate a captured company database through the whole chain
+        run: npm run test:migrations
       - name: Test backup, restore and session protection
         run: npm run test:data-protection
       - name: Test lifecycle policies in an isolated temporary database
