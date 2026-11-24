@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, Copy, Pencil, Plus, Trash2 } from 'lucide-react';
+import { CheckCircle2, Copy, FileText, Pencil, Plus, Printer, Trash2 } from 'lucide-react';
 import { apiFetch, formatDA, formatNum, hasPerm } from '../lib/api';
-import { EmptyState, Modal, PageHeader, StatusText } from '../components/ui';
+import { CommercialPrintModal, EmptyState, Modal, PageHeader, StatusText } from '../components/ui';
 
 const UNITS = ['U', 'm', 'm²', 'm³', 'kg', 'tonne', 'jour', 'heure', 'forfait'];
 
@@ -30,10 +30,18 @@ export default function BoqPage({ permissions }: { permissions: string[] }) {
   const [itemForm, setItemForm] = useState<any>({ section_id: '', code: '', description: '', unit: 'U', quantity: 0, unit_price: 0 });
   const [resourceItem, setResourceItem] = useState<any | null>(null);
   const [resourceForm, setResourceForm] = useState({ resource_type: 'material', label: '', unit: '', quantity: 1, unit_cost: 0 });
+  const [company, setCompany] = useState<any | null>(null);
+  const [quote, setQuote] = useState<any | null>(null);
+  const [printDoc, setPrintDoc] = useState<any | null>(null);
 
   const canWrite = hasPerm(permissions, 'projects:write');
   const canApprove = hasPerm(permissions, 'projects:approve');
+  const canQuote = hasPerm(permissions, 'invoices:write');
   const isDraft = detail?.status === 'draft';
+
+  useEffect(() => {
+    apiFetch('/settings').then(setCompany).catch(() => setCompany(null));
+  }, []);
 
   useEffect(() => {
     apiFetch('/projects')
@@ -65,6 +73,7 @@ export default function BoqPage({ permissions }: { permissions: string[] }) {
   }
 
   async function openVersion(id: number) {
+    setQuote(null);
     try {
       setDetail(await apiFetch(`/boq/versions/${id}`));
     } catch (e: any) {
@@ -174,6 +183,20 @@ export default function BoqPage({ permissions }: { permissions: string[] }) {
   async function duplicateVersion() {
     if (!detail) return;
     await mutate(`/boq/versions/${detail.id}/duplicate`, 'POST');
+  }
+
+  async function convertToQuote() {
+    if (!detail) return;
+    if (!window.confirm(`Convertir le BOQ V${detail.version_number} en devis ? Les quantités et prix approuvés seront repris tels quels.`)) return;
+    setBusy(true);
+    setError('');
+    try {
+      setQuote(await apiFetch(`/boq/versions/${detail.id}/convert-to-quotation`, { method: 'POST' }));
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   const itemsBySection = (sectionId: number | null) =>
@@ -321,6 +344,11 @@ export default function BoqPage({ permissions }: { permissions: string[] }) {
                           <CheckCircle2 className="w-3.5 h-3.5" /> Approuver
                         </button>
                       )}
+                      {canQuote && detail.status === 'approved' && (
+                        <button type="button" disabled={busy} onClick={convertToQuote} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-700 rounded-lg disabled:opacity-50">
+                          <FileText className="w-3.5 h-3.5" /> Convertir en devis
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -346,6 +374,25 @@ export default function BoqPage({ permissions }: { permissions: string[] }) {
                   </div>
 
                   {detail.notes && <div className="mt-3 text-[11px] text-slate-500">{detail.notes}</div>}
+
+                  {quote && (
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 p-3 text-xs border border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-900 rounded-lg">
+                      <div>
+                        <div className="font-semibold text-emerald-800 dark:text-emerald-300">Devis {quote.doc_number} créé</div>
+                        <div className="text-emerald-700 dark:text-emerald-400">
+                          {(quote.lines || []).length} ligne(s) · {formatDA(quote.total_ttc)} TTC — modifiable et payable depuis le module Facturation.
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button type="button" onClick={() => setPrintDoc(quote)} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-700 rounded-lg">
+                          <Printer className="w-3.5 h-3.5" /> Imprimer le devis
+                        </button>
+                        <button type="button" onClick={() => setQuote(null)} className="px-3 py-1.5 text-xs border border-emerald-300 dark:border-emerald-800 rounded-lg">
+                          Fermer
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {canWrite && isDraft && (
@@ -575,6 +622,8 @@ export default function BoqPage({ permissions }: { permissions: string[] }) {
           </div>
         )}
       </Modal>
+
+      <CommercialPrintModal doc={printDoc} company={company} onClose={() => setPrintDoc(null)} />
     </div>
   );
 }

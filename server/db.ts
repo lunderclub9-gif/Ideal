@@ -945,4 +945,16 @@ function runMigrations(db: Database.Database) {
 
     db.prepare('INSERT INTO schema_migrations (version) VALUES (8)').run();
   }
+
+  // Version 9: traceability from a quotation back to the approved BOQ version it came
+  // from. Additive column on an existing table; documents created before it stay NULL.
+  const migration9 = db.prepare('SELECT version FROM schema_migrations WHERE version = 9').get();
+  if (!migration9) {
+    const columns = db.prepare('PRAGMA table_info(commercial_documents)').all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === 'boq_version_id')) {
+      db.exec('ALTER TABLE commercial_documents ADD COLUMN boq_version_id INTEGER REFERENCES boq_versions(id) ON DELETE SET NULL');
+    }
+    db.exec('CREATE INDEX IF NOT EXISTS idx_commercial_documents_boq ON commercial_documents(boq_version_id)');
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (9)').run();
+  }
 }

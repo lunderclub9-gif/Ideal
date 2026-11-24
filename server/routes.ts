@@ -1118,9 +1118,8 @@ router.get('/commercial-documents', requireAuth, requirePermission('invoices:rea
   res.json(docs);
 });
 
-router.get('/commercial-documents/:id', requireAuth, requirePermission('invoices:read'), (req, res) => {
+function loadCommercialDocument(id: number) {
   const db = getDb();
-  const id = Number(req.params.id);
   const doc = db
     .prepare(
       `SELECT d.*, c.name AS client_name, c.nif AS client_nif, c.nis AS client_nis, c.rc AS client_rc, c.ai AS client_ai, c.address AS client_address, c.phone AS client_phone,
@@ -1131,13 +1130,19 @@ router.get('/commercial-documents/:id', requireAuth, requirePermission('invoices
        WHERE d.id = ?`
     )
     .get(id) as any;
+  if (!doc) return null;
+  doc.lines = db.prepare('SELECT * FROM commercial_lines WHERE document_id = ? ORDER BY sort_order ASC').all(id);
+  doc.payments = db.prepare('SELECT * FROM payments WHERE document_id = ? ORDER BY payment_date DESC, id DESC').all(id);
+  doc.amount_in_words = amountToFrenchWords(doc.total_ttc);
+  return doc;
+}
+
+router.get('/commercial-documents/:id', requireAuth, requirePermission('invoices:read'), (req, res) => {
+  const doc = loadCommercialDocument(Number(req.params.id));
   if (!doc) {
     res.status(404).json({ error: 'Document introuvable.' });
     return;
   }
-  doc.lines = db.prepare('SELECT * FROM commercial_lines WHERE document_id = ? ORDER BY sort_order ASC').all(id);
-  doc.payments = db.prepare('SELECT * FROM payments WHERE document_id = ? ORDER BY payment_date DESC, id DESC').all(id);
-  doc.amount_in_words = amountToFrenchWords(doc.total_ttc);
   res.json(doc);
 });
 
@@ -4698,6 +4703,92 @@ router.delete('/boq/resources/:id', requireAuth, requirePermission('projects:wri
   db.prepare('DELETE FROM boq_item_resources WHERE id = ?').run(resource.id);
   logAudit(req.user!, 'DELETE', 'boq_resource', resource.id, resource.label, 'Ressource supprimée (brouillon)');
   res.json(loadBoqVersion(item.version_id));
+});
+
+// ==================== BOQ → DEVIS ====================
+// Turns an approved bill of quantities into a real quotation document, keeping the
+// approved quantities and prices, so the estimate can be printed and sent with the
+// existing quotation layout.
+router.post('/boq/versions/:id/convert-to-quotation', requireAuth, requirePermission('invoices:write'), (req: AuthedRequest, res) => {
+  const versionId = Number(req.params.id);
+  const db = getDb();
+  const version = loadBoqVersion(versionId);
+  if (!version) {
+    res.status(404).json({ error: 'Version de BOQ introuvable.' });
+    return;
+  }
+  if (version.status !== 'approved') {
+    res.status(400).json({ error: 'Seule une version de BOQ approuvée peut être convertie en devis.' });
+    return;
+  }
+  if (version.items.length === 0) {
+    res.status(400).json({ error: 'Cette version de BOQ ne contient aucun poste à deviser.' });
+    return;
+  }
+
+  const project = db.prepare('SELECT id, client_id, title FROM projects WHERE id = ?').get(version.project_id) as any;
+  if (!project) {
+    res.status(404).json({ error: 'Chantier introuvable.' });
+    return;
+  }
+  if (!project.client_id) {
+    res.status(400).json({ error: 'Ce chantier n’a pas de client : le devis ne peut pas être établi.' });
+    return;
+  }
+
+  const existing = db
+    .prepare("SELECT id, doc_number FROM commercial_documents WHERE boq_version_id = ? AND doc_type = 'devis' AND status <> 'cancelled' LIMIT 1")
+    .get(versionId) as any;
+  if (existing) {
+    res.status(409).json({ error: `Cette version a déjà été convertie en devis ${existing.doc_number}.`, doc_id: existing.id });
+    return;
+  }
+
+  const settings = db.prepare('SELECT prefix_quote FROM company_settings WHERE id = 1').get() as { prefix_quote: string };
+  const quoteLines = version.items.map((item: any) => ({
+    description: item.code ? `${item.code} — ${item.description}` : item.description,
+    unit: item.unit,
+    quantity: Number(item.quantity),
+    unit_price: Number(item.unit_price),
+  }));
+  const calc = computeDocLines(quoteLines, 0);
+  const issueDate = new Date().toISOString().slice(0, 10);
+
+  let docNumber = '';
+  const docId = db
+    .transaction(() => {
+      docNumber = generateNextNumber(settings?.prefix_quote || 'DEV', 'commercial_documents', 'doc_number', "AND doc_type = 'devis'");
+      const info = db
+        .prepare(
+          `INSERT INTO commercial_documents (doc_type, doc_number, client_id, project_id, issue_date, status, discount_percent, total_ht, total_tva, total_ttc, amount_paid, notes, created_by, lifecycle_status, deletion_eligible_until, boq_version_id)
+           VALUES ('devis', ?, ?, ?, ?, 'draft', 0, ?, ?, ?, 0, ?, ?, 'new', datetime('now', '+7 days'), ?)`
+        )
+        .run(
+          docNumber,
+          project.client_id,
+          project.id,
+          issueDate,
+          calc.total_ht,
+          calc.total_tva,
+          calc.total_ttc,
+          `Établi depuis le BOQ V${version.version_number} — ${version.label}`,
+          req.user!.id,
+          versionId
+        );
+      const id = info.lastInsertRowid as number;
+      const insertLine = db.prepare(
+        `INSERT INTO commercial_lines (document_id, description, unit, quantity, unit_price, tva_rate, line_ht, line_tva, line_ttc, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      for (const line of calc.lines) {
+        insertLine.run(id, line.description, line.unit, line.quantity, line.unit_price, line.tva_rate, line.line_ht, line.line_tva, line.line_ttc, line.sort_order);
+      }
+      return id;
+    })
+    .immediate();
+
+  logAudit(req.user!, 'CONVERT', 'devis', docNumber, `BOQ V${version.version_number}`, `Devis créé depuis le BOQ V${version.version_number}`);
+  res.status(201).json(loadCommercialDocument(docId));
 });
 
 export default router;

@@ -426,6 +426,38 @@ try {
   assert.equal(r.data.versions.find((v: any) => v.id === boqV3).status, 'approved', 'latest approved BOQ is the reference');
   assert.equal(r.data.versions.find((v: any) => v.id === boqV1).status, 'superseded', 'previous approved BOQ is superseded');
 
+  // -------- BOQ → devis: an approved version becomes a printable quotation --------
+  r = await request(`/boq/versions/${boqV3}/convert-to-quotation`, 'POST', {}, token);
+  assert.equal(r.status, 201, 'convert an approved BOQ into a quotation');
+  const quote = r.data;
+  assert.equal(quote.doc_type, 'devis', 'the conversion produces a devis');
+  assert.match(String(quote.doc_number), new RegExp(`^DEV-${numberingYear}-\\d{4}$`), 'the quotation uses its own devis sequence');
+  assert.equal(Number(quote.boq_version_id), boqV3, 'the quotation links back to its BOQ version');
+  assert.equal(quote.lines.length, 1, 'every BOQ item becomes one quotation line');
+  assert.equal(Number(quote.lines[0].quantity), 10, 'the quotation keeps the approved quantity');
+  assert.equal(Number(quote.lines[0].unit_price), 1000, 'the quotation keeps the approved unit price');
+  assert.equal(Number(quote.total_ht), 10000, 'the quotation total HT equals the BOQ total HT');
+  assert.equal(Number(quote.total_tva), 1900, 'the quotation applies VAT');
+  assert.equal(Number(quote.total_ttc), 11900, 'the quotation total TTC is computed');
+  assert.ok(String(quote.amount_in_words || '').length > 0, 'the quotation carries the amount in words needed by the print layout');
+  assert.equal(quote.client_name, 'Client Régression', 'the quotation carries the client of the project');
+
+  r = await request(`/boq/versions/${boqV3}/convert-to-quotation`, 'POST', {}, token);
+  assert.equal(r.status, 409, 'a BOQ version cannot be converted twice');
+
+  r = await request(`/boq/versions/${boqV1}/convert-to-quotation`, 'POST', {}, token);
+  assert.equal(r.status, 400, 'a superseded BOQ version cannot be converted');
+
+  r = await request(`/boq/versions/${boqEmpty}/convert-to-quotation`, 'POST', {}, token);
+  assert.equal(r.status, 400, 'a draft BOQ version cannot be converted');
+
+  // The generated quotation must be printable through the existing document view.
+  r = await request(`/commercial-documents/${quote.id}`, 'GET', undefined, token);
+  assert.equal(r.status, 200, 'the generated quotation is readable as a commercial document');
+  assert.equal(r.data.lines.length, 1, 'the printable document exposes its lines');
+  assert.equal(Number(r.data.total_ttc), 11900, 'the printable document exposes its totals');
+  assert.ok(String(r.data.amount_in_words || '').length > 0, 'the printable document exposes the amount in words');
+
   // -------- Cancelled expense must stop counting as a cost --------
   r = await request('/expenses', 'POST', {
     category: 'Transport',
@@ -491,6 +523,8 @@ try {
   assert.equal(r.status, 403, 'driver cannot read the tax summary');
   r = await request(`/boq/versions/${boqV3}/approve`, 'POST', {}, driverToken);
   assert.equal(r.status, 403, 'driver cannot approve a BOQ version');
+  r = await request(`/boq/versions/${boqV3}/convert-to-quotation`, 'POST', {}, driverToken);
+  assert.equal(r.status, 403, 'driver cannot convert a BOQ version into a quotation');
 
   r = await request('/auth/login', 'POST', { username: 'store_test', password: 'Store-Password-2026' });
   assert.equal(r.status, 200, 'storekeeper login');

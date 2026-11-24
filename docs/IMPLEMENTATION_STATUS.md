@@ -13,7 +13,7 @@ Statuses: **Verified** (workflow + tests confirmed), **Not fully verified** (cod
 |---|---|---|---|
 | 0 — Audit and safe baseline | Verified | `docs/AUDIT_2026-11-24.md`; module/route inventory (141 → 156 endpoints); all suites green | Keep matrix current after each change |
 | 1 — Stability, security, data protection | Verified | `test:data-protection` (SHA-256 backup/restore, session), lifecycle lockout rules, loopback-only server, isolated test dirs | Migration test against a realistic legacy DB copy (only fresh DBs are exercised) |
-| 2 — Construction project controls | **Partial** | Contracts, change orders, milestones, phases/tasks exist. BOQ module added: versions, sections, items, rate analysis, approval, revision duplication | WBS dependencies + Gantt, baseline schedule, planned vs actual progress/cost, BOQ → quotation/contract linkage |
+| 2 — Construction project controls | **Partial** | Contracts, change orders, milestones, phases/tasks exist. BOQ: versions, sections, items, rate analysis, approval, revision duplication, conversion of an approved version into a devis | WBS dependencies + Gantt, baseline schedule, planned vs actual progress/cost, BOQ → contract linkage, BOQ version comparison |
 | 3 — Field execution and subcontractors | Missing | No daily site report, no measured progress/IPC, no subcontractor entity | Entire phase |
 | 4 — Finance and accounting integrity | Partial | Payments with reversal, cash closings, reconciliation, aging, receivables/payables | Double-entry ledger decision (§3.13 target) — **Blocked** on accounting architecture approval |
 | 5 — Inventory, procurement, fleet | Partial | Purchases/receipts/payments, stock ledger, fuel, repairs, maintenance, tool checkouts | Multiple warehouses, reservations, stocktake, purchase requests with thresholds, rental assets |
@@ -29,7 +29,7 @@ Statuses: **Verified** (workflow + tests confirmed), **Not fully verified** (cod
 | 3.2 Customers / CRM | Partial | clients in simulation + regressions | Duplicate detection/merge, multiple contacts, statement print |
 | 3.3 Suppliers and subcontractors | Partial | suppliers/purchases in simulation | **Subcontractor entity and certificates missing** |
 | 3.4 Projects, contracts, amendments | Verified | projects/contracts/milestones in regressions | Multiple sites per project, project cost codes |
-| 3.5 BOQ, estimates, rate analysis, quotations | **Partial — core added** | BOQ block in `test:regressions` (versions, sections, items, resources, approval, duplication, permissions) | BOQ → quotation/contract conversion, version comparison, print/export |
+| 3.5 BOQ, estimates, rate analysis, quotations | **Partial — core + devis conversion** | BOQ block in `test:regressions` (versions, sections, items, resources, approval, duplication, permissions, conversion to a linked devis with VAT, totals and amount in words) | BOQ → contract conversion, version comparison, BOQ print/export of its own layout |
 | 3.6 WBS, planning, scheduling | Partial | tasks/phases in simulation | Dependencies, cycle validation, Gantt, baseline/revised schedule |
 | 3.7 Daily site reports | Missing | — | Entire module |
 | 3.8 Progress measurement and billing | Missing | — | Measured quantities, IPC, retention/advance rules |
