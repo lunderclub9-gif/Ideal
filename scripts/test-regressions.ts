@@ -121,6 +121,54 @@ try {
   r = await request(`/taxes/rules/${ruleId}`, 'PUT', { rate: 500 }, token);
   assert.equal(r.status, 400, 'out-of-range tax rate update is rejected');
 
+  // -------- Tax rule uniqueness: one active rule per code and effective date --------
+  r = await request('/taxes/rules', 'POST', { code: 'TVA_DUP', name: 'TVA doublon', rate: 19, effective_date: '2026-01-01' }, token);
+  assert.equal(r.status, 201, 'first active rule for a code/date pair is accepted');
+  const dupRuleA = Number(r.data.id);
+
+  r = await request('/taxes/rules', 'POST', { code: 'TVA_DUP', name: 'TVA doublon', rate: 20, effective_date: '2026-01-01' }, token);
+  assert.equal(r.status, 400, 'second active rule with the same code and effective date is rejected');
+  assert.match(r.data.error, /existe déjà/i);
+
+  r = await request('/taxes/rules', 'POST', { code: 'TVA_DUP', name: 'TVA doublon v2', rate: 20, effective_date: '2026-06-01' }, token);
+  assert.equal(r.status, 201, 'same code with a different effective date is allowed for versioning');
+  const dupRuleB = Number(r.data.id);
+
+  r = await request(`/taxes/rules/${dupRuleB}`, 'PUT', { effective_date: '2026-01-01' }, token);
+  assert.equal(r.status, 400, 'moving an active rule onto an existing code/date pair is rejected');
+
+  r = await request(`/taxes/rules/${dupRuleA}`, 'PUT', { status: 'archived' }, token);
+  assert.equal(r.status, 200, 'archiving a rule frees its code/date pair');
+  r = await request('/taxes/rules', 'POST', { code: 'TVA_DUP', name: 'TVA doublon', rate: 21, effective_date: '2026-01-01' }, token);
+  assert.equal(r.status, 201, 're-creating an archived code/date pair is allowed');
+  r = await request(`/taxes/rules/${dupRuleA}`, 'PUT', { status: 'active' }, token);
+  assert.equal(r.status, 400, 'reactivating a rule cannot create a duplicate active pair');
+
+  // -------- IRG_BAREME is a bracket configuration, not a plain rate --------
+  r = await request('/taxes/rules', 'POST', { code: 'IRG_BAREME', name: 'Barème IRG', rate: 35, effective_date: today }, token);
+  assert.equal(r.status, 400, 'IRG_BAREME cannot be created as a plain rate');
+  assert.match(r.data.error, /barème/i);
+
+  // Seed the bracket row directly: the API deliberately refuses to create it as a rate.
+  const Database = (await import('better-sqlite3')).default;
+  const rawDb = new Database(path.join(dataDir, 'gestionpro.db'));
+  const irgInfo = rawDb
+    .prepare(
+      "INSERT INTO tax_rules (code, name, rate, config_json, effective_date, status, notes, validated_by) VALUES ('IRG_BAREME', 'Barème IRG', 0, '{}', ?, 'active', '', 'test')"
+    )
+    .run(today);
+  const irgId = Number(irgInfo.lastInsertRowid);
+  rawDb.close();
+
+  r = await request(`/taxes/rules/${irgId}`, 'PUT', { rate: 35 }, token);
+  assert.equal(r.status, 400, 'IRG_BAREME cannot be edited through a plain rate');
+  assert.match(r.data.error, /barème/i);
+
+  r = await request(`/taxes/rules/${irgId}`, 'PUT', { notes: 'Barème à faire valider par le comptable' }, token);
+  assert.equal(r.status, 200, 'IRG_BAREME stays editable for notes and status');
+  assert.equal(r.data.notes, 'Barème à faire valider par le comptable', 'IRG_BAREME notes update persists');
+  assert.equal(Number(r.data.rate), 0, 'IRG_BAREME rate is untouched by a notes update');
+
   // -------- Workflow records: client, project, phase, contract, milestones --------
   r = await request('/clients', 'POST', { name: 'Client Régression' }, token);
   assert.equal(r.status, 201, 'create client');

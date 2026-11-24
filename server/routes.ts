@@ -3353,6 +3353,19 @@ function isValidIsoDate(value: string): boolean {
   return parsed.toISOString().slice(0, 10) === value;
 }
 
+// IRG_BAREME holds the progressive bracket configuration (config_json), not a single rate.
+const IRG_BAREME_CODE = 'IRG_BAREME';
+
+function findActiveRuleWithSameCodeAndDate(code: string, effectiveDate: string, excludeId = 0): { id: number } | undefined {
+  return getDb()
+    .prepare(
+      `SELECT id FROM tax_rules
+       WHERE code = ? AND effective_date = ? AND status = 'active' AND id <> ?
+       LIMIT 1`
+    )
+    .get(code, effectiveDate, excludeId) as { id: number } | undefined;
+}
+
 router.post('/taxes/rules', requireAuth, requirePermission('taxes:write'), (req: AuthedRequest, res) => {
   const b = req.body || {};
   const code = String(b.code || '').trim().toUpperCase();
@@ -3361,6 +3374,12 @@ router.post('/taxes/rules', requireAuth, requirePermission('taxes:write'), (req:
   const effectiveDate = String(b.effective_date || new Date().toISOString().slice(0, 10));
   if (!TAX_RULE_CODE.test(code)) {
     res.status(400).json({ error: 'Le code doit contenir 2 à 32 caractères (lettres, chiffres ou tiret bas).' });
+    return;
+  }
+  if (code === IRG_BAREME_CODE) {
+    res.status(400).json({
+      error: 'IRG_BAREME est un barème progressif : il se configure par tranches et ne peut pas être créé avec un taux simple.',
+    });
     return;
   }
   if (!name) {
@@ -3376,12 +3395,29 @@ router.post('/taxes/rules', requireAuth, requirePermission('taxes:write'), (req:
     return;
   }
   const db = getDb();
-  const info = db
-    .prepare(
-      `INSERT INTO tax_rules (code, name, rate, config_json, effective_date, status, notes, validated_by)
-       VALUES (?, ?, ?, '{}', ?, 'active', ?, ?)`
-    )
-    .run(code, name, round2(rate), effectiveDate, String(b.notes || ''), req.user!.name);
+  const insertRule = db.transaction(() => {
+    if (findActiveRuleWithSameCodeAndDate(code, effectiveDate)) {
+      throw new Error('DUPLICATE_ACTIVE_TAX_RULE');
+    }
+    return db
+      .prepare(
+        `INSERT INTO tax_rules (code, name, rate, config_json, effective_date, status, notes, validated_by)
+         VALUES (?, ?, ?, '{}', ?, 'active', ?, ?)`
+      )
+      .run(code, name, round2(rate), effectiveDate, String(b.notes || ''), req.user!.name);
+  });
+  let info: { lastInsertRowid: number | bigint };
+  try {
+    info = insertRule.immediate();
+  } catch (error: any) {
+    if (error?.message === 'DUPLICATE_ACTIVE_TAX_RULE') {
+      res.status(400).json({
+        error: 'Une règle active avec ce code et cette date d’effet existe déjà. Archivez-la ou choisissez une autre date.',
+      });
+      return;
+    }
+    throw error;
+  }
   logAudit(req.user!, 'CREATE', 'tax_rule', code, '', `${rate}%`);
   res.status(201).json(db.prepare('SELECT * FROM tax_rules WHERE id = ?').get(info.lastInsertRowid));
 });
@@ -3393,6 +3429,12 @@ router.put('/taxes/rules/:id', requireAuth, requirePermission('taxes:write'), (r
   const old = db.prepare('SELECT * FROM tax_rules WHERE id = ?').get(id) as any;
   if (!old) {
     res.status(404).json({ error: 'Règle fiscale introuvable.' });
+    return;
+  }
+  if (old.code === IRG_BAREME_CODE && b.rate !== undefined) {
+    res.status(400).json({
+      error: 'IRG_BAREME est un barème progressif : il se configure par tranches et ne peut pas être modifié par un taux unique.',
+    });
     return;
   }
   const rate = b.rate !== undefined ? Number(b.rate) : Number(old.rate);
@@ -3415,15 +3457,31 @@ router.put('/taxes/rules/:id', requireAuth, requirePermission('taxes:write'), (r
     res.status(400).json({ error: 'Statut de règle fiscale invalide.' });
     return;
   }
-  db.prepare('UPDATE tax_rules SET name=?, rate=?, notes=?, effective_date=?, status=?, validated_by=? WHERE id=?').run(
-    name,
-    round2(rate),
-    b.notes ?? old.notes,
-    effectiveDate,
-    status,
-    req.user!.name,
-    id
-  );
+  const applyUpdate = db.transaction(() => {
+    if (status === 'active' && findActiveRuleWithSameCodeAndDate(old.code, effectiveDate, id)) {
+      throw new Error('DUPLICATE_ACTIVE_TAX_RULE');
+    }
+    db.prepare('UPDATE tax_rules SET name=?, rate=?, notes=?, effective_date=?, status=?, validated_by=? WHERE id=?').run(
+      name,
+      round2(rate),
+      b.notes ?? old.notes,
+      effectiveDate,
+      status,
+      req.user!.name,
+      id
+    );
+  });
+  try {
+    applyUpdate.immediate();
+  } catch (error: any) {
+    if (error?.message === 'DUPLICATE_ACTIVE_TAX_RULE') {
+      res.status(400).json({
+        error: 'Une règle active avec ce code et cette date d’effet existe déjà. Archivez-la ou choisissez une autre date.',
+      });
+      return;
+    }
+    throw error;
+  }
   logAudit(req.user!, status === 'archived' && old.status !== 'archived' ? 'ARCHIVE' : 'UPDATE', 'tax_rule', old.code, `${old.rate}%`, `${rate}%`);
   res.json(db.prepare('SELECT * FROM tax_rules WHERE id = ?').get(id));
 });
