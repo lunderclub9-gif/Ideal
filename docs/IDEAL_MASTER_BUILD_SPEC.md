@@ -1114,3 +1114,221 @@ When implementing any module, do not treat UI as a final cosmetic pass. Build th
 Append this instruction to the compact execution prompt whenever delegating visual work:
 
 > Also implement Section 14, “Complete visual redesign, company branding, and interaction design.” Audit and redesign every page consistently around a professional blue-and-white company identity and an original/approved company logo. Reorganize the sidebar, top bar, dashboard, page sections, buttons, forms, tables, cards, dialogs, and document templates. Make all mouse hover, click, focus, pressed, loading, and navigation interactions polished and functional. Add only subtle lightweight animations, with System/Reduced/Off motion settings and full keyboard/touch accessibility. Do not use heavy effects or custom cursors. Preserve the existing workflows and 4 GB RAM/offline constraints. Validate every page and every control, not only the dashboard.
+
+
+---
+
+## 15. Algerian accounting, taxation, payroll, and legal compliance engine (2026–2027 and future years)
+
+This section is a high-priority product requirement. IDEAL is intended for Algerian businesses, especially construction and public-works companies (BTP). Financial and tax calculations must be accurate, explainable, traceable to legal sources, and maintainable as Algerian law changes. A plausible-looking total is not sufficient. Incorrect tax treatment can cause financial and legal harm.
+
+### 15.1 Non-negotiable legal accuracy principles
+
+1. **Never hard-code tax rates, thresholds, exemptions, deadlines, penalties, or form rules in UI components or scattered business logic.** Store them in a versioned, effective-dated Algerian tax rules catalogue.
+2. Every tax rule must include: jurisdiction (Algeria and any applicable local scope), tax type, legal regime, taxpayer/entity eligibility, activity/sector, taxable base, rate or calculation method, exemptions/exclusions, deductibility/recovery conditions, rounding rule, effective-from date, effective-to date (if known), tax period, legal source, article/paragraph, source publication date, verification status, and reviewer/approval metadata.
+3. Apply the rule that was legally effective on the **tax point / transaction date**, not simply the current calendar year or the date the user opens the record. Preserve historical calculations and issued documents.
+4. Distinguish clearly between: enacted and published law; implementing regulation/instruction; official DGI guidance; parliamentary bill or draft; unofficial commentary. A bill, amendment proposal, press report, or draft must never silently become an active tax rule.
+5. When a rule is uncertain, missing, contradictory, or not verified against an authoritative source, mark the calculation **À vérifier** / **Non validé**, explain what is missing, and prevent silent finalization of a tax-sensitive document. Do not guess a rate.
+6. Tax rule updates must be reviewed, tested, approved by an authorized administrator/accountant, versioned, and auditable before activation. Keep prior versions immutable.
+7. Display the legal basis and calculation breakdown beside each important tax result. Allow an accountant to trace a figure from the invoice/entry to the tax return and ledger.
+8. Do not present IDEAL as a substitute for a certified Algerian accountant or legal/tax adviser. Provide a clear notice that final filing and interpretation remain subject to official law and qualified professional review.
+
+### 15.2 Algerian official-source registry and annual legal updates
+
+Maintain a local, searchable legal-source register. Prefer sources in this order:
+
+1. Journal officiel de la République algérienne démocratique et populaire (JORADP): promulgated laws, decrees, and regulations.
+2. Ministry of Finance and Direction Générale des Impôts (DGI): current tax codes, official forms, notices, instructions, and taxpayer guidance.
+3. Official parliamentary documents and government/finance ministry publications: bills and explanatory reports, clearly marked as drafts until promulgated.
+4. Other sources may help discover changes, but must not be the sole legal basis for activating a tax rule.
+
+Seed the legal register with the 2026 DGI tax-code publications and the 2026 tax legislation relevant to the application, including at least:
+- Code des impôts directs et taxes assimilées (CIDTA).
+- Code des taxes sur le chiffre d'affaires (CTCA), including TVA.
+- Code des procédures fiscales (CPF).
+- Code du timbre.
+- Code de l'enregistrement.
+- Code des impôts indirects where applicable.
+- Loi de finances 2026 and its applicable amendments and implementing texts.
+- Algerian Système Comptable Financier (SCF), accounting regulations, and applicable chart-of-accounts guidance.
+- Relevant labour, social-security, CNAS/CASNOS, and payroll contribution legislation and official guidance, maintained as a distinct social/payroll rules domain.
+
+**2027 status control:** as of 24 November 2026, the 2027 Finance Law material located for this specification is still identified as a *Projet de Loi de Finances pour 2027*. The APN adopted the PLF on 16 November 2026, and the Minister of Finance presented it to the Council of the Nation committee on 23 November 2026. Therefore, treat its provisions as proposed/pending until the final enacted text is adopted, promulgated, published in JORADP, and its effective dates are confirmed. Reconcile the final enacted text against the APN/Senate versions and amendments before activating any 2027 rule. Never label a draft as current law.
+
+At each annual update, create a legal-change report showing: old rule, new rule, legal reference, effective date, affected modules, affected historical/future transactions, required migration or recalculation, test cases, and approval status. Preserve the original legal source file and a checksum where practical. Provide an offline manual import/review workflow; do not require paid APIs or continuous internet access.
+
+### 15.3 Tax regimes and taxpayer profile
+
+During company setup and in Company > Fiscal Settings, capture and validate the fields required to determine the company's real legal/fiscal profile, including as applicable:
+- Legal form and company type.
+- NIF, NIS, RC, AI, and other official identifiers where applicable.
+- Main and secondary activities, NAE/activity codes, BTP activity classification, and relevant registrations/approvals.
+- Wilaya, tax centre/service, establishment locations, and multiple establishments.
+- Tax regime: régime réel, régime simplifié, IFU, or another legally applicable regime, with effective dates and eligibility checks.
+- VAT status: subject, exempt, non-recoverable, partially recoverable, or other legally applicable status.
+- IBS/IRG liability and other taxes applicable to the legal form and activity.
+- Fiscal year opening/closing, filing frequency, and tax payment method.
+- Social-security employer affiliation and employee coverage details, kept distinct from tax registration.
+
+Do not infer legal regime solely from turnover or business name. Validate eligibility using the current law and prompt for accountant confirmation when the profile is incomplete. Support separate establishments and activity segments where required by law.
+
+### 15.4 VAT / TVA engine — full required behavior
+
+Implement TVA as a first-class tax engine, not as a single percentage field.
+
+- Support all legally defined standard/reduced/special rates, exemptions, zero-rated or suspended treatments only where the current Algerian law actually provides them. Load exact rates and eligible operations from the verified CTCA and Finance Laws; do not assume that every product/service uses the same rate.
+- Support product/service tax classification, customer/supplier status, transaction type, place and date of supply, taxable base, discounts, advances, credit notes, returns, and legally relevant tax point rules.
+- Calculate TVA collectée, TVA déductible, non-deductible TVA, TVA due, excess credit, carry-forward, and refunds/credits only according to the applicable legal rules and documentation requirements.
+- Support purchases and sales, subcontracting, imported goods/services where relevant, fixed assets, construction works, equipment, materials, transport, rentals, and mixed taxable/exempt activity.
+- Apply deductibility restrictions, supporting-document requirements, allocation/prorata rules, and adjustments only where confirmed by law.
+- Show HT, rate, TVA amount, TTC, tax base, and legal treatment per line and per document. Use decimal-safe arithmetic and explicit rounding rules; never use binary floating-point for monetary totals.
+- Support deposits/advances, partial invoices, progress certificates/situations de travaux, retention/garantie retenue, credit notes, cancellations, and corrections without double-counting tax.
+- Handle exempt transactions with the legal exemption reason and reference; never treat a blank rate as an exemption.
+- Provide VAT reconciliation by period: sales ledger vs collected VAT, purchase ledger vs deductible VAT, general ledger vs return, credit carried forward, payments, and differences requiring review.
+- Produce a tax breakdown on quotations, invoices, purchase documents, credit notes, and reports. The document renderer must use the backend's authoritative calculation result.
+- Include tests for every configured rate and treatment, date boundary changes, mixed-rate invoices, exemptions, advances, partial payments, returns, rounding, and invalid or missing tax classifications.
+
+### 15.5 Direct taxes and other tax families
+
+Provide a rule-driven calculation and tracking framework for taxes that apply to the company's legal form, activity, and regime. At minimum, assess and support as applicable:
+
+- **IBS** (Impôt sur les bénéfices des sociétés): taxable profit reconciliation from accounting result to fiscal result; deductible and non-deductible expenses; amortization/depreciation; provisions; reinvestment-related treatments; loss carry-forward where legally permitted; instalments/advances; annual return; liquidation balance; and payment tracking. Support distinct activity rates or allocations only where the law requires them. The DGI's published guidance currently lists BTP among activities with a specific IBS rate; the exact active rate and conditions must be loaded from the applicable CIDTA/Finance Law version, not copied permanently into code.
+- **IRG** (Impôt sur le revenu global): applicable categories, salary withholding, taxable income, allowances/exemptions, progressive scales, annual reconciliation, and non-salary income where in scope.
+- **IFU** (Impôt forfaitaire unique): eligibility, exclusions, thresholds, payment/declaration schedule, and VAT implications exactly as defined by the active law. Do not apply IFU and ordinary TVA/IBS logic simultaneously unless the legal provisions require a specific combination.
+- **TAP and historical/renamed/abolished taxes:** maintain legal status by period. Never show a repealed tax as currently payable; retain historical records and calculations for old periods.
+- **Withholding taxes and source deductions** where applicable to suppliers, service providers, non-residents, or other payment types.
+- **Stamp duty (droit de timbre)**, registration duties, and other transaction/document taxes where applicable.
+- **Local taxes, property/land/building-related taxes, vehicle taxes, and parafiscal levies** where applicable to the company and assets.
+- **Professional training and apprenticeship taxes/contributions**, with the employer-size, base, exemptions, and employee/stage eligibility rules controlled by the current legal version.
+- Customs duties and import-related taxes where relevant, including correct separation of customs duty, VAT, and any advance/creditable tax.
+- Penalties, late interest, surcharges, and limitation periods only from verified legal provisions, with manual accountant review before posting.
+
+Do not enable every tax for every company. Use a tax applicability matrix based on entity, regime, activity, transaction, asset, and period. Each tax family must have an on/off/applicability reason and a legal reference.
+
+### 15.6 Algerian payroll, social contributions, and employee obligations
+
+Build a payroll rules module separated from the corporate tax engine but connected to accounting and employee management.
+
+- Support gross salary, taxable salary, allowances, benefits in kind, overtime, bonuses, leave, absences, advances, deductions, net salary, and employer cost.
+- Calculate IRG salary withholding and applicable exemptions/allowances using effective-dated official scales.
+- Calculate employee and employer social-security contributions (CNAS and other applicable schemes), occupational accident contribution if applicable, and other mandatory contributions only using verified current rates and bases.
+- Distinguish tax withholding from social-security contributions and from employer expenses.
+- Support payslips, payroll journal, monthly declarations, annual summaries, employee identifiers, hiring/termination dates, and correction runs.
+- Support legal minimum wage (SNMG) and statutory changes as effective-dated rules, not constants.
+- Keep payroll calculations reproducible: every payslip stores the exact ruleset version used.
+- Test salary boundaries, partial months, unpaid leave, overtime, bonuses, contract changes, termination, and year-boundary changes.
+- Never invent CNAS/CASNOS rates, salary scales, SNMG values, or deadlines.
+
+### 15.7 SCF accounting engine and bookkeeping controls
+
+Implement a real double-entry accounting core aligned with the Algerian Système Comptable Financier (SCF), not merely income/expense lists.
+
+- Maintain a configurable SCF chart of accounts with account codes, names, account type, parent/child hierarchy, and valid posting rules.
+- Support journals (sales, purchases, bank, cash, payroll, fixed assets, inventory, general journal), general ledger, subsidiary ledgers, trial balance, balance sheet, income statement, cash-flow reporting where applicable, and period closing.
+- Enforce that every posted journal entry balances debit and credit. Use atomic database transactions.
+- Link every journal entry to its source document, user, timestamp, approval, and audit trail.
+- Support analytic accounting/cost centres by project, worksite, contract, activity, vehicle, equipment, and department.
+- Support accruals, prepayments, depreciation, provisions, inventory valuation, work in progress, customer/supplier balances, advances, retention money, and foreign-currency transactions only according to applicable SCF and tax treatment.
+- Provide bank reconciliation, cash reconciliation, customer/supplier statements, aged receivables/payables, and period-end checklists.
+- Lock closed periods. Reopening requires authorized approval, reason, and a complete audit record.
+- Never edit a posted journal entry in place without an auditable reversal/correction workflow.
+
+### 15.8 BTP-specific tax and contract accounting
+
+Because IDEAL targets construction and public works, verify and support the special accounting/tax implications of:
+- Contracts and subcontracts, progress-based billing (situations de travaux), work completion certificates, advances, retention/guarantee deductions, provisional/final acceptance, variation orders, price revisions, penalties, and contract amendments.
+- Tax treatment and timing of invoices and payments for works, supplies, rentals, equipment, and subcontracting.
+- Project cost allocation, stock/material consumption, equipment depreciation/use, labour cost, transport, fuel, and overhead allocation.
+- Joint ventures/consortiums and multi-company projects only if legally and technically supported.
+- Public procurement documentation and tax certificates/clearances where legally required.
+- Reconciliation of contract HT/TTC, progress statements, advances, retentions, collected amounts, VAT, costs, and project margin.
+
+Do not assume that all BTP contracts have identical tax timing or VAT treatment. Make contract type and transaction nature explicit, and require review when the applicable legal treatment is unclear.
+
+### 15.9 Fiscal calendar, declarations, and supporting documents
+
+Provide a configurable Algerian fiscal calendar generated from the taxpayer profile and current legal rules:
+- Monthly, quarterly, and annual declarations and payments as applicable.
+- DGI declaration forms and identifiers (for example G50, G4, G8, G29 and other forms only when applicable to the taxpayer and current rules).
+- Deadlines, reminders, payment receipts, filing status, late-filing risk, and evidence attachments.
+- Reconciliation reports before a return can be marked ready.
+- Exportable declaration workpapers and supporting schedules in practical formats (PDF, CSV, XLSX) where appropriate.
+- Record the filing reference, submission date, payment reference, and receipt.
+- Do not claim electronic filing or payment integration unless an official supported interface exists and has been implemented and tested. Otherwise prepare accurate files and a clear manual submission checklist.
+- Keep a history of filed declarations and amended/corrected declarations.
+
+### 15.10 Tax calculation UX and accountant review
+
+For every tax-sensitive result, show a readable calculation trace:
+1. Source transaction and date.
+2. Taxpayer profile and applicable regime.
+3. Rule name, version, effective dates, legal citation, and verification state.
+4. Tax base and adjustments.
+5. Rate/formula and intermediate values.
+6. Rounding method and final amount.
+7. Ledger accounts and declaration line mapping.
+8. Warnings, missing evidence, and reviewer approval.
+
+Provide an accountant review queue for unclassified transactions, uncertain treatments, rule updates, reconciliation differences, unusual tax values, and manual overrides. Manual overrides require a reason, user identity, timestamp, before/after values, and approval according to permissions. No silent override is allowed.
+
+### 15.11 Precision, auditability, and security
+
+- Use decimal/fixed-point arithmetic or integer minor units with a documented precision strategy. Never use JavaScript floating-point arithmetic for authoritative monetary/tax totals.
+- Define and test currency precision, tax rounding per line/document/return, and allocation of rounding differences.
+- Store source amounts, tax bases, calculated amounts, rule identifiers, and calculation snapshots so historical results can be reproduced.
+- Prevent duplicate posting and duplicate declaration totals through idempotency and source-document constraints.
+- Apply role permissions for accountant, admin, project manager, and other roles; sensitive payroll data must be restricted.
+- Log changes to tax profiles, tax rules, invoices, journal entries, declarations, and payroll.
+- Back up tax-rule versions and accounting data together; test restore consistency.
+- Do not expose NIF, employee identifiers, payroll, or financial data in logs or error messages unnecessarily.
+
+### 15.12 Mandatory automated and scenario-based acceptance tests
+
+Create isolated test companies and fixtures for at least:
+- A BTP company under each supported tax regime and a company with multiple activities/establishments where legally relevant.
+- Sales invoice with one rate, mixed-rate invoice, legally exempt invoice, credit note, purchase invoice, fixed asset, subcontractor invoice, import transaction, advance, partial progress invoice, retention, cancellation, and refund/credit scenario.
+- IBS calculation from accounting profit to fiscal result, including deductible/non-deductible expenses and year-end adjustments.
+- IRG payroll with multiple salary levels, allowances, overtime, absences, partial month, termination, and a change in annual scale.
+- Social contribution calculation with effective-date changes.
+- Filing calendar and declaration workpapers for monthly/annual obligations applicable to each fixture.
+- Tax rule change effective mid-year and on 1 January; old transactions must retain old rules and new transactions must use the new rules.
+- Unverified draft 2027 rule must not activate; approved final published rule must activate only from its legally effective date.
+- Journal balancing, period lock, reversal/correction, bank reconciliation, and project analytic accounting.
+- Rounding, decimal precision, very large DZD amounts, zero amounts, negative credit notes, missing tax classification, and boundary values.
+- Permission tests proving that unauthorized users cannot edit rules, approve overrides, view restricted payroll, or post/close periods.
+- Backup/restore of tax rules, ledger, declarations, and source documents.
+
+Acceptance requires independent review of a representative set of calculations by a qualified Algerian accountant/tax professional using the same source documents and legal version. Record the review evidence and any differences. Passing unit tests alone is not proof of legal correctness.
+
+### 15.13 Definition of done for Algerian tax compliance
+
+The tax/accounting work is not complete until:
+- The official 2026 legal source pack is recorded and versioned.
+- The 2027 Finance Law is not treated as enacted until final promulgation and publication are verified.
+- Every enabled rate, threshold, exemption, deadline, penalty, and formula has a traceable legal citation and effective date.
+- TVA, IBS, IRG, IFU, applicable withholding/stamp/registration/local/parafiscal taxes, payroll, and social contributions are implemented only to the extent legally applicable and verified.
+- The SCF ledger is balanced and connected to invoices, payroll, inventory, projects, and declarations.
+- Historical transactions remain reproducible after legal updates.
+- Accountant review and reconciliation scenarios pass with documented evidence.
+- No tax-sensitive operation silently falls back to a guessed or default rate.
+- The module works fully offline after its legal rules/source pack is installed; updates are imported and reviewed explicitly.
+- The user interface is French-only in accordance with the product language requirement, with accurate Algerian terminology and DZD formatting.
+
+### 15.14 Required sources for the initial legal research pack
+
+Use and verify the current versions of these official resources during implementation (URLs are references for discovery; always check for newer official publications):
+- DGI 2026 tax-code publication page: https://mfdgi.gov.dz/about-us-ar/actu-ar/codes-fiscaux-ar
+- DGI TVA guidance: https://www.mfdgi.gov.dz/professionnels/identifier-regime-fiscal/regime-reel/tva
+- DGI IBS guidance: https://www.mfdgi.gov.dz/fr/professionnels/services-pro/regime-reel/ibs
+- Ministry of Finance / DGPP 2027 Finance Bill explanatory report: https://dgpp.mf.gov.dz/wp-content/uploads/2026/11/PLF-2027_APN_FR.pdf
+- APN adoption of PLF 2027 (16 November 2026): https://www.aps.dz/fr/economie/banque-et-finances/mwj5be13-adoption-a-la-majorite-du-plf-2027
+- Ministry presentation to Council of the Nation committee (23 November 2026): https://www.aps.dz/fr/economie/banque-et-finances/mwt2n19i-lebbou-presente-le-texte-de-loi-de-finances-2027-devant-la-commission-competente
+- JORADP portal: https://www.joradp.dz/
+
+The agent must verify exact URLs, publication dates, legal status, article numbering, and final enacted text. If an official URL has moved, locate the current official equivalent and record the replacement. The links above are research starting points, not permission to treat a draft as law.
+
+### 15.15 Updated compact execution prompt supplement
+
+Append this instruction to the compact execution prompt:
+
+> Implement Section 15, “Algerian accounting, taxation, payroll, and legal compliance engine (2026–2027 and future years).” Treat Algerian legal accuracy as a P0 requirement. Research official DGI/JORADP/Ministry of Finance sources, build a versioned effective-dated rules engine, and implement TVA, IBS, IRG, IFU, applicable withholding/stamp/registration/local/parafiscal taxes, payroll/social contributions, Algerian SCF double-entry accounting, and BTP-specific progress billing and retention workflows according to the company's actual legal profile. Do not guess rates or deadlines, do not hard-code legal constants, and do not activate draft 2027 provisions before promulgation/publication and verification. Preserve historical calculations, show legal citations and full calculation traces, require accountant review for uncertain cases, and run the full scenario-based acceptance suite. Work offline after rule packs are installed; no paid/cloud dependency. Do not merge to main or publish a release without explicit approval.
