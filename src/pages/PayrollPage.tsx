@@ -89,8 +89,12 @@ export default function PayrollPage({ permissions }: { permissions: string[] }) 
 
   async function approvePayroll(id: number) {
     setError('');
+    const period = periods.find((p: any) => p.id === id) || (selectedPeriod?.id === id ? selectedPeriod : null);
     try {
-      await apiFetch(`/payroll/periods/${id}/approve`, { method: 'POST' });
+      await apiFetch(`/payroll/periods/${id}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({ revision: period?.revision }),
+      });
       await load();
     } catch (err: any) {
       setError(err.message);
@@ -107,6 +111,7 @@ export default function PayrollPage({ permissions }: { permissions: string[] }) 
           bonus_amount: Number(editSlip.bonus_amount),
           penalties_deducted: Number(editSlip.penalties_deducted),
           other_deductions: Number(editSlip.other_deductions),
+          revision: editSlip.revision,
         }),
       });
       setEditSlip(null);

@@ -458,6 +458,59 @@ try {
   assert.equal(Number(r.data.total_ttc), 11900, 'the printable document exposes its totals');
   assert.ok(String(r.data.amount_in_words || '').length > 0, 'the printable document exposes the amount in words');
 
+  // -------- Optimistic concurrency: a stale save is refused, never merged --------
+  r = await request(
+    '/commercial-documents',
+    'POST',
+    { doc_type: 'devis', client_id: clientId, issue_date: today, lines: [{ description: 'Concurrence', quantity: 2, unit_price: 500 }] },
+    token
+  );
+  assert.equal(r.status, 201, 'create a document for the concurrency test');
+  const concurrentDocId = Number(r.data.id);
+  const firstRevision = Number(r.data.revision);
+  assert.equal(firstRevision, 1, 'a new document starts at revision 1');
+
+  r = await request(`/commercial-documents/${concurrentDocId}`, 'PUT', { lines: [{ description: 'Concurrence', quantity: 3, unit_price: 500 }], revision: firstRevision }, token);
+  assert.equal(r.status, 200, 'saving with the revision the user loaded succeeds');
+  assert.equal(Number(r.data.revision), firstRevision + 1, 'a save increments the revision');
+
+  r = await request(`/commercial-documents/${concurrentDocId}`, 'PUT', { lines: [{ description: 'Écrasement silencieux', quantity: 99, unit_price: 1 }], revision: firstRevision }, token);
+  assert.equal(r.status, 409, 'a second save with the same revision is refused');
+  assert.match(String(r.data.error), /Rechargez/, 'the conflict message asks the user to reload');
+  assert.equal(r.data.stale, true, 'the conflict is flagged as stale for the client');
+
+  r = await request(`/commercial-documents/${concurrentDocId}`, 'GET', undefined, token);
+  assert.equal(r.data.lines[0].description, 'Concurrence', 'the refused save did not overwrite the first one');
+  assert.equal(Number(r.data.total_ht), 1500, 'the first writer’s totals are preserved');
+
+  r = await request(`/commercial-documents/${concurrentDocId}`, 'PUT', { lines: [], revision: Number(r.data.revision) }, token);
+  assert.equal(r.status, 200, 'a reloaded document can be saved again');
+
+  r = await request(`/commercial-documents/${concurrentDocId}`, 'PUT', { lines: [] }, token);
+  assert.equal(r.status, 400, 'a save without a revision is refused outright');
+
+  // Payments cannot be edited field by field, so their state-changing save is the reversal.
+  r = await request(
+    '/commercial-documents',
+    'POST',
+    { doc_type: 'facture', client_id: clientId, issue_immediately: true, lines: [{ description: 'Règlement concurrence', quantity: 1, unit_price: 1000 }] },
+    token
+  );
+  assert.equal(r.status, 201, 'create an issued invoice for the payment test');
+  const paidDocId = Number(r.data.id);
+  r = await request(`/commercial-documents/${paidDocId}/payments`, 'POST', { amount: 500, payment_method: 'Espèces' }, token);
+  assert.equal(r.status, 201, 'record a payment on the invoice');
+  const concurrentPaymentId = Number(r.data.id);
+  const paymentRevision = Number(r.data.revision);
+
+  r = await request(`/payments/${concurrentPaymentId}/reverse`, 'POST', { reason: 'Concurrence', revision: paymentRevision + 10 }, token);
+  assert.equal(r.status, 409, 'reversing a payment from a stale view is refused');
+  r = await request(`/commercial-documents/${paidDocId}`, 'GET', undefined, token);
+  assert.equal(Number(r.data.amount_paid), 500, 'the refused reversal left the payment in place');
+
+  r = await request(`/payments/${concurrentPaymentId}/reverse`, 'POST', { reason: 'Concurrence', revision: paymentRevision }, token);
+  assert.equal(r.status, 200, 'reversing with the revision the user saw succeeds');
+
   // -------- Cancelled expense must stop counting as a cost --------
   r = await request('/expenses', 'POST', {
     category: 'Transport',
@@ -507,6 +560,43 @@ try {
   assert.equal(Number(r.data.cashBalance), 0, 'reversal nets the cash balance to zero');
   const reversedOriginal = r.data.transactions.find((t: any) => t.id === txId);
   assert.equal(reversedOriginal.status, 'reversed', 'original transaction is kept and flagged');
+
+  // -------- Payroll concurrency: a payslip saved from an outdated view, and a period
+  // approved after a recalculation, must both be refused. Runs after the cash-balance
+  // snapshots above because approving payroll writes a treasury outflow.
+  r = await request('/workers', 'POST', { full_name: 'Paie Concurrence', job_title: 'Maçon', wage_type: 'monthly', monthly_salary: 50000 }, token);
+  assert.equal(r.status, 201, 'create a monthly worker for the payroll test');
+  r = await request('/payroll/calculate', 'POST', { month: 3, year: 2026 }, token);
+  assert.equal(r.status, 200, 'calculate a payroll period');
+  const concurrentPeriodId = Number(r.data.periodId);
+
+  r = await request(`/payroll/periods/${concurrentPeriodId}`, 'GET', undefined, token);
+  assert.equal(r.status, 200, 'read the payroll period');
+  const concurrentSlip = r.data.payslips[0];
+  assert.ok(concurrentSlip, 'the payroll period holds a payslip');
+  const slipRevision = Number(concurrentSlip.revision);
+  const periodRevision = Number(r.data.period.revision);
+
+  r = await request(`/payroll/payslips/${concurrentSlip.id}`, 'PUT', { bonus_amount: 1000, revision: slipRevision }, token);
+  assert.equal(r.status, 200, 'saving a payslip with the current revision succeeds');
+  r = await request(`/payroll/payslips/${concurrentSlip.id}`, 'PUT', { bonus_amount: 9000, revision: slipRevision }, token);
+  assert.equal(r.status, 409, 'a second payslip save with the same revision is refused');
+
+  r = await request(`/payroll/periods/${concurrentPeriodId}`, 'GET', undefined, token);
+  const refreshedSlip = r.data.payslips.find((s: any) => s.id === concurrentSlip.id);
+  assert.equal(Number(refreshedSlip.bonus_amount), 1000, 'the refused payslip save did not overwrite the bonus');
+
+  r = await request('/payroll/calculate', 'POST', { month: 3, year: 2026 }, token);
+  assert.equal(r.status, 200, 'recalculate the payroll period');
+  r = await request(`/payroll/periods/${concurrentPeriodId}/approve`, 'POST', { revision: periodRevision }, token);
+  assert.equal(r.status, 409, 'approving a payroll period from a stale view is refused');
+
+  r = await request(`/payroll/periods/${concurrentPeriodId}`, 'GET', undefined, token);
+  r = await request(`/payroll/periods/${concurrentPeriodId}/approve`, 'POST', { revision: Number(r.data.period.revision) }, token);
+  assert.equal(r.status, 200, 'approving with the current revision succeeds');
+
+  r = await request(`/payroll/payslips/${concurrentSlip.id}`, 'PUT', { bonus_amount: 1500, revision: 1 }, token);
+  assert.equal(r.status, 400, 'an approved payroll period still locks its payslips');
 
   // -------- Permissions are enforced on the new endpoints --------
   r = await request('/users', 'POST', { name: 'Chauffeur Test', username: 'driver_test', password: 'Driver-Password-2026', role: 'driver' }, token);

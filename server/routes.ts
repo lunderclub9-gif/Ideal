@@ -1096,6 +1096,25 @@ const DOC_PREFIX_MAP: Record<string, string> = {
   avoir: 'prefix_credit',
 };
 
+// Optimistic concurrency: financial rows carry a revision, and a save must match the
+// revision the user loaded. Two people editing the same invoice, payment or payroll
+// period therefore cannot silently overwrite each other.
+const REVISION_CONFLICT_MESSAGE =
+  'Ce document a été modifié par un autre utilisateur depuis son ouverture. Rechargez la page pour reprendre la version à jour avant de réessayer.';
+
+function readRevision(value: unknown): number | null {
+  const revision = Number(value);
+  return Number.isInteger(revision) && revision > 0 ? revision : null;
+}
+
+function sendRevisionRequired(res: express.Response) {
+  res.status(400).json({ error: 'Numéro de révision manquant : rechargez le document avant de l’enregistrer.' });
+}
+
+function sendStaleRevision(res: express.Response) {
+  res.status(409).json({ error: REVISION_CONFLICT_MESSAGE, stale: true });
+}
+
 router.get('/commercial-documents', requireAuth, requirePermission('invoices:read'), (_req, res) => {
   const db = getDb();
   const docs = db
@@ -1251,24 +1270,34 @@ router.put('/commercial-documents/:id', requireAuth, requirePermission('invoices
     });
     return;
   }
+  const revision = readRevision(b.revision);
+  if (revision === null) {
+    sendRevisionRequired(res);
+    return;
+  }
+
   const discount = Number(b.discount_percent ?? doc.discount_percent);
   const calc = computeDocLines(b.lines || [], discount);
 
-  db.transaction(() => {
-    db.prepare(
-      `UPDATE commercial_documents SET client_id=?, project_id=?, issue_date=?, due_date=?, discount_percent=?, total_ht=?, total_tva=?, total_ttc=?, notes=? WHERE id=?`
-    ).run(
-      Number(b.client_id ?? doc.client_id),
-      b.project_id ? Number(b.project_id) : null,
-      b.issue_date ?? doc.issue_date,
-      b.due_date ?? doc.due_date,
-      discount,
-      calc.total_ht,
-      calc.total_tva,
-      calc.total_ttc,
-      b.notes ?? doc.notes,
-      id
-    );
+  const saved = db.transaction(() => {
+    const updated = db
+      .prepare(
+        `UPDATE commercial_documents SET client_id=?, project_id=?, issue_date=?, due_date=?, discount_percent=?, total_ht=?, total_tva=?, total_ttc=?, notes=?, revision = revision + 1 WHERE id=? AND revision=?`
+      )
+      .run(
+        Number(b.client_id ?? doc.client_id),
+        b.project_id ? Number(b.project_id) : null,
+        b.issue_date ?? doc.issue_date,
+        b.due_date ?? doc.due_date,
+        discount,
+        calc.total_ht,
+        calc.total_tva,
+        calc.total_ttc,
+        b.notes ?? doc.notes,
+        id,
+        revision
+      );
+    if (updated.changes === 0) return false;
     if (Array.isArray(b.lines)) {
       db.prepare('DELETE FROM commercial_lines WHERE document_id = ?').run(id);
       for (const l of calc.lines) {
@@ -1278,7 +1307,13 @@ router.put('/commercial-documents/:id', requireAuth, requirePermission('invoices
         ).run(id, l.description, l.unit, l.quantity, l.unit_price, l.tva_rate, l.line_ht, l.line_tva, l.line_ttc, l.sort_order);
       }
     }
+    return true;
   })();
+
+  if (!saved) {
+    sendStaleRevision(res);
+    return;
+  }
 
   logAudit(req.user!, 'UPDATE', doc.doc_type, doc.doc_number, '', `TTC: ${calc.total_ttc} DA`);
   res.json(db.prepare('SELECT * FROM commercial_documents WHERE id = ?').get(id));
@@ -1292,7 +1327,7 @@ router.post('/commercial-documents/:id/issue', requireAuth, requirePermission('i
     res.status(404).json({ error: 'Document introuvable.' });
     return;
   }
-  db.prepare("UPDATE commercial_documents SET status='issued', locked_at=datetime('now') WHERE id=?").run(id);
+  db.prepare("UPDATE commercial_documents SET status='issued', locked_at=datetime('now'), revision = revision + 1 WHERE id=?").run(id);
   logAudit(req.user!, 'ISSUE', doc.doc_type, doc.doc_number, doc.status, 'issued');
   res.json(db.prepare('SELECT * FROM commercial_documents WHERE id = ?').get(id));
 });
@@ -1326,7 +1361,7 @@ router.post('/commercial-documents/:id/convert-to-invoice', requireAuth, require
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(invId, l.description, l.unit, l.quantity, l.unit_price, l.tva_rate, l.line_ht, l.line_tva, l.line_ttc, l.sort_order);
     }
-    db.prepare("UPDATE commercial_documents SET status = 'accepted' WHERE id = ? AND doc_type = 'devis'").run(id);
+    db.prepare("UPDATE commercial_documents SET status = 'accepted', revision = revision + 1 WHERE id = ? AND doc_type = 'devis'").run(id);
     return invId;
   })();
 
@@ -1435,7 +1470,7 @@ router.post('/commercial-documents/:id/payments', requireAuth, requirePermission
 
     const newPaid = round2(doc.amount_paid + amount);
     const newStatus = newPaid >= doc.total_ttc - 0.01 ? 'paid' : 'partial';
-    db.prepare('UPDATE commercial_documents SET amount_paid=?, status=? WHERE id=?').run(newPaid, newStatus, docId);
+    db.prepare('UPDATE commercial_documents SET amount_paid=?, status=?, revision = revision + 1 WHERE id=?').run(newPaid, newStatus, docId);
 
     // Record in treasury
     const account = method === 'Espèces' ? 'Caisse' : 'Banque';
@@ -1467,8 +1502,18 @@ router.post('/payments/:id/reverse', requireAuth, requirePermission('invoices:ap
     return;
   }
 
+  const revision = readRevision(req.body?.revision);
+  if (revision === null) {
+    sendRevisionRequired(res);
+    return;
+  }
+
   const revNumber = `ANN-${orig.receipt_number}`;
-  db.transaction(() => {
+  const reversed = db.transaction(() => {
+    // Claim the payment at the revision the user saw, so a stale client cannot
+    // reverse a payment another user already acted on.
+    const claim = db.prepare('UPDATE payments SET revision = revision + 1 WHERE id = ? AND revision = ?').run(id, revision);
+    if (claim.changes === 0) return false;
     const revInfo = db
       .prepare(
         `INSERT INTO payments (receipt_number, direction, client_id, supplier_id, document_id, purchase_id, payment_date, amount, payment_method, reference, is_reversal, reversed_payment_id, notes, user_id)
@@ -1495,7 +1540,7 @@ router.post('/payments/:id/reverse', requireAuth, requirePermission('invoices:ap
       if (doc) {
         const newPaid = Math.max(0, round2(doc.amount_paid - orig.amount));
         const newStatus = newPaid <= 0 ? 'issued' : newPaid >= doc.total_ttc - 0.01 ? 'paid' : 'partial';
-        db.prepare('UPDATE commercial_documents SET amount_paid=?, status=? WHERE id=?').run(newPaid, newStatus, doc.id);
+        db.prepare('UPDATE commercial_documents SET amount_paid=?, status=?, revision = revision + 1 WHERE id=?').run(newPaid, newStatus, doc.id);
       }
     }
 
@@ -1525,7 +1570,13 @@ router.post('/payments/:id/reverse', requireAuth, requirePermission('invoices:ap
       `INSERT INTO treasury_transactions (tx_date, tx_type, account, category, amount, payment_method, client_id, supplier_id, linked_payment_id, notes, user_id)
        VALUES (?, ?, ?, 'Annulation règlement', ?, ?, ?, ?, ?, ?, ?)`
     ).run(new Date().toISOString().slice(0, 10), txType, account, orig.amount, orig.payment_method, orig.client_id, orig.supplier_id, revInfo.lastInsertRowid, reason || revNumber, req.user!.id);
+    return true;
   })();
+
+  if (!reversed) {
+    sendStaleRevision(res);
+    return;
+  }
 
   logAudit(req.user!, 'REVERSE', 'payment', orig.receipt_number, `${orig.amount} DA`, reason || 'Contre-passation');
   res.json({ ok: true });
@@ -2081,10 +2132,12 @@ router.post('/payroll/calculate', requireAuth, requirePermission('payroll:write'
            base_gross=excluded.base_gross, overtime_pay=excluded.overtime_pay,
            gross_salary=excluded.gross_salary, cnas_employee=excluded.cnas_employee,
            cnas_employer=excluded.cnas_employer, irg_amount=excluded.irg_amount,
-           advances_deducted=excluded.advances_deducted, net_pay=excluded.net_pay`
+           advances_deducted=excluded.advances_deducted, net_pay=excluded.net_pay,
+           revision = payslips.revision + 1`
       ).run(pid, w.id, att.days, att.ot, baseGross, otPay, bonus, piece, gross, cnasEmp, cnasPat, irg, att.adv, penalties, otherDed, net);
     }
 
+    db.prepare('UPDATE payroll_periods SET revision = revision + 1 WHERE id = ?').run(pid);
     return pid;
   })();
 
@@ -2116,9 +2169,21 @@ router.put('/payroll/payslips/:id', requireAuth, requirePermission('payroll:writ
   const irg = calculateAlgerianIRG(Math.max(0, gross - cnasEmp), getTaxConfigFromDb());
   const net = Math.max(0, round2(gross - cnasEmp - irg - slip.advances_deducted - penalties - otherDed));
 
-  db.prepare(
-    `UPDATE payslips SET bonus_amount=?, piecework_amount=?, gross_salary=?, cnas_employee=?, cnas_employer=?, irg_amount=?, penalties_deducted=?, other_deductions=?, net_pay=? WHERE id=?`
-  ).run(bonus, piece, gross, cnasEmp, cnasPat, irg, penalties, otherDed, net, id);
+  const revision = readRevision(b.revision);
+  if (revision === null) {
+    sendRevisionRequired(res);
+    return;
+  }
+
+  const saved = db
+    .prepare(
+      `UPDATE payslips SET bonus_amount=?, piecework_amount=?, gross_salary=?, cnas_employee=?, cnas_employer=?, irg_amount=?, penalties_deducted=?, other_deductions=?, net_pay=?, revision = revision + 1 WHERE id=? AND revision=?`
+    )
+    .run(bonus, piece, gross, cnasEmp, cnasPat, irg, penalties, otherDed, net, id, revision);
+  if (saved.changes === 0) {
+    sendStaleRevision(res);
+    return;
+  }
 
   logAudit(req.user!, 'UPDATE', 'payslip', id, `${slip.net_pay} DA`, `${net} DA`);
   res.json(db.prepare('SELECT * FROM payslips WHERE id = ?').get(id));
@@ -2137,9 +2202,18 @@ router.post('/payroll/periods/:id/approve', requireAuth, requirePermission('payr
     return;
   }
 
-  db.transaction(() => {
-    db.prepare("UPDATE payroll_periods SET status='approved', approved_by=?, approved_at=datetime('now') WHERE id=?").run(req.user!.id, id);
-    db.prepare('UPDATE payslips SET locked=1 WHERE payroll_period_id=?').run(id);
+  const revision = readRevision(req.body?.revision);
+  if (revision === null) {
+    sendRevisionRequired(res);
+    return;
+  }
+
+  const approved = db.transaction(() => {
+    const claim = db
+      .prepare("UPDATE payroll_periods SET status='approved', approved_by=?, approved_at=datetime('now'), revision = revision + 1 WHERE id=? AND revision=?")
+      .run(req.user!.id, id, revision);
+    if (claim.changes === 0) return false;
+    db.prepare('UPDATE payslips SET locked=1, revision = revision + 1 WHERE payroll_period_id=?').run(id);
     const tot = db.prepare('SELECT COALESCE(SUM(net_pay), 0) AS net FROM payslips WHERE payroll_period_id=?').get(id) as { net: number };
     if (tot.net > 0) {
       db.prepare(
@@ -2147,7 +2221,13 @@ router.post('/payroll/periods/:id/approve', requireAuth, requirePermission('payr
          VALUES (?, 'cash_outflow', 'Caisse', 'Salaires & Paie', ?, ?, ?, ?)`
       ).run(new Date().toISOString().slice(0, 10), tot.net, period.payment_method || 'Espèces', `Décaissement paie ${period.month}/${period.year}`, req.user!.id);
     }
+    return true;
   })();
+
+  if (!approved) {
+    sendStaleRevision(res);
+    return;
+  }
 
   logAudit(req.user!, 'APPROVE', 'payroll_period', `${period.month}/${period.year}`, 'draft', 'approved');
   res.json({ ok: true });
@@ -4182,7 +4262,7 @@ router.post('/commercial-documents/:id/cancel', requireAuth, requirePermission('
     res.status(400).json({ error: 'Annulation impossible : des règlements sont liés.' });
     return;
   }
-  db.prepare("UPDATE commercial_documents SET status='cancelled', updated_at=? WHERE id=?").run(new Date().toISOString().slice(0,19).replace('T',' '), id);
+  db.prepare("UPDATE commercial_documents SET status='cancelled', updated_at=?, revision = revision + 1 WHERE id=?").run(new Date().toISOString().slice(0,19).replace('T',' '), id);
   logAudit(req.user!, 'CANCEL', 'commercial_document', row.doc_number, row.status, 'cancelled');
   res.json({ ok: true, status: 'cancelled' });
 });

@@ -108,7 +108,14 @@ export default function InvoicesPage({ permissions }: { permissions: string[] })
     e.preventDefault();
     setError('');
     try {
-      await apiFetch(editingDoc ? `/commercial-documents/${editingDoc.id}` : '/commercial-documents', { method: editingDoc ? 'PUT' : 'POST', body: JSON.stringify({ ...form, issue_immediately: editingDoc ? false : form.issue_immediately }) });
+      await apiFetch(editingDoc ? `/commercial-documents/${editingDoc.id}` : '/commercial-documents', {
+        method: editingDoc ? 'PUT' : 'POST',
+        body: JSON.stringify({
+          ...form,
+          issue_immediately: editingDoc ? false : form.issue_immediately,
+          revision: editingDoc ? editingDoc.revision : undefined,
+        }),
+      });
       setCreateOpen(false);
       setEditingDoc(null);
       await load();
@@ -159,10 +166,11 @@ export default function InvoicesPage({ permissions }: { permissions: string[] })
   }
 
   async function reversePayment(paymentId: number) {
+    const payment = payments.find((p: any) => p.id === paymentId);
     try {
       await apiFetch(`/payments/${paymentId}/reverse`, {
         method: 'POST',
-        body: JSON.stringify({ reason: 'Erreur de saisie / chèque rejeté' }),
+        body: JSON.stringify({ reason: 'Erreur de saisie / chèque rejeté', revision: payment?.revision }),
       });
       await load();
     } catch (err: any) {

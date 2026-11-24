@@ -52,7 +52,7 @@ Statuses: **Verified** (workflow + tests confirmed), **Not fully verified** (cod
 | §4 No dead buttons | Verified for audited screens | Every control in the audit was wired or removed; the BOQ page follows the same contract (draft-only edits, French errors, confirmations) |
 | §5 Architecture | Verified | React UI + typed API client + Express validation + SQLite migrations; money handled with `round2` (REAL columns), not integer minor units — documented deviation |
 | §5 Document numbering | Verified | `document_sequences` (unique per prefix + exercise) reserved by a single upsert inside the document transaction, so numbering is gap-free and two writers cannot share a number; numbers issued before the sequence are seeded on first use. Regression covers rolled-back inserts, parallel creates and two processes on one database |
-| §5 Concurrent access | Partial | WAL plus a 5 s `busy_timeout` added; optimistic conflict detection on financial documents is still missing (last-write-wins) |
+| §5 Concurrent access | Verified | WAL plus a 5 s `busy_timeout`; documents, payments, payslips and payroll periods carry a `revision` that must match on save, so a stale save returns 409 with a reload message instead of overwriting. Regression covers document, payment, payslip and period conflicts |
 | §7 Test strategy | Partial | API/integration tests strong; no component tests; Playwright cannot run in the Linux sandbox (missing `libnspr4`, no root) |
 | §14 Visual redesign | Missing | Current blue/slate shell is consistent but not the specified full redesign |
 | §15 Algerian tax/legal engine | **Blocked** | Requires verified official 2026–2027 sources and accountant validation before activation |

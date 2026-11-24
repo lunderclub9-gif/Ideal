@@ -957,4 +957,18 @@ function runMigrations(db: Database.Database) {
     db.exec('CREATE INDEX IF NOT EXISTS idx_commercial_documents_boq ON commercial_documents(boq_version_id)');
     db.prepare('INSERT INTO schema_migrations (version) VALUES (9)').run();
   }
+
+  // Version 10: optimistic concurrency for financial records. Every row carries a
+  // revision that the client sends back when saving; a stale revision is refused
+  // instead of silently overwriting what another user saved in the meantime.
+  const migration10 = db.prepare('SELECT version FROM schema_migrations WHERE version = 10').get();
+  if (!migration10) {
+    for (const table of ['commercial_documents', 'payments', 'payslips', 'payroll_periods']) {
+      const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+      if (!columns.some((column) => column.name === 'revision')) {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`);
+      }
+    }
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (10)').run();
+  }
 }
