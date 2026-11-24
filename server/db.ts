@@ -971,4 +971,30 @@ function runMigrations(db: Database.Database) {
     }
     db.prepare('INSERT INTO schema_migrations (version) VALUES (10)').run();
   }
+
+  // Version 11: backups that survive the machine. Settings for an external copy folder
+  // (synced OneDrive folder or network share), retention counts and the staleness
+  // warning, plus where each archive was copied. Additive only.
+  const migration11 = db.prepare('SELECT version FROM schema_migrations WHERE version = 11').get();
+  if (!migration11) {
+    const settingsColumns = db.prepare('PRAGMA table_info(company_settings)').all() as Array<{ name: string }>;
+    const addSetting = (name: string, definition: string) => {
+      if (!settingsColumns.some((column) => column.name === name)) {
+        db.exec(`ALTER TABLE company_settings ADD COLUMN ${name} ${definition}`);
+      }
+    };
+    addSetting('backup_external_dir', "TEXT NOT NULL DEFAULT ''");
+    addSetting('backup_keep_manual', 'INTEGER NOT NULL DEFAULT 10');
+    addSetting('backup_warn_after_days', 'INTEGER NOT NULL DEFAULT 2');
+
+    const historyColumns = db.prepare('PRAGMA table_info(backup_history)').all() as Array<{ name: string }>;
+    if (!historyColumns.some((column) => column.name === 'external_path')) {
+      db.exec('ALTER TABLE backup_history ADD COLUMN external_path TEXT');
+    }
+    if (!historyColumns.some((column) => column.name === 'external_copied_at')) {
+      db.exec('ALTER TABLE backup_history ADD COLUMN external_copied_at TEXT');
+    }
+
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (11)').run();
+  }
 }

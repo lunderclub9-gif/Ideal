@@ -707,14 +707,40 @@ export function SettingsPage({ permissions }: { permissions: string[] }) {
 
 export function BackupPage() {
   const [backups, setBackups] = useState<any[]>([]);
+  const [health, setHealth] = useState<any | null>(null);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
+  const [backupForm, setBackupForm] = useState({ external_dir: '', keep_manual: 10, warn_after_days: 2 });
+  const [savingSettings, setSavingSettings] = useState(false);
 
   async function load() {
     try {
-      setBackups(await apiFetch('/backups'));
+      const [rows, healthRow] = await Promise.all([apiFetch('/backups'), apiFetch('/backups/health')]);
+      setBackups(rows);
+      setHealth(healthRow);
+      setBackupForm({
+        external_dir: healthRow?.external_dir || '',
+        keep_manual: Number(healthRow?.keep_manual ?? 10),
+        warn_after_days: Number(healthRow?.warn_after_days ?? 2),
+      });
     } catch (e: any) {
       setError(e.message);
+    }
+  }
+
+  async function saveBackupSettingsForm(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingSettings(true);
+    setError('');
+    setStatus('');
+    try {
+      await apiFetch('/backups/settings', { method: 'PUT', body: JSON.stringify(backupForm) });
+      setStatus('Dossier de copie externe enregistré.');
+      await load();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSavingSettings(false);
     }
   }
   useEffect(() => {
@@ -793,6 +819,56 @@ export function BackupPage() {
 
       {status && <div className="p-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg">{status}</div>}
       {error && <div className="p-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg">{error}</div>}
+      {health && (health.stale || !health.external_ok) && (
+        <div className="p-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg">
+          {health.stale
+            ? `Aucune sauvegarde récente : ${health.last_backup_at ? `la dernière date du ${String(health.last_backup_at).replace('T', ' ').slice(0, 16)}` : 'aucune archive enregistrée'}. Une sauvegarde sur ce poste disparaît avec lui : configurez un dossier de copie ci-dessous.`
+            : 'La dernière archive n’a pas pu être copiée vers le dossier externe. Vérifiez que le dossier existe et reste accessible.'}
+        </div>
+      )}
+
+      <form onSubmit={saveBackupSettingsForm} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-3 text-xs">
+        <div className="flex items-center gap-2 font-semibold text-sm">
+          <HardDrive className="w-4 h-4 text-blue-600" /> Copie hors de ce poste (OneDrive, réseau)
+        </div>
+        <p className="text-slate-500 dark:text-slate-400">
+          Chaque archive vérifiée est recopiée dans ce dossier. Si le PC est volé ou tombe en panne, la copie reste disponible sur le dossier synchronisé. Aucune donnée n’est envoyée sur Internet par IDEAL.
+        </p>
+        <div>
+          <label className="block font-medium mb-1">Dossier de copie</label>
+          <input
+            type="text"
+            value={backupForm.external_dir}
+            onChange={(e) => setBackupForm({ ...backupForm, external_dir: e.target.value })}
+            placeholder="C:\\Users\\Nom\\OneDrive\\IDEAL\\Sauvegardes"
+            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg font-mono bg-white dark:bg-slate-950"
+          />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block font-medium mb-1">Archives manuelles conservées</label>
+            <input type="number" min="1" max="365" value={backupForm.keep_manual} onChange={(e) => setBackupForm({ ...backupForm, keep_manual: Number(e.target.value) })} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg font-mono bg-white dark:bg-slate-950" />
+          </div>
+          <div>
+            <label className="block font-medium mb-1">Alerte si aucune sauvegarde depuis (jours)</label>
+            <input type="number" min="1" max="90" value={backupForm.warn_after_days} onChange={(e) => setBackupForm({ ...backupForm, warn_after_days: Number(e.target.value) })} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg font-mono bg-white dark:bg-slate-950" />
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+          <div className="text-[11px]">
+            {health?.integrity_ok ? (
+              <span className="text-emerald-700 dark:text-emerald-400">
+                Base intègre au démarrage{health.integrity_checked_at ? ` (${String(health.integrity_checked_at).replace('T', ' ').slice(0, 16)})` : ''}.
+              </span>
+            ) : (
+              <span className="text-red-700 dark:text-red-400">Contrôle d’intégrité en échec : {health?.integrity_detail || 'voir le journal'}</span>
+            )}
+          </div>
+          <button type="submit" disabled={savingSettings} className="px-4 py-2 text-xs font-medium text-white bg-blue-700 rounded-lg disabled:opacity-50">
+            Enregistrer
+          </button>
+        </div>
+      </form>
 
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex flex-wrap items-center justify-between gap-4 text-xs">
         <div>
@@ -820,6 +896,7 @@ export function BackupPage() {
               <th className="p-3 text-left">Type</th>
               <th className="p-3 text-right">Taille</th>
               <th className="p-3 text-left">Intégrité</th>
+              <th className="p-3 text-left">Copie externe</th>
               <th className="p-3 text-left">Créée par / Date</th>
               <th className="p-3 text-right">Actions</th>
             </tr>
@@ -834,6 +911,13 @@ export function BackupPage() {
                   <span className={`inline-flex items-center gap-1 font-medium ${b.verified ? 'text-emerald-700' : 'text-red-700'}`}>
                     <ShieldCheck className="w-3.5 h-3.5" /> {b.verified ? 'Vérifiée' : 'À vérifier'}
                   </span>
+                </td>
+                <td className="p-3">
+                  {b.external_path ? (
+                    <span className="font-medium text-emerald-700 dark:text-emerald-400">Copiée</span>
+                  ) : (
+                    <span className="text-slate-400">—</span>
+                  )}
                 </td>
                 <td className="p-3 text-slate-500">{b.created_by} · {b.created_at}</td>
                 <td className="p-3 text-right whitespace-nowrap space-x-3">

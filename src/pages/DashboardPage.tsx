@@ -155,6 +155,25 @@ export default function DashboardPage({ onNavigate }: { onNavigate: (route: stri
                 {k.lastBackupAt ? k.lastBackupAt.replace('T', ' ').slice(0, 16) : 'Aucune'}
               </span>
             </p>
+            {data.backupHealth?.integrity_ok === false ? (
+              <p className="text-xs mt-2 font-medium text-red-700 dark:text-red-400">
+                Contrôle d’intégrité en échec : {data.backupHealth.integrity_detail || 'voir le journal d’audit'}
+              </p>
+            ) : data.backupHealth?.stale ? (
+              <p className="text-xs mt-2 font-medium text-amber-700 dark:text-amber-400">
+                Aucune sauvegarde depuis {data.backupHealth.days_since_backup ?? 0} jour(s). Copiez l’archive hors de ce poste.
+              </p>
+            ) : data.backupHealth && (!data.backupHealth.external_configured || !data.backupHealth.external_ok) ? (
+              <p className="text-xs mt-2 font-medium text-amber-700 dark:text-amber-400">
+                {data.backupHealth.external_configured
+                  ? 'La dernière archive n’a pas été copiée vers le dossier externe.'
+                  : 'Aucun dossier externe : une panne ou un vol du PC emporte l’unique copie.'}
+              </p>
+            ) : data.backupHealth?.external_copied_at ? (
+              <p className="text-xs mt-2 text-emerald-700 dark:text-emerald-400">
+                Copie externe à jour : {String(data.backupHealth.external_copied_at).replace('T', ' ').slice(0, 16)}
+              </p>
+            ) : null}
           </div>
           <button
             type="button"

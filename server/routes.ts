@@ -23,7 +23,7 @@ import {
   getTaxRate,
   round2,
 } from './calculations.ts';
-import { createFullBackup, listBackups, restoreFromZip, verifyBackupArchive } from './backup.ts';
+import { createFullBackup, getBackupHealth, listBackups, restoreFromZip, saveBackupSettings, verifyBackupArchive } from './backup.ts';
 import { DOCS_DIR, getDb } from './db.ts';
 import { archiveEntity, clientDependencies, isDeletionEligible, projectDependencies, restoreEntity, vehicleDependencies, workerDependencies, materialDependencies, markReviewed, isReviewDue, listLifecycleRecords, syncRetentionNotifications } from './lifecycle.ts';
 
@@ -356,6 +356,7 @@ router.get('/dashboard', requireAuth, requirePermission('dashboard:view'), (req:
   }
 
   const lastBackup = db.prepare('SELECT created_at, file_name FROM backup_history ORDER BY id DESC LIMIT 1').get() as any;
+  const backupHealth = getBackupHealth();
   const recentLogs = db.prepare('SELECT * FROM audit_logs ORDER BY id DESC LIMIT 8').all();
   const canSeeFinance = ['admin', 'accountant'].includes(req.user!.role);
 
@@ -381,6 +382,7 @@ router.get('/dashboard', requireAuth, requirePermission('dashboard:view'), (req:
       pendingAttendance,
       lastBackupAt: lastBackup?.created_at || null,
     },
+    backupHealth,
     alerts,
     activeProjects,
     unpaidInvoices: canSeeFinance ? unpaidInvoices : [],
@@ -4147,6 +4149,27 @@ router.post('/import/commit', requireAuth, requirePermission('settings:write'), 
 // ==================== BACKUP & RESTORE ====================
 router.get('/backups', requireAuth, requirePermission('backup:manage'), (_req, res) => {
   res.json(listBackups());
+});
+
+router.get('/backups/health', requireAuth, requirePermission('backup:manage'), (_req, res) => {
+  res.json(getBackupHealth());
+});
+
+router.put('/backups/settings', requireAuth, requirePermission('backup:manage'), (req: AuthedRequest, res) => {
+  try {
+    const settings = saveBackupSettings(req.body || {});
+    logAudit(
+      req.user!,
+      'UPDATE',
+      'backup_settings',
+      settings.externalDir || 'dossier non configuré',
+      '',
+      `Copie externe : ${settings.externalDir || 'aucune'} · conservation ${settings.keepManual} · alerte ${settings.warnAfterDays} jour(s)`
+    );
+    res.json(settings);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || 'Réglages de sauvegarde invalides.' });
+  }
 });
 
 router.post('/backups/create', requireAuth, requirePermission('backup:manage'), (req: AuthedRequest, res) => {
