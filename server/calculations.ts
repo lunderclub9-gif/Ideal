@@ -226,8 +226,10 @@ export function calculateProjectFinancials(projectId: number): ProjectFinancials
     )
     .get(projectId) as { cost: number };
 
+  // Cancelled expenses must not inflate the project cost: their treasury movement
+  // is counter-passed separately, but the expense line itself stays cancelled.
   const expRow = db
-    .prepare('SELECT COALESCE(SUM(amount), 0) AS cost FROM expenses WHERE project_id = ? AND is_overhead = 0')
+    .prepare("SELECT COALESCE(SUM(amount), 0) AS cost FROM expenses WHERE project_id = ? AND is_overhead = 0 AND status <> 'cancelled'")
     .get(projectId) as { cost: number };
 
   const materialsCost = round2(Math.max(0, matRow.cost));

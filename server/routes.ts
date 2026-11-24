@@ -292,7 +292,7 @@ router.get('/dashboard', requireAuth, requirePermission('dashboard:view'), (req:
   const expRow = db
     .prepare(
       `SELECT
-        (SELECT COALESCE(SUM(amount), 0) FROM expenses) +
+        (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE status <> 'cancelled') +
         (SELECT COALESCE(SUM(total_cost), 0) FROM stock_movements WHERE movement_type = 'exit') +
         (SELECT COALESCE(SUM(total_cost), 0) FROM fuel_entries) +
         (SELECT COALESCE(SUM(total_cost), 0) FROM repair_orders) AS total`
@@ -3322,7 +3322,7 @@ router.get('/taxes/summary', requireAuth, requirePermission('taxes:read'), (_req
   const ibsRate = getTaxRate('IBS', 19);
   const tapRate = getTaxRate('TAP', 0);
 
-  const expensesRow = db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM expenses').get() as { total: number };
+  const expensesRow = db.prepare("SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE status <> 'cancelled'").get() as { total: number };
   const grossProfit = Math.max(0, salesRow.ca_ht - purchRow.achats_ht - expensesRow.total);
 
   res.json({
@@ -3342,6 +3342,50 @@ router.get('/taxes/summary', requireAuth, requirePermission('taxes:read'), (_req
   });
 });
 
+const TAX_RULE_CODE = /^[A-Z0-9_]{2,32}$/;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function isValidIsoDate(value: string): boolean {
+  if (!ISO_DATE.test(value)) return false;
+  const parsed = new Date(value + 'T00:00:00Z');
+  if (!Number.isFinite(parsed.getTime())) return false;
+  // Reject rolled-over calendar dates such as 2026-02-31, which Date.parse accepts.
+  return parsed.toISOString().slice(0, 10) === value;
+}
+
+router.post('/taxes/rules', requireAuth, requirePermission('taxes:write'), (req: AuthedRequest, res) => {
+  const b = req.body || {};
+  const code = String(b.code || '').trim().toUpperCase();
+  const name = String(b.name || '').trim();
+  const rate = Number(b.rate);
+  const effectiveDate = String(b.effective_date || new Date().toISOString().slice(0, 10));
+  if (!TAX_RULE_CODE.test(code)) {
+    res.status(400).json({ error: 'Le code doit contenir 2 à 32 caractères (lettres, chiffres ou tiret bas).' });
+    return;
+  }
+  if (!name) {
+    res.status(400).json({ error: 'Le libellé de la règle fiscale est obligatoire.' });
+    return;
+  }
+  if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+    res.status(400).json({ error: 'Le taux doit être un nombre compris entre 0 et 100.' });
+    return;
+  }
+  if (!isValidIsoDate(effectiveDate)) {
+    res.status(400).json({ error: 'La date d’effet est invalide.' });
+    return;
+  }
+  const db = getDb();
+  const info = db
+    .prepare(
+      `INSERT INTO tax_rules (code, name, rate, config_json, effective_date, status, notes, validated_by)
+       VALUES (?, ?, ?, '{}', ?, 'active', ?, ?)`
+    )
+    .run(code, name, round2(rate), effectiveDate, String(b.notes || ''), req.user!.name);
+  logAudit(req.user!, 'CREATE', 'tax_rule', code, '', `${rate}%`);
+  res.status(201).json(db.prepare('SELECT * FROM tax_rules WHERE id = ?').get(info.lastInsertRowid));
+});
+
 router.put('/taxes/rules/:id', requireAuth, requirePermission('taxes:write'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const b = req.body || {};
@@ -3351,14 +3395,36 @@ router.put('/taxes/rules/:id', requireAuth, requirePermission('taxes:write'), (r
     res.status(404).json({ error: 'Règle fiscale introuvable.' });
     return;
   }
-  db.prepare('UPDATE tax_rules SET rate=?, notes=?, effective_date=?, validated_by=? WHERE id=?').run(
-    b.rate !== undefined ? Number(b.rate) : old.rate,
+  const rate = b.rate !== undefined ? Number(b.rate) : Number(old.rate);
+  if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+    res.status(400).json({ error: 'Le taux doit être un nombre compris entre 0 et 100.' });
+    return;
+  }
+  const effectiveDate = String(b.effective_date ?? old.effective_date);
+  if (!isValidIsoDate(effectiveDate)) {
+    res.status(400).json({ error: 'La date d’effet est invalide.' });
+    return;
+  }
+  const name = b.name !== undefined ? String(b.name).trim() : old.name;
+  if (!name) {
+    res.status(400).json({ error: 'Le libellé de la règle fiscale est obligatoire.' });
+    return;
+  }
+  const status = b.status !== undefined ? String(b.status) : old.status;
+  if (!['active', 'archived'].includes(status)) {
+    res.status(400).json({ error: 'Statut de règle fiscale invalide.' });
+    return;
+  }
+  db.prepare('UPDATE tax_rules SET name=?, rate=?, notes=?, effective_date=?, status=?, validated_by=? WHERE id=?').run(
+    name,
+    round2(rate),
     b.notes ?? old.notes,
-    b.effective_date ?? old.effective_date,
+    effectiveDate,
+    status,
     req.user!.name,
     id
   );
-  logAudit(req.user!, 'UPDATE', 'tax_rule', old.code, `${old.rate}%`, `${b.rate ?? old.rate}%`);
+  logAudit(req.user!, status === 'archived' && old.status !== 'archived' ? 'ARCHIVE' : 'UPDATE', 'tax_rule', old.code, `${old.rate}%`, `${rate}%`);
   res.json(db.prepare('SELECT * FROM tax_rules WHERE id = ?').get(id));
 });
 

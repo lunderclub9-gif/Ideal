@@ -54,6 +54,8 @@ jobs:
         run: npm run test:lifecycle
       - name: Simulate a complete business workflow in an isolated database
         run: npm run test:simulation
+      - name: Test tax rules, contracts, cancellations and reversals in an isolated database
+        run: npm run test:regressions
       - name: Build Microsoft Store AppX package
         shell: pwsh
         env:

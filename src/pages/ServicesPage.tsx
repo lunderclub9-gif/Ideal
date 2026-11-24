@@ -224,7 +224,7 @@ export default function ServicesPage({ permissions }: { permissions: string[] })
         <form onSubmit={save} className="space-y-3 text-xs">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="block">Code unique *
-              <input required maxLength={30} pattern="[A-Za-z0-9][A-Za-z0-9_-]{1,29}" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} placeholder="EPOXY" className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950 font-mono" />
+              <input required maxLength={30} pattern="[A-Za-z0-9][A-Za-z0-9_\-]{1,29}" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} placeholder="EPOXY" className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950 font-mono" />
             </label>
             <label className="block">Nom du travail *
               <input required maxLength={100} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Revêtement époxy" className="mt-1 w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950" />
