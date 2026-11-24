@@ -910,3 +910,207 @@ IDEAL is ready for a controlled company pilot only when a real BTP company can c
 - Operate offline on a modest Windows computer.
 
 The standard is **reliable connected workflows**, not a long feature checklist. Accuracy, traceability, data preservation, usability, and honest testing take priority over adding features quickly.
+
+
+---
+
+## 14. Complete visual redesign, company branding, and interaction design
+
+This is a first-class product requirement, not optional decoration. The agent must audit the current interface and then deliver a coherent, professional visual system across **every screen and module**. Do not redesign only the dashboard while leaving the rest of the application inconsistent.
+
+### 14.1 Company identity and blue/white brand
+
+Create a recognizable IDEAL/company visual identity using a professional **blue and white** palette.
+
+- Inspect the repository for an existing company logo, brand assets, company name, and identity files before creating anything.
+- If an approved logo already exists, preserve it and build the interface around it.
+- If no approved logo exists, create a clean, original, professional logo concept for the company using blue and white. The mark should communicate construction, engineering, precision, trust, and reliability without looking like a generic template.
+- Do not invent a legal company name, registration details, or slogan. Use the actual company identity configured in the app; allow the owner to enter or update it in Company Settings.
+- Provide a full logo, compact/icon mark, light-background version, and dark-background version if needed. Keep them visually consistent.
+- Store brand assets locally in the repository/app assets or the configured local company branding directory. The app must not require an online logo service.
+- Use the logo consistently in the login/setup screen, application header/sidebar, dashboard, loading/splash screen, reports, quotations, invoices, purchase orders, certificates, and printable/PDF documents.
+- Add Company Settings controls to upload/change the logo, preview it, and safely restore the default. Validate file type and size; do not allow arbitrary paths or unsafe SVG execution.
+- Preserve sufficient contrast and legibility at small sizes. Do not stretch or distort the logo.
+
+### 14.2 Design system and visual direction
+
+Build a small reusable design system and apply it consistently:
+
+- Primary brand: professional blue, supported by white and carefully selected neutral greys.
+- Use dark navy/blue for strong structure and headings, clean white surfaces for work areas, and restrained blue accents for primary actions and selected navigation.
+- Use semantic status colors only where they communicate meaning: success, warning, danger, information. Do not use bright colors as decoration.
+- Define design tokens for colors, typography, spacing, border radius, shadows, borders, focus rings, and elevation. Avoid scattered hard-coded colors.
+- Use a consistent font stack that renders French accents and numbers cleanly and works offline. Do not fetch fonts from the internet at runtime.
+- Use a clear typographic hierarchy: page title, section title, field label, helper text, table text, metadata.
+- Keep visual density appropriate for an ERP: information-rich but readable, with aligned columns and predictable spacing.
+- Use consistent icons from one icon family already installed or a carefully selected lightweight library. Avoid mixing unrelated icon styles.
+- Avoid excessive gradients, glassmorphism, glowing borders, giant rounded cards, unnecessary shadows, and decorative clutter.
+- Provide light theme as the default. A dark theme may be added only if it is complete and tested across every screen, dialog, chart, table, and document preview.
+- Do not use color alone to convey status; include text/icon labels.
+
+### 14.3 Application shell and navigation redesign
+
+Reorganize the entire application so users can understand where they are and reach frequent tasks quickly.
+
+- Create a consistent application shell with a branded sidebar, top bar, main content region, and optional contextual panel.
+- Group navigation into understandable business sections, for example:
+  - Accueil
+  - Ventes & Clients
+  - Projets & Chantiers
+  - Études & Devis (BOQ, estimates, rate analysis)
+  - Achats & Fournisseurs
+  - Stocks & Matériaux
+  - Personnel & Paie
+  - Parc & Maintenance
+  - Finance & Trésorerie
+  - Qualité & Sécurité
+  - Documents & Rapports
+  - Administration & Paramètres
+- Use the real modules discovered in the repository. Do not create duplicate navigation destinations or links to pages that do not exist.
+- Support collapsible sidebar behavior with clear active-page indication and accessible tooltips when collapsed.
+- Keep navigation labels and icons aligned. Use consistent spacing and clear section separators.
+- Add a top bar with page context/breadcrumbs, global search entry, notifications, current user/account menu, and quick access to settings where appropriate.
+- Provide a clear page title and primary action at the top of every major page.
+- Ensure the shell adapts to smaller window sizes without hiding critical actions.
+- Keep keyboard navigation and focus order logical.
+- Preserve direct navigation/deep links and browser/Electron back behavior where currently supported.
+
+### 14.4 Dashboard and workspace layout
+
+Redesign the dashboard as a useful operational command center, not a decorative landing page.
+
+- Show real, permission-filtered KPIs from the database: active projects, work progress, outstanding customer balances, supplier obligations, cash/bank summary, stock alerts, workforce/attendance, equipment maintenance, and overdue actions.
+- Use a sensible grid with consistent card sizes and hierarchy.
+- Allow date/project filters where meaningful; show the active filter state.
+- Make each KPI card clickable only when it can navigate to a relevant filtered list or detail view.
+- Add a concise “À traiter” / pending actions area for approvals, overdue invoices, low stock, expiring documents, maintenance, and delayed tasks.
+- Use compact charts only when they answer a business question; provide labels, legends, accessible text summaries, and empty states.
+- Do not display fake numbers, demo charts, or hard-coded percentages.
+- Avoid loading every report on initial dashboard render. Load only the data needed for the visible dashboard and lazy-load secondary details.
+
+### 14.5 Button hierarchy and action placement
+
+Audit and standardize every button in every module.
+
+- Each page should have one visually dominant primary action (for example “Nouveau projet”, “Ajouter un client”, or “Créer une facture”) when the user has permission.
+- Secondary actions should be visually quieter and grouped logically.
+- Destructive actions must be visually distinct, require confirmation, and never be placed beside primary actions in a way that invites accidental clicks.
+- Use consistent button sizes, heights, icon placement, labels, padding, and states.
+- Prefer explicit French text labels for important actions; use icon-only buttons only for universally recognizable actions and provide accessible labels/tooltips.
+- Group related actions into a clear toolbar or overflow menu when space is limited.
+- Keep row-level actions consistent across tables (view, edit, print/export, archive, more).
+- Do not show actions the current user cannot perform.
+- Prevent duplicate submissions and show progress while saving.
+- Make disabled states visibly disabled and explain why an action is unavailable where useful.
+- Every action must follow the universal interaction contract in Section 4; visual polish must never hide missing functionality.
+
+### 14.6 Forms, cards, panels, tables, and dialogs
+
+- Standardize form layouts, label widths, field spacing, required markers, help text, validation messages, and footer actions.
+- Break long forms into meaningful sections or steps; preserve entered data when moving between sections.
+- Use two-column forms only when the window width permits; collapse to one column on narrow screens.
+- Use consistent cards/panels for related content, not a card around every field.
+- Improve tables with readable headers, row hover/focus, aligned numeric columns, clear status chips, responsive overflow, search, filters, sorting, and pagination/incremental loading.
+- Use sticky headers only when they improve usability and do not create nested-scroll problems.
+- Make row selection and bulk actions explicit, permission-aware, and safe.
+- Standardize modal/dialog width, title, close behavior, focus handling, confirmation copy, and action placement.
+- Avoid opening a modal for every simple action; use inline editing or a dedicated page where that creates a clearer workflow.
+- Add well-designed loading, empty, error, and no-results states with useful next actions.
+- Keep print layouts clean and hide application navigation and interactive-only controls when printing.
+
+### 14.7 Mouse, hover, click, and micro-interactions
+
+Add subtle, polished interactions so the app feels responsive and modern:
+
+- Buttons: restrained hover color/brightness change, clear pressed state, and a short transition.
+- Sidebar items: subtle hover background, active indicator, and clear focus state.
+- Cards: small hover elevation or border emphasis only when the card is actionable.
+- Tables: subtle row hover and selected-row state; do not make non-clickable rows look clickable.
+- Inputs: clear focus border/ring and validation state.
+- Menus and dialogs: smooth, short open/close transitions with no disorienting movement.
+- Tooltips: appear after a short delay and never cover the control being explained.
+- Click feedback: clear pressed/selected state; avoid exaggerated ripple effects.
+- Loading: lightweight progress indicator or skeleton that does not shift the layout.
+- Use pointer cursor only on genuinely interactive elements. Use default cursor for static content and text selection where appropriate.
+- Ensure hover is never the only way to reveal an action; touch and keyboard users must have equivalent access.
+- Avoid custom cursor replacements, cursor-following visual effects, continuous particle effects, heavy 3D scenes, and animations that distract from business work.
+- Keep typical interaction transitions short (roughly 120–220 ms) and use transform/opacity where possible to avoid expensive layout recalculation.
+- Respect operating-system reduced-motion preferences and provide an in-app motion setting: System / Reduced / Off.
+- All core actions must remain understandable and usable with animations disabled.
+
+### 14.8 Animation and performance constraints
+
+Animations are allowed when they improve clarity and feedback, but they must not compromise performance or accessibility.
+
+- Use CSS transitions and lightweight CSS keyframes for simple UI motion.
+- Avoid adding a heavy animation framework unless the existing project already uses it and there is a measured need.
+- Do not animate large lists, entire dashboards, or every table row continuously.
+- No autoplay video, animated background, particle field, or continuous decorative motion in the ERP workspace.
+- Animate only opacity and transform where practical.
+- Avoid expensive blur/filter/backdrop effects and large shadow animations.
+- Disable or simplify non-essential animation on low-power devices or when reduced motion is enabled.
+- Verify scrolling, typing, opening tables, and switching modules remain responsive on the 4 GB RAM target.
+- Include a manual UI performance checklist and, where possible, automated checks for layout stability and interaction responsiveness.
+
+### 14.9 Responsive behavior and window management
+
+- Support maximized desktop use and smaller resizable windows.
+- At wide sizes, use sidebar + main workspace and optional right-side context panels.
+- At medium sizes, collapse the sidebar and stack secondary panels.
+- At narrow sizes, use a compact navigation drawer and single-column forms.
+- Ensure dialogs fit within the viewport and remain scrollable.
+- Prevent horizontal overflow except inside intentionally scrollable wide tables.
+- Do not hide save, cancel, search, or critical actions outside the visible viewport.
+- Test at representative window sizes, including 1280×720, 1024×768, and a narrow window.
+
+### 14.10 Branding in business documents
+
+The visual identity must carry through to generated business documents:
+
+- Company logo and company details in quotations, invoices, purchase orders, payment receipts, progress certificates, payslips where authorized, and reports.
+- Consistent blue/white document styling with restrained use of brand color.
+- Clear document title, reference, dates, customer/supplier details, line-item tables, totals, tax breakdown, payment terms, signatures/stamps where configured, and page numbers.
+- Ensure documents remain legible in grayscale printing.
+- Never fabricate company identifiers, tax numbers, legal text, or signatures.
+- Provide a preview before issuing/printing high-impact documents.
+- Keep the original data and calculations authoritative; the document template must not recalculate financial values differently from the backend.
+
+### 14.11 Visual QA and acceptance
+
+The agent must complete a visual audit of every page and reusable component, not just a screenshot of the home page.
+
+Required process:
+
+1. Inventory every route/page and shared UI component.
+2. Capture baseline screenshots at representative desktop and narrow window sizes where tooling permits.
+3. Identify inconsistent spacing, typography, colors, button placement, icon styles, table patterns, empty states, and responsive breakage.
+4. Implement shared design tokens/components first, then migrate pages in coherent groups.
+5. Check every interaction with mouse, keyboard, and touch-equivalent input where supported.
+6. Verify hover, focus, active, pressed, disabled, loading, success, and error states.
+7. Verify that every clickable KPI/card/table row navigates to the correct permitted destination.
+8. Verify all dialogs, forms, search, filters, sorting, pagination, and exports.
+9. Check French text overflow, long customer/project names, large DZD values, and date formatting.
+10. Confirm light/dark logo variants and print output if a dark theme exists.
+11. Re-run functional, permission, end-to-end, and packaged Windows tests after the redesign.
+12. Compare performance before and after; remove effects that materially slow the app.
+
+**Visual redesign acceptance gate:**
+
+- The application has a consistent blue-and-white company identity and a usable logo.
+- Every page follows the same layout, typography, spacing, button hierarchy, and component behavior.
+- Navigation and dashboard are clear, functional, and based on real data.
+- All controls remain discoverable and operable with mouse and keyboard.
+- Hover/click/transition animations are subtle, accessible, and optional.
+- No dead buttons, fake links, decorative controls masquerading as actions, or hover-only functionality remain.
+- The redesign does not break existing workflows, permissions, data, printing, or offline operation.
+- Performance remains acceptable on the 4 GB RAM target.
+
+### 14.12 Add this requirement to every coding-agent task
+
+When implementing any module, do not treat UI as a final cosmetic pass. Build the feature using the shared design system from the start. Match the blue/white brand, standard page shell, button hierarchy, form/table/dialog patterns, responsive behavior, and subtle interaction states. Test the feature visually and functionally. If an existing page is inconsistent, improve it without removing any working capability.
+
+### 14.13 Updated compact prompt supplement
+
+Append this instruction to the compact execution prompt whenever delegating visual work:
+
+> Also implement Section 14, “Complete visual redesign, company branding, and interaction design.” Audit and redesign every page consistently around a professional blue-and-white company identity and an original/approved company logo. Reorganize the sidebar, top bar, dashboard, page sections, buttons, forms, tables, cards, dialogs, and document templates. Make all mouse hover, click, focus, pressed, loading, and navigation interactions polished and functional. Add only subtle lightweight animations, with System/Reduced/Off motion settings and full keyboard/touch accessibility. Do not use heavy effects or custom cursors. Preserve the existing workflows and 4 GB RAM/offline constraints. Validate every page and every control, not only the dashboard.
