@@ -213,6 +213,78 @@ try {
   r = await request(`/contracts/milestones/${firstMilestone.id}`, 'PUT', { received_amount: 40000 }, token);
   assert.equal(r.data.status, 'paid', 'full receipt sets paid status');
 
+  // -------- BOQ: versions, sections, items, rate analysis and approval --------
+  r = await request(`/projects/${projectId}/boq`, 'GET', undefined, token);
+  assert.equal(r.status, 200, 'BOQ list loads');
+  assert.equal(r.data.versions.length, 0, 'a new project has no BOQ version');
+
+  r = await request(`/projects/${projectId}/boq/versions`, 'POST', { label: 'Estimation initiale' }, token);
+  assert.equal(r.status, 201, 'create BOQ version');
+  const boqV1 = Number(r.data.id);
+  assert.equal(r.data.version_number, 1, 'first BOQ version is numbered 1');
+  assert.equal(r.data.status, 'draft', 'new BOQ version is a draft');
+
+  r = await request(`/boq/versions/${boqV1}/sections`, 'POST', { code: 'A', title: 'Gros œuvre', sort_order: 1 }, token);
+  assert.equal(r.status, 201, 'create BOQ section');
+  const boqSectionId = Number(r.data.sections[0].id);
+  assert.equal(r.data.sections.length, 1, 'section is stored');
+
+  r = await request(
+    `/boq/versions/${boqV1}/items`,
+    'POST',
+    { section_id: boqSectionId, code: 'A.1', description: 'Béton armé', unit: 'm³', quantity: 10, unit_price: 1000 },
+    token
+  );
+  assert.equal(r.status, 201, 'create BOQ item');
+  const boqItemId = Number(r.data.items[0].id);
+  assert.equal(Number(r.data.items[0].line_ht), 10000, 'item total HT is quantity × unit price');
+  assert.equal(Number(r.data.items[0].unit_cost), 0, 'item has no cost before rate analysis');
+
+  r = await request(`/boq/items/${boqItemId}/resources`, 'POST', { resource_type: 'material', label: 'Ciment', unit: 'sac', quantity: 2, unit_cost: 150 }, token);
+  assert.equal(r.status, 201, 'add material resource');
+  r = await request(`/boq/items/${boqItemId}/resources`, 'POST', { resource_type: 'labour', label: 'Équipe', unit: 'jour', quantity: 3, unit_cost: 200 }, token);
+  assert.equal(r.status, 201, 'add labour resource');
+  assert.equal(Number(r.data.items[0].unit_cost), 900, 'unit cost is the resource breakdown total');
+  assert.equal(Number(r.data.totals.total_ht), 10000, 'BOQ total HT is computed');
+  assert.equal(Number(r.data.totals.total_cost), 9000, 'BOQ cost is computed');
+  assert.equal(Number(r.data.totals.margin), 1000, 'BOQ margin is computed');
+  assert.equal(Number(r.data.totals.margin_percent), 10, 'BOQ margin percent is computed');
+
+  r = await request(`/boq/versions/${boqV1}/items`, 'POST', { description: 'Prix négatif', unit: 'U', quantity: -1, unit_price: -5 }, token);
+  assert.equal(r.status, 400, 'negative BOQ quantity and price are rejected');
+  r = await request(`/boq/versions/${boqV1}/items`, 'POST', { description: '   ', unit: 'U', quantity: 1, unit_price: 1 }, token);
+  assert.equal(r.status, 400, 'empty BOQ item description is rejected');
+  r = await request(`/boq/items/${boqItemId}/resources`, 'POST', { resource_type: 'magic', label: 'X', quantity: 1, unit_cost: 1 }, token);
+  assert.equal(r.status, 400, 'unknown BOQ resource type is rejected');
+
+  r = await request(`/projects/${projectId}/boq/versions`, 'POST', { label: 'Version vide' }, token);
+  assert.equal(r.status, 201, 'create a second BOQ version');
+  const boqEmpty = Number(r.data.id);
+  r = await request(`/boq/versions/${boqEmpty}/approve`, 'POST', {}, token);
+  assert.equal(r.status, 400, 'an empty BOQ version cannot be approved');
+
+  r = await request(`/boq/versions/${boqV1}/duplicate`, 'POST', {}, token);
+  assert.equal(r.status, 201, 'duplicate a BOQ version into a revision');
+  const boqV3 = Number(r.data.id);
+  assert.equal(r.data.status, 'draft', 'duplicated BOQ version is a draft');
+  assert.equal(r.data.sections.length, 1, 'duplicated version keeps its sections');
+  assert.equal(r.data.items.length, 1, 'duplicated version keeps its items');
+  assert.equal(r.data.items[0].resources.length, 2, 'duplicated version keeps the rate analysis');
+  assert.equal(Number(r.data.totals.total_ht), 10000, 'duplicated version keeps its totals');
+
+  r = await request(`/boq/versions/${boqV1}/approve`, 'POST', {}, token);
+  assert.equal(r.status, 200, 'approve a BOQ version');
+  assert.equal(r.data.status, 'approved', 'approved BOQ status is stored');
+
+  r = await request(`/boq/items/${boqItemId}`, 'PUT', { unit_price: 1200 }, token);
+  assert.equal(r.status, 400, 'an approved BOQ version can no longer be edited');
+
+  r = await request(`/boq/versions/${boqV3}/approve`, 'POST', {}, token);
+  assert.equal(r.status, 200, 'approve the BOQ revision');
+  r = await request(`/projects/${projectId}/boq`, 'GET', undefined, token);
+  assert.equal(r.data.versions.find((v: any) => v.id === boqV3).status, 'approved', 'latest approved BOQ is the reference');
+  assert.equal(r.data.versions.find((v: any) => v.id === boqV1).status, 'superseded', 'previous approved BOQ is superseded');
+
   // -------- Cancelled expense must stop counting as a cost --------
   r = await request('/expenses', 'POST', {
     category: 'Transport',
@@ -276,6 +348,8 @@ try {
   assert.equal(r.status, 403, 'driver cannot create tax rules');
   r = await request('/taxes/summary', 'GET', undefined, driverToken);
   assert.equal(r.status, 403, 'driver cannot read the tax summary');
+  r = await request(`/boq/versions/${boqV3}/approve`, 'POST', {}, driverToken);
+  assert.equal(r.status, 403, 'driver cannot approve a BOQ version');
 
   r = await request('/auth/login', 'POST', { username: 'store_test', password: 'Store-Password-2026' });
   assert.equal(r.status, 200, 'storekeeper login');
@@ -284,6 +358,8 @@ try {
   assert.equal(r.status, 403, 'storekeeper cannot permanently delete a client');
   r = await request(`/expenses/${expenseId}/cancel`, 'POST', {}, storeToken);
   assert.equal(r.status, 403, 'storekeeper cannot cancel expenses');
+  r = await request(`/projects/${projectId}/boq/versions`, 'POST', { label: 'Interdit' }, storeToken);
+  assert.equal(r.status, 403, 'storekeeper cannot create a BOQ version');
 
   assert.ok(fs.existsSync(path.join(dataDir, 'gestionpro.db')), 'database lives inside the isolated temporary directory');
 

@@ -843,4 +843,65 @@ function runMigrations(db: Database.Database) {
     db.exec("UPDATE treasury_transactions SET status='active' WHERE status IS NULL OR status=''");
     db.prepare('INSERT INTO schema_migrations (version) VALUES (6)').run();
   }
+
+  // Version 7: Bill of Quantities (BOQ) — versioned estimates with sections, items
+  // and editable rate analysis (resource breakdown). Additive only; no existing table is modified.
+  const migration7 = db.prepare('SELECT version FROM schema_migrations WHERE version = 7').get();
+  if (!migration7) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS boq_versions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        version_number INTEGER NOT NULL,
+        label TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','approved','superseded')),
+        notes TEXT DEFAULT '',
+        created_by INTEGER REFERENCES users(id),
+        approved_by INTEGER REFERENCES users(id),
+        approved_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(project_id, version_number)
+      );
+
+      CREATE TABLE IF NOT EXISTS boq_sections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        version_id INTEGER NOT NULL REFERENCES boq_versions(id) ON DELETE CASCADE,
+        code TEXT DEFAULT '',
+        title TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 1
+      );
+
+      CREATE TABLE IF NOT EXISTS boq_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        version_id INTEGER NOT NULL REFERENCES boq_versions(id) ON DELETE CASCADE,
+        section_id INTEGER REFERENCES boq_sections(id) ON DELETE SET NULL,
+        code TEXT DEFAULT '',
+        description TEXT NOT NULL,
+        unit TEXT NOT NULL DEFAULT 'U',
+        quantity REAL NOT NULL DEFAULT 0,
+        unit_price REAL NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS boq_item_resources (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id INTEGER NOT NULL REFERENCES boq_items(id) ON DELETE CASCADE,
+        resource_type TEXT NOT NULL CHECK(resource_type IN ('material','labour','equipment','subcontract','transport')),
+        label TEXT NOT NULL,
+        unit TEXT DEFAULT '',
+        quantity REAL NOT NULL DEFAULT 0,
+        unit_cost REAL NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 1
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_boq_versions_project ON boq_versions(project_id);
+      CREATE INDEX IF NOT EXISTS idx_boq_sections_version ON boq_sections(version_id);
+      CREATE INDEX IF NOT EXISTS idx_boq_items_version ON boq_items(version_id);
+      CREATE INDEX IF NOT EXISTS idx_boq_items_section ON boq_items(section_id);
+      CREATE INDEX IF NOT EXISTS idx_boq_resources_item ON boq_item_resources(item_id);
+    `);
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (7)').run();
+  }
 }

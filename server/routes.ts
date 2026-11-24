@@ -4214,4 +4214,476 @@ router.post('/lifecycle/notifications/sync', requireAuth, requirePermission('aud
   res.json({ created });
 });
 
+// ==================== BOQ / ESTIMATES / RATE ANALYSIS ====================
+const BOQ_RESOURCE_TYPES = ['material', 'labour', 'equipment', 'subcontract', 'transport'];
+
+function boqItemTotals(item: any) {
+  const resources = Array.isArray(item.resources) ? item.resources : [];
+  const unitCost = round2(
+    resources.reduce((sum: number, r: any) => sum + Number(r.quantity || 0) * Number(r.unit_cost || 0), 0)
+  );
+  const quantity = Number(item.quantity || 0);
+  const unitPrice = Number(item.unit_price || 0);
+  return { ...item, unit_cost: unitCost, line_ht: round2(quantity * unitPrice), line_cost: round2(quantity * unitCost) };
+}
+
+function loadBoqVersion(versionId: number) {
+  const db = getDb();
+  const version = db
+    .prepare('SELECT v.*, u.name AS created_by_name FROM boq_versions v LEFT JOIN users u ON u.id = v.created_by WHERE v.id = ?')
+    .get(versionId) as any;
+  if (!version) return null;
+  const sections = db.prepare('SELECT * FROM boq_sections WHERE version_id = ? ORDER BY sort_order ASC, id ASC').all(versionId) as any[];
+  const items = db.prepare('SELECT * FROM boq_items WHERE version_id = ? ORDER BY sort_order ASC, id ASC').all(versionId) as any[];
+  const resources = db
+    .prepare(
+      `SELECT r.* FROM boq_item_resources r
+       JOIN boq_items i ON i.id = r.item_id
+       WHERE i.version_id = ? ORDER BY r.sort_order ASC, r.id ASC`
+    )
+    .all(versionId) as any[];
+  const byItem = new Map<number, any[]>();
+  for (const r of resources) {
+    const list = byItem.get(r.item_id) || [];
+    list.push(r);
+    byItem.set(r.item_id, list);
+  }
+  const computed = items.map((i) => boqItemTotals({ ...i, resources: byItem.get(i.id) || [] }));
+  const totalHt = round2(computed.reduce((s, i) => s + i.line_ht, 0));
+  const totalCost = round2(computed.reduce((s, i) => s + i.line_cost, 0));
+  return {
+    ...version,
+    sections,
+    items: computed,
+    totals: {
+      item_count: computed.length,
+      total_ht: totalHt,
+      total_cost: totalCost,
+      margin: round2(totalHt - totalCost),
+      margin_percent: totalHt > 0 ? round2(((totalHt - totalCost) / totalHt) * 100) : 0,
+    },
+  };
+}
+
+function readDraftBoqVersion(versionId: number, res: express.Response) {
+  const version = getDb().prepare('SELECT * FROM boq_versions WHERE id = ?').get(versionId) as any;
+  if (!version) {
+    res.status(404).json({ error: 'Version de BOQ introuvable.' });
+    return null;
+  }
+  if (version.status !== 'draft') {
+    res.status(400).json({ error: 'Cette version de BOQ est approuvée ou remplacée : dupliquez-la pour la modifier.' });
+    return null;
+  }
+  return version;
+}
+
+function readBoqItemDraft(itemId: number, res: express.Response) {
+  const item = getDb().prepare('SELECT * FROM boq_items WHERE id = ?').get(itemId) as any;
+  if (!item) {
+    res.status(404).json({ error: 'Poste de BOQ introuvable.' });
+    return null;
+  }
+  const version = getDb().prepare('SELECT * FROM boq_versions WHERE id = ?').get(item.version_id) as any;
+  if (!version || version.status !== 'draft') {
+    res.status(400).json({ error: 'Seule une version de BOQ en brouillon peut être modifiée.' });
+    return null;
+  }
+  return item;
+}
+
+function normalizeBoqUnit(value: unknown): string | null {
+  const unit = String(value ?? 'U').trim();
+  if (!unit) return 'U';
+  if (unit.length > 20) return null;
+  return unit;
+}
+
+function normalizeBoqQuantity(value: unknown, fallback: number): number | null {
+  const n = value === undefined ? fallback : Number(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return round2(n);
+}
+
+router.get('/projects/:id/boq', requireAuth, requirePermission('projects:read'), (req, res) => {
+  const projectId = Number(req.params.id);
+  const db = getDb();
+  const project = db.prepare('SELECT id, project_number, title FROM projects WHERE id = ?').get(projectId) as any;
+  if (!project) {
+    res.status(404).json({ error: 'Chantier introuvable.' });
+    return;
+  }
+  const versions = db
+    .prepare('SELECT id FROM boq_versions WHERE project_id = ? ORDER BY version_number DESC')
+    .all(projectId) as Array<{ id: number }>;
+  const detailed = versions.map((v) => loadBoqVersion(v.id));
+  res.json({
+    project,
+    versions: detailed.map((v: any) => ({
+      id: v.id,
+      project_id: v.project_id,
+      version_number: v.version_number,
+      label: v.label,
+      status: v.status,
+      notes: v.notes,
+      created_by_name: v.created_by_name,
+      approved_at: v.approved_at,
+      created_at: v.created_at,
+      updated_at: v.updated_at,
+      totals: v.totals,
+      section_count: v.sections.length,
+    })),
+  });
+});
+
+router.post('/projects/:id/boq/versions', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const projectId = Number(req.params.id);
+  const db = getDb();
+  const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId) as any;
+  if (!project) {
+    res.status(404).json({ error: 'Chantier introuvable.' });
+    return;
+  }
+  const createVersion = db.transaction(() => {
+    const next = db
+      .prepare('SELECT COALESCE(MAX(version_number), 0) + 1 AS n FROM boq_versions WHERE project_id = ?')
+      .get(projectId) as { n: number };
+    const info = db
+      .prepare(
+        `INSERT INTO boq_versions (project_id, version_number, label, status, notes, created_by)
+         VALUES (?, ?, ?, 'draft', ?, ?)`
+      )
+      .run(projectId, next.n, String(req.body?.label || `Version ${next.n}`).trim(), String(req.body?.notes || ''), req.user!.id);
+    return Number(info.lastInsertRowid);
+  });
+  const versionId = createVersion.immediate();
+  logAudit(req.user!, 'CREATE', 'boq_version', versionId, '', `Chantier ${projectId}`);
+  res.status(201).json(loadBoqVersion(versionId));
+});
+
+router.get('/boq/versions/:id', requireAuth, requirePermission('projects:read'), (req, res) => {
+  const version = loadBoqVersion(Number(req.params.id));
+  if (!version) {
+    res.status(404).json({ error: 'Version de BOQ introuvable.' });
+    return;
+  }
+  res.json(version);
+});
+
+router.put('/boq/versions/:id', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const version = readDraftBoqVersion(Number(req.params.id), res) as any;
+  if (!version) return;
+  const label = String(req.body?.label ?? version.label).trim();
+  if (!label) {
+    res.status(400).json({ error: 'Le libellé de la version est obligatoire.' });
+    return;
+  }
+  getDb()
+    .prepare("UPDATE boq_versions SET label = ?, notes = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(label, String(req.body?.notes ?? version.notes), version.id);
+  logAudit(req.user!, 'UPDATE', 'boq_version', version.id, version.label, label);
+  res.json(loadBoqVersion(version.id));
+});
+
+router.post('/boq/versions/:id/approve', requireAuth, requirePermission('projects:approve'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const version = db.prepare('SELECT * FROM boq_versions WHERE id = ?').get(id) as any;
+  if (!version) {
+    res.status(404).json({ error: 'Version de BOQ introuvable.' });
+    return;
+  }
+  if (version.status === 'approved') {
+    res.status(400).json({ error: 'Cette version de BOQ est déjà approuvée.' });
+    return;
+  }
+  const itemCount = (db.prepare('SELECT COUNT(*) AS c FROM boq_items WHERE version_id = ?').get(id) as any).c;
+  if (itemCount === 0) {
+    res.status(400).json({ error: 'Impossible d’approuver une version de BOQ sans aucun poste.' });
+    return;
+  }
+  db.transaction(() => {
+    db.prepare("UPDATE boq_versions SET status='superseded', updated_at=datetime('now') WHERE project_id = ? AND status='approved' AND id <> ?").run(
+      version.project_id,
+      id
+    );
+    db.prepare("UPDATE boq_versions SET status='approved', approved_by=?, approved_at=datetime('now'), updated_at=datetime('now') WHERE id=?").run(
+      req.user!.id,
+      id
+    );
+  })();
+  logAudit(req.user!, 'APPROVE', 'boq_version', id, version.status, 'approved');
+  res.json(loadBoqVersion(id));
+});
+
+router.post('/boq/versions/:id/duplicate', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const source = db.prepare('SELECT * FROM boq_versions WHERE id = ?').get(id) as any;
+  if (!source) {
+    res.status(404).json({ error: 'Version de BOQ introuvable.' });
+    return;
+  }
+  const newId = db.transaction(() => {
+    const next = db
+      .prepare('SELECT COALESCE(MAX(version_number), 0) + 1 AS n FROM boq_versions WHERE project_id = ?')
+      .get(source.project_id) as { n: number };
+    const info = db
+      .prepare(
+        `INSERT INTO boq_versions (project_id, version_number, label, status, notes, created_by)
+         VALUES (?, ?, ?, 'draft', ?, ?)`
+      )
+      .run(
+        source.project_id,
+        next.n,
+        String(req.body?.label || `Version ${next.n}`).trim(),
+        String(req.body?.notes || `Révision de la version ${source.version_number}`),
+        req.user!.id
+      );
+    const copyId = Number(info.lastInsertRowid);
+    const sectionMap = new Map<number, number>();
+    for (const s of db.prepare('SELECT * FROM boq_sections WHERE version_id = ? ORDER BY sort_order, id').all(id) as any[]) {
+      const si = db
+        .prepare('INSERT INTO boq_sections (version_id, code, title, sort_order) VALUES (?, ?, ?, ?)')
+        .run(copyId, s.code, s.title, s.sort_order);
+      sectionMap.set(s.id, Number(si.lastInsertRowid));
+    }
+    for (const item of db.prepare('SELECT * FROM boq_items WHERE version_id = ? ORDER BY sort_order, id').all(id) as any[]) {
+      const ii = db
+        .prepare(
+          `INSERT INTO boq_items (version_id, section_id, code, description, unit, quantity, unit_price, sort_order)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          copyId,
+          item.section_id ? sectionMap.get(item.section_id) ?? null : null,
+          item.code,
+          item.description,
+          item.unit,
+          item.quantity,
+          item.unit_price,
+          item.sort_order
+        );
+      const newItemId = Number(ii.lastInsertRowid);
+      for (const r of db.prepare('SELECT * FROM boq_item_resources WHERE item_id = ? ORDER BY sort_order, id').all(item.id) as any[]) {
+        db.prepare(
+          `INSERT INTO boq_item_resources (item_id, resource_type, label, unit, quantity, unit_cost, sort_order)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+        ).run(newItemId, r.resource_type, r.label, r.unit, r.quantity, r.unit_cost, r.sort_order);
+      }
+    }
+    return copyId;
+  })();
+  logAudit(req.user!, 'DUPLICATE', 'boq_version', newId, source.version_number, 'Nouvelle révision brouillon');
+  res.status(201).json(loadBoqVersion(newId));
+});
+
+router.post('/boq/versions/:id/sections', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const version = readDraftBoqVersion(Number(req.params.id), res) as any;
+  if (!version) return;
+  const title = String(req.body?.title || '').trim();
+  if (!title) {
+    res.status(400).json({ error: 'Le titre de la section est obligatoire.' });
+    return;
+  }
+  const info = getDb()
+    .prepare('INSERT INTO boq_sections (version_id, code, title, sort_order) VALUES (?, ?, ?, ?)')
+    .run(version.id, String(req.body?.code || '').trim(), title, Number(req.body?.sort_order || 1));
+  logAudit(req.user!, 'CREATE', 'boq_section', info.lastInsertRowid, '', title);
+  res.status(201).json(loadBoqVersion(version.id));
+});
+
+router.put('/boq/sections/:id', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const db = getDb();
+  const section = db.prepare('SELECT * FROM boq_sections WHERE id = ?').get(Number(req.params.id)) as any;
+  if (!section) {
+    res.status(404).json({ error: 'Section de BOQ introuvable.' });
+    return;
+  }
+  const version = readDraftBoqVersion(section.version_id, res) as any;
+  if (!version) return;
+  const title = String(req.body?.title ?? section.title).trim();
+  if (!title) {
+    res.status(400).json({ error: 'Le titre de la section est obligatoire.' });
+    return;
+  }
+  db.prepare('UPDATE boq_sections SET code = ?, title = ?, sort_order = ? WHERE id = ?').run(
+    String(req.body?.code ?? section.code),
+    title,
+    Number(req.body?.sort_order ?? section.sort_order),
+    section.id
+  );
+  logAudit(req.user!, 'UPDATE', 'boq_section', section.id, section.title, title);
+  res.json(loadBoqVersion(version.id));
+});
+
+router.delete('/boq/sections/:id', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const db = getDb();
+  const section = db.prepare('SELECT * FROM boq_sections WHERE id = ?').get(Number(req.params.id)) as any;
+  if (!section) {
+    res.status(404).json({ error: 'Section de BOQ introuvable.' });
+    return;
+  }
+  const version = readDraftBoqVersion(section.version_id, res) as any;
+  if (!version) return;
+  db.prepare('DELETE FROM boq_sections WHERE id = ?').run(section.id);
+  logAudit(req.user!, 'DELETE', 'boq_section', section.id, section.title, 'Section supprimée (brouillon)');
+  res.json(loadBoqVersion(version.id));
+});
+
+router.post('/boq/versions/:id/items', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const version = readDraftBoqVersion(Number(req.params.id), res) as any;
+  if (!version) return;
+  const b = req.body || {};
+  const description = String(b.description || '').trim();
+  const unit = normalizeBoqUnit(b.unit);
+  const quantity = normalizeBoqQuantity(b.quantity, 0);
+  const unitPrice = normalizeBoqQuantity(b.unit_price, 0);
+  if (!description) {
+    res.status(400).json({ error: 'La désignation du poste est obligatoire.' });
+    return;
+  }
+  if (unit === null) {
+    res.status(400).json({ error: 'L’unité de mesure est invalide (20 caractères maximum).' });
+    return;
+  }
+  if (quantity === null || unitPrice === null) {
+    res.status(400).json({ error: 'La quantité et le prix unitaire doivent être des nombres positifs ou nuls.' });
+    return;
+  }
+  const sectionId = b.section_id ? Number(b.section_id) : null;
+  if (sectionId !== null) {
+    const section = getDb().prepare('SELECT id FROM boq_sections WHERE id = ? AND version_id = ?').get(sectionId, version.id);
+    if (!section) {
+      res.status(400).json({ error: 'La section sélectionnée n’appartient pas à cette version de BOQ.' });
+      return;
+    }
+  }
+  const info = getDb()
+    .prepare(
+      `INSERT INTO boq_items (version_id, section_id, code, description, unit, quantity, unit_price, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(version.id, sectionId, String(b.code || '').trim(), description, unit, quantity, unitPrice, Number(b.sort_order || 1));
+  logAudit(req.user!, 'CREATE', 'boq_item', info.lastInsertRowid, '', description);
+  res.status(201).json(loadBoqVersion(version.id));
+});
+
+router.put('/boq/items/:id', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const item = readBoqItemDraft(Number(req.params.id), res) as any;
+  if (!item) return;
+  const b = req.body || {};
+  const description = String(b.description ?? item.description).trim();
+  const unit = normalizeBoqUnit(b.unit ?? item.unit);
+  const quantity = normalizeBoqQuantity(b.quantity, Number(item.quantity));
+  const unitPrice = normalizeBoqQuantity(b.unit_price, Number(item.unit_price));
+  if (!description) {
+    res.status(400).json({ error: 'La désignation du poste est obligatoire.' });
+    return;
+  }
+  if (unit === null || quantity === null || unitPrice === null) {
+    res.status(400).json({ error: 'Unité, quantité et prix unitaire doivent être valides et positifs ou nuls.' });
+    return;
+  }
+  let sectionId = item.section_id;
+  if (b.section_id !== undefined) {
+    sectionId = b.section_id ? Number(b.section_id) : null;
+    if (sectionId !== null) {
+      const section = getDb().prepare('SELECT id FROM boq_sections WHERE id = ? AND version_id = ?').get(sectionId, item.version_id);
+      if (!section) {
+        res.status(400).json({ error: 'La section sélectionnée n’appartient pas à cette version de BOQ.' });
+        return;
+      }
+    }
+  }
+  getDb()
+    .prepare('UPDATE boq_items SET section_id = ?, code = ?, description = ?, unit = ?, quantity = ?, unit_price = ?, sort_order = ? WHERE id = ?')
+    .run(sectionId, String(b.code ?? item.code).trim(), description, unit, quantity, unitPrice, Number(b.sort_order ?? item.sort_order), item.id);
+  logAudit(req.user!, 'UPDATE', 'boq_item', item.id, item.description, description);
+  res.json(loadBoqVersion(item.version_id));
+});
+
+router.delete('/boq/items/:id', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const item = readBoqItemDraft(Number(req.params.id), res) as any;
+  if (!item) return;
+  getDb().prepare('DELETE FROM boq_items WHERE id = ?').run(item.id);
+  logAudit(req.user!, 'DELETE', 'boq_item', item.id, item.description, 'Poste supprimé (brouillon)');
+  res.json(loadBoqVersion(item.version_id));
+});
+
+router.post('/boq/items/:id/resources', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const item = readBoqItemDraft(Number(req.params.id), res) as any;
+  if (!item) return;
+  const b = req.body || {};
+  const resourceType = String(b.resource_type || 'material');
+  const label = String(b.label || '').trim();
+  const quantity = normalizeBoqQuantity(b.quantity, 0);
+  const unitCost = normalizeBoqQuantity(b.unit_cost, 0);
+  if (!BOQ_RESOURCE_TYPES.includes(resourceType)) {
+    res.status(400).json({ error: 'Type de ressource invalide.' });
+    return;
+  }
+  if (!label) {
+    res.status(400).json({ error: 'Le libellé de la ressource est obligatoire.' });
+    return;
+  }
+  if (quantity === null || unitCost === null) {
+    res.status(400).json({ error: 'Quantité et coût unitaire doivent être positifs ou nuls.' });
+    return;
+  }
+  getDb()
+    .prepare(
+      `INSERT INTO boq_item_resources (item_id, resource_type, label, unit, quantity, unit_cost, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(item.id, resourceType, label, String(b.unit || '').trim(), quantity, unitCost, Number(b.sort_order || 1));
+  logAudit(req.user!, 'CREATE', 'boq_resource', item.id, '', `${resourceType}: ${label}`);
+  res.status(201).json(loadBoqVersion(item.version_id));
+});
+
+router.put('/boq/resources/:id', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const db = getDb();
+  const resource = db.prepare('SELECT * FROM boq_item_resources WHERE id = ?').get(Number(req.params.id)) as any;
+  if (!resource) {
+    res.status(404).json({ error: 'Ressource de BOQ introuvable.' });
+    return;
+  }
+  const item = readBoqItemDraft(resource.item_id, res) as any;
+  if (!item) return;
+  const b = req.body || {};
+  const resourceType = String(b.resource_type ?? resource.resource_type);
+  const label = String(b.label ?? resource.label).trim();
+  const quantity = normalizeBoqQuantity(b.quantity, Number(resource.quantity));
+  const unitCost = normalizeBoqQuantity(b.unit_cost, Number(resource.unit_cost));
+  if (!BOQ_RESOURCE_TYPES.includes(resourceType) || !label || quantity === null || unitCost === null) {
+    res.status(400).json({ error: 'Ressource invalide : type, libellé, quantité et coût unitaire sont requis.' });
+    return;
+  }
+  db.prepare('UPDATE boq_item_resources SET resource_type = ?, label = ?, unit = ?, quantity = ?, unit_cost = ?, sort_order = ? WHERE id = ?').run(
+    resourceType,
+    label,
+    String(b.unit ?? resource.unit),
+    quantity,
+    unitCost,
+    Number(b.sort_order ?? resource.sort_order),
+    resource.id
+  );
+  logAudit(req.user!, 'UPDATE', 'boq_resource', resource.id, resource.label, label);
+  res.json(loadBoqVersion(item.version_id));
+});
+
+router.delete('/boq/resources/:id', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const db = getDb();
+  const resource = db.prepare('SELECT * FROM boq_item_resources WHERE id = ?').get(Number(req.params.id)) as any;
+  if (!resource) {
+    res.status(404).json({ error: 'Ressource de BOQ introuvable.' });
+    return;
+  }
+  const item = readBoqItemDraft(resource.item_id, res) as any;
+  if (!item) return;
+  db.prepare('DELETE FROM boq_item_resources WHERE id = ?').run(resource.id);
+  logAudit(req.user!, 'DELETE', 'boq_resource', resource.id, resource.label, 'Ressource supprimée (brouillon)');
+  res.json(loadBoqVersion(item.version_id));
+});
+
 export default router;
