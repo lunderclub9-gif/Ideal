@@ -1318,7 +1318,7 @@ The tax/accounting work is not complete until:
 
 Use and verify the current versions of these official resources during implementation (URLs are references for discovery; always check for newer official publications):
 - DGI 2026 tax-code publication page: https://mfdgi.gov.dz/about-us-ar/actu-ar/codes-fiscaux-ar
-- DGI TVA guidance: https://www.mfdgi.gov.dz/professionnels/identifier-regime-fiscal/regime-reel/tva
+- DGI TVA guidance: https://www.mfdgi.gov.dz/professionnels/identifier-regime-fiscal-ar/regime-reel-ar/tva-ar
 - DGI IBS guidance: https://www.mfdgi.gov.dz/fr/professionnels/services-pro/regime-reel/ibs
 - Ministry of Finance / DGPP 2027 Finance Bill explanatory report: https://dgpp.mf.gov.dz/wp-content/uploads/2026/11/PLF-2027_APN_FR.pdf
 - APN adoption of PLF 2027 (16 November 2026): https://www.aps.dz/fr/economie/banque-et-finances/mwj5be13-adoption-a-la-majorite-du-plf-2027
