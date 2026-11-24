@@ -887,7 +887,7 @@ Do not build P3/P4 while P0 data-loss or security defects remain unresolved.
 
 You do not need to send the full product idea again. Give the agent this short instruction and point it to this file:
 
-> Read \`docs/IDEAL_MASTER_BUILD_SPEC.md\` completely and treat it as the product and engineering contract for IDEAL. Work from the latest \`main\` in a new feature branch. First audit the actual source, database schema/migrations, routes, permissions, UI, tests, and CI; create an evidence-based gap matrix and identify documentation drift. Do not rebuild or duplicate existing features. Then implement the highest-priority missing/incomplete work end-to-end, preserving all existing functionality and real data. Every visible button, icon, link, form, search, filter, and menu action must work, enforce server-side permissions/validation, persist correctly, show French feedback, and have tests. Keep the current lightweight Windows/Electron + React/TypeScript + Express + SQLite architecture, offline-first operation, French-only UI, DZD localization, no mandatory paid/cloud/AI services, and 4 GB RAM target. Use additive migrations, isolated synthetic test data, safe backups/rollback, and never touch real user data. Run relevant tests after each change and the full suite before reporting. Continue implementation rather than stopping at a plan. Do not merge to main, force-push, publish a release, or perform destructive changes without explicit owner approval. Report exact branch, commits, files, tests/results, risks, and remaining work. If you discover a valuable new idea, evaluate it against this specification and add it only when it improves IDEAL without compromising safety, offline use, simplicity, or performance.
+> Read \`docs/IDEAL_MASTER_BUILD_SPEC.md\` completely, including Sections 14, 15, and 16, and treat every section as the product and engineering contract for IDEAL. Work from the latest \`main\` in a new feature branch. First audit the actual source, database schema/migrations, routes, permissions, UI, tests, and CI; create an evidence-based gap matrix and identify documentation drift. Do not rebuild or duplicate existing features. Then implement the highest-priority missing/incomplete work end-to-end, preserving all existing functionality and real data. Every visible button, icon, link, form, search, filter, dashboard indicator, notification, and menu action must work, enforce server-side permissions/validation, persist correctly, show French feedback, and have tests. Implement the complete blue/white redesign and logo/interaction system (Section 14); implement Algerian SCF accounting, TVA, IBS, IRG, IFU, applicable taxes, payroll/social contributions, and BTP tax workflows from verified effective-dated official legal sources (Section 15); and implement operational intelligence, auditability, document control, resilience, reconciliation, and full-company acceptance workflows (Section 16). Never guess legal rates/deadlines or activate draft laws. Keep the current lightweight Windows/Electron + React/TypeScript + Express + SQLite architecture, offline-first operation, French-only UI, DZD localization, no mandatory paid/cloud/AI services, and 4 GB RAM target. Use additive migrations, isolated synthetic test data, safe backups/rollback, and never touch real user data. Run relevant tests after each change and the full scenario suite before reporting. Continue implementation rather than stopping at a plan. Do not merge to main, force-push, publish a release, or perform destructive changes without explicit owner approval. Report exact branch, commits, files, tests/results, legal-source versions/review status, risks, and remaining work. If you discover a valuable new idea, evaluate it against this specification and add it only when it improves IDEAL without compromising safety, offline use, simplicity, or performance.
 
 ---
 
@@ -1332,3 +1332,168 @@ The agent must verify exact URLs, publication dates, legal status, article numbe
 Append this instruction to the compact execution prompt:
 
 > Implement Section 15, “Algerian accounting, taxation, payroll, and legal compliance engine (2026–2027 and future years).” Treat Algerian legal accuracy as a P0 requirement. Research official DGI/JORADP/Ministry of Finance sources, build a versioned effective-dated rules engine, and implement TVA, IBS, IRG, IFU, applicable withholding/stamp/registration/local/parafiscal taxes, payroll/social contributions, Algerian SCF double-entry accounting, and BTP-specific progress billing and retention workflows according to the company's actual legal profile. Do not guess rates or deadlines, do not hard-code legal constants, and do not activate draft 2027 provisions before promulgation/publication and verification. Preserve historical calculations, show legal citations and full calculation traces, require accountant review for uncertain cases, and run the full scenario-based acceptance suite. Work offline after rule packs are installed; no paid/cloud dependency. Do not merge to main or publish a release without explicit approval.
+
+
+---
+
+## 16. Operational intelligence, business control, auditability, resilience, and company-wide acceptance
+
+This section consolidates the additional requirements proposed during product planning. They are requirements for a connected ERP, not decorative dashboard features. Audit the existing implementation first and extend it without duplicating working modules.
+
+### 16.1 Business control center and actionable alerts
+
+Create a rules-driven monitoring and alerting layer using real persisted business data:
+- Overdue customer invoices and unpaid installments; supplier invoices approaching or past due.
+- Low-stock, reorder-point, reserved-stock, stockout risks, and materials insufficient for planned site work.
+- Project budget overruns, abnormal cost growth, low margin, delayed progress, and schedule slippage.
+- Contract, insurance, guarantee, employee-document, vehicle-document, and equipment-inspection expiries where relevant.
+- Equipment maintenance due, unusual fuel consumption, idle equipment, and breakdown history.
+- Cash/bank thresholds, overdue receivables/payables, upcoming cash commitments, and liquidity warnings.
+- Missing documents, unapproved transactions, incomplete timesheets, payroll exceptions, and pending approvals.
+- Tax declaration/payment deadlines generated from the verified company fiscal profile and Section 15 rules.
+
+Each alert must include severity, source record, reason, detection time, due date where applicable, responsible role/person, recommended next action, and status (new, acknowledged, assigned, resolved, dismissed with reason). Alerts must deep-link to the actual authorized record. Avoid duplicate alert storms; group repeated alerts and provide configurable thresholds. Never generate an alert from demo data or stale KPIs.
+
+Provide daily and weekly company summaries generated locally from actual records. Each summary identifies its data period and last refresh time, shows missing/stale-data warnings, and links to source records. No AI or internet dependency is permitted for ordinary summaries; optional AI must never silently send company data externally.
+
+### 16.2 Project profitability, cost control, and forecasting
+
+For each project, contract, site, work package, and cost code, provide a traceable financial view:
+- Original approved budget, approved revisions, current budget, commitments, actual costs, accruals, work in progress where applicable, billed amount, collected amount, retention, outstanding amount, forecast cost to complete, and estimated final cost.
+- Planned vs actual quantities, progress, schedule, labour hours, material consumption, equipment hours, subcontractor cost, transport, fuel, overhead, and configured cost categories.
+- Revenue and cost recognition must follow the configured accounting policy and applicable SCF/tax treatment. Do not equate cash received with earned revenue without an explicit accounting rule.
+- Compare estimate/BOQ baseline, contract amendments, progress certificates, invoices, supplier invoices, payroll, stock issues, equipment usage, and payments.
+- Highlight unexplained variances, duplicate costs, unusual unit prices, over-consumption, negative margin, and budget overruns for human review.
+- Forecast scenarios (optimistic/base/pessimistic) are allowed only with explicit, editable, dated assumptions and a clear distinction from actuals.
+- Every KPI/chart must drill down to the exact permission-checked source records.
+- Export project financial statements and variance reports with clear actual/forecast/provisional labels.
+
+Never display a single “profit” number without defining its period, source data, accounting basis, and provisional/closed status.
+
+### 16.3 Full audit trail, approvals, and financial governance
+
+For critical actions, record actor/user ID, role at action time, timestamp, module, entity type/ID, action, reason, correlation/request ID, and before/after values or safe structured diff. Cover create/edit/archive/restore/approve/reject/post/reverse/export/print, login/security events, permission and tax-rule changes, company settings, backup/restore, and period close/reopen.
+
+Protect audit records from ordinary users and prevent editing/deleting them through application APIs. Document the limits of local-machine tamper resistance; do not claim cryptographic immutability if a local administrator can alter the SQLite file. Provide authorized audit filters/exports and mask sensitive payroll, personal, banking, and tax identifiers.
+
+Add configurable approvals for high-impact operations: purchase orders above thresholds, credit notes, payment release, payroll finalization, tax-rule activation, manual accounting adjustments, period reopening, stock write-offs, and destructive archive/purge. Support separation of duties where practical; enforce no self-approval when policy prohibits it.
+
+Posted invoices, payments, stock movements, payroll runs, and journal entries must not be silently overwritten or deleted. Use linked cancellation, reversal, correction, and replacement workflows. Manual overrides require reason, identity, timestamp, before/after values, and approval.
+
+### 16.4 Document generation, archive, and records management
+
+Provide one consistent document service for French business/legal documents: quotations, invoices, credit notes, purchase orders, goods-received notes, receipts, customer/supplier statements, progress certificates, work-completion documents, payslips, project reports, tax workpapers, and accounting statements where supported.
+
+Documents must use the backend's authoritative calculation snapshot and include applicable company identity/logo, identifiers, reference, dates, recipient, line items, HT, tax breakdown, TTC, payment terms, configured payment details, signature/stamp placeholders, page numbers, and verified legal notes. Never invent identifiers, stamps, signatures, legal text, or certifications.
+
+Use immutable issued-document snapshots or equivalent versioning so reprinting an old invoice cannot silently change its amounts or tax rules. Preview high-impact documents before issue. After issue, corrections follow credit-note/cancellation/reissue workflows.
+
+Use unique, configurable numbering sequences by document type, fiscal year, and establishment where required; prevent duplicate references under concurrent operations. Store attachment metadata, linked entity, category, upload actor/time, version, and safe local path. Search by reference, party, project, date, type, status, amount, and identifiers with permission checks. Validate spreadsheet exports against formula injection and preserve numeric values.
+
+### 16.5 Data protection, disaster recovery, and upgrade resilience
+
+Strengthen backup/lifecycle into a tested recovery system:
+- Configurable automatic backups (e.g. daily and before upgrades/restores), local destination selection, retention, and visible last-success/failure status.
+- Include database, attachments, retained generated documents, and tax/legal ruleset versions needed to reproduce calculations.
+- Verify archive structure, checksums, DB integrity, schema compatibility, file inventory, and disk space before restore.
+- Restore into staging first; validate DB, attachments, migrations, and cross-record references before atomically switching active data.
+- Keep a verified pre-restore snapshot until the restored installation passes validation.
+- Inject failures at archive read, checksum, DB open, migration, file copy, rename/swap, restart, and post-restore validation; prove rollback keeps previous data usable.
+- Test forced process termination, Windows shutdown/power-interruption approximations, disk-full conditions, denied paths, corrupt archives, and interrupted updates.
+- Provide a guided new-PC migration using verified backup/import and record-count/document-link checks.
+- Verify update artifact integrity and document whether Windows code signing is configured. Never claim an installer is signed without verifying its signature.
+- On update failure, retain the previous working app/data and provide recovery instructions.
+- Show backup age, destination, size, integrity state, and last restore-test date. A ZIP existing is not proof of a valid backup.
+
+### 16.6 Search, productivity, and everyday usability
+
+Provide a consistent productivity layer:
+- Global search across authorized customers, suppliers, projects, contracts, invoices, payments, employees, materials, equipment, documents, and accounting references.
+- Enforce permissions at query time; do not leak the existence or snippets of restricted payroll, banking, or confidential records.
+- Lightweight prefix/typo-tolerant search only if measured SQLite performance remains acceptable.
+- Module filters, date ranges, status filters, sorting, pagination, and useful saved filter views.
+- User-specific table columns/order/page size preferences.
+- Keyboard shortcuts and visible hints for frequent safe actions; never bind destructive actions without confirmation.
+- Preserve form drafts safely on navigation or unexpected close where practical; distinguish drafts from submitted/posted records.
+- Consistent French loading, empty, success, validation, permission-denied, offline, and failure states.
+- Actionable error messages with a support reference ID; never expose stack traces or secrets.
+- Accessible keyboard operation, visible focus, sensible tab order, accessible icon labels, contrast, scalable text, and reduced motion.
+- Avoid clutter: surface controls according to role and workflow context.
+
+### 16.7 Cross-module consistency and reconciliation
+
+Create reconciliation checks so modules cannot silently drift:
+- Invoice line/tax totals, customer balance, receivables, receipts, and ledger postings.
+- Supplier invoice, purchase order, goods receipt, stock quantity/value, supplier balance, payments, and ledger.
+- Payroll, payslips, deductions, social contributions, payments, and payroll journal.
+- Material receipts/transfers/issues/returns/wastage, inventory valuation, and project cost.
+- Equipment use, fuel, maintenance, depreciation/cost allocation, and project cost.
+- Contract value/amendments, progress certificates, advances, retention, invoices, collections, and remaining balance.
+- Tax declarations/payments vs sales, purchases, payroll, ledger, and Section 15 rules.
+- Backup manifest vs actual database/document inventory.
+
+Show expected and actual values, difference, severity, affected records, and safe resolution workflow. Never silently auto-adjust financial records to force a match. Corrections require authorization, explanation, and audit history.
+
+### 16.8 Operational dashboards and reporting standards
+
+Dashboards must be role-specific (owner/admin, accountant, project manager, storekeeper, HR, driver/site staff) and must not expose unauthorized data. Every KPI must define formula, period, source, last refresh, and provisional/closed status. Every KPI/chart must drill down to exact underlying records.
+
+Include reports for project status/delays, labour attendance, stock/consumption, procurement commitments, equipment utilization/maintenance, receivables/payables, cash flow, project margin, tax deadlines/declaration reconciliation, and document expiry. Support relevant date/project/customer/supplier/establishment filters and permission-checked PDF/XLSX/CSV exports. No fake numbers, arbitrary targets, or fabricated trend lines.
+
+### 16.9 Complete company simulation and realistic acceptance
+
+Before declaring IDEAL pilot-ready, run a complete isolated synthetic-company simulation for a realistic BTP company with multiple projects, customers, suppliers, subcontractors, employees, vehicles/equipment, warehouses, and fiscal periods.
+
+The simulation must exercise the connected lifecycle:
+1. Configure company identity, fiscal profile, roles, and opening balances in an isolated test database.
+2. Create customer, quotation, BOQ, estimate, contract, amendment, budget, work packages, and schedule.
+3. Purchase materials, approve order, receive goods, store stock, transfer to site, consume/return/waste, and reconcile stock.
+4. Assign employees/equipment, record attendance/hours/fuel/maintenance, calculate labour/equipment cost, and allocate to project.
+5. Record daily site reports, measured progress, subcontractor work, advances, deductions, retentions, and approvals.
+6. Issue progress certificates and customer invoices, apply date-specific Algerian tax treatment, record partial/full collections and credit notes, and reconcile customer balance.
+7. Record supplier invoices, tax treatment, payments, bank/cash transactions, and reconcile supplier balances.
+8. Run payroll and applicable social/tax calculations from the approved legal ruleset; post payroll journal.
+9. Generate applicable tax workpapers/declarations from the same versioned ruleset and reconcile to ledger.
+10. Calculate project actual cost, commitments, forecast cost to complete, billed/collected values, retention, and provisional/closed profitability.
+11. Generate PDF/XLSX reports and documents; verify printed totals against backend calculations and ledger.
+12. Test restricted users, rejected approvals, manual overrides, reversals/corrections, and period lock/reopen.
+13. Backup and restore to a separate directory; verify counts, hashes, links, calculations, tax rules, and attachments.
+14. Simulate failed restore/update and confirm original data remains usable.
+15. Restart packaged Windows app offline and confirm core functions remain available.
+
+Keep simulation data isolated from real company data. Save reproducible fixtures, commands, expected totals, actual results, and negative/error cases. Include at least two fiscal-rule versions where applicable.
+
+### 16.10 Independent accounting, tax, and business acceptance review
+
+A qualified Algerian accountant/tax professional must review representative TVA, IBS, IRG, IFU (where applicable), payroll/social contribution, SCF journal, tax declaration, and BTP progress-billing scenarios. Compare IDEAL with independent calculations using identical source documents and legal versions. Record sources, assumptions, expected and actual results, differences, resolutions, reviewer evidence, and date.
+
+Review project cost/profit calculations with a construction cost-control professional or experienced BTP accountant. A software test is not professional legal/accounting validation. If professional review is unavailable, label the scope “technically tested, not professionally validated” and do not claim production-grade legal compliance.
+
+### 16.11 Performance and reliability acceptance on modest Windows hardware
+
+Test a realistic dataset and record startup time, idle memory, memory during search/report/export, DB size, and navigation responsiveness. Target 4 GB RAM; avoid heavyweight background analytics, continuous polling, huge in-memory exports, and expensive animation. Use indexes, pagination, chunked exports where appropriate, and efficient alert computation.
+
+Provide a diagnostic report with app/schema/OS/runtime versions, backup status, and recent non-sensitive error IDs; never include passwords, tokens, or private business content by default. Do not claim performance acceptance without measurements on actual target hardware or a clearly labelled CI approximation.
+
+### 16.12 Final acceptance gates
+
+IDEAL is not ready for a real company pilot until:
+- Core modules work end-to-end and share authoritative records.
+- Alerts/dashboards use live data and drill down correctly.
+- Project costs/margins reconcile to source transactions and accounting basis.
+- Audit, approval, reversal, and period controls work and respect roles.
+- Issued documents are stable and match backend calculations.
+- Backup/restore pass failure-injection tests.
+- Search, filters, saved views, and shortcuts work without permission leaks.
+- Financial, tax, payroll, stock, project, and party balances reconcile.
+- Full synthetic-company simulation passes reproducibly.
+- Algerian legal/accounting calculations have official citations and independent review, or are explicitly marked not professionally validated.
+- Offline operation and 4 GB RAM performance have evidence.
+- Known limitations and recovery steps are documented.
+- No merge to \`main\` or release occurs without explicit owner approval.
+
+### 16.13 Updated compact execution prompt supplement
+
+Append this instruction to the compact execution prompt:
+
+> Implement Section 16, “Operational intelligence, business control, auditability, resilience, and company-wide acceptance.” Add actionable real-data alerts and daily/weekly summaries; detailed project cost, budget, progress, and profitability controls; audit history and approval/reversal governance; stable professional document generation and archive; verified automatic backups, restore failure-injection, PC migration and update recovery; global search, saved filters, keyboard shortcuts and draft recovery; cross-module reconciliation; role-specific dashboards; and a reproducible end-to-end synthetic BTP company simulation with independent accounting/tax review. Every KPI must drill down to source records. Do not use fake figures or silently adjust mismatches. Preserve offline operation, French-only UI, 4 GB RAM, and all data-safety rules.
