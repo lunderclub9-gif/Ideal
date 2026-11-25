@@ -50,7 +50,7 @@ IDEAL is a professional, modular, offline-first management system for Algerian c
 - No AI feature, AI API, model download or hidden AI dependency.
 - Role/permission controlled, auditable and safe for long-lived company data.
 
-Do not replace the current stack or rewrite the application from scratch. Extend the working React/TypeScript/Vite + Express + better-sqlite3 + Electron architecture unless a documented, measured blocker proves otherwise.
+You are authorized to undertake a comprehensive product-level rebuild and re-engineering of IDEAL: redesign the information architecture, navigation, every module, every screen and every workflow so the result feels like a cohesive, modern, best-in-class professional product. This may involve replacing substantial UI and application layers where justified. However, “from scratch” means rebuilding the product experience and weak/incomplete implementation—not discarding valuable business logic, security controls, migrations, audit history, existing company data or proven features. Preserve the current React/TypeScript/Vite + Express + better-sqlite3 + Electron foundation by default; change the stack only when a documented, measured technical case demonstrates a clear net benefit and a safe migration path.
 
 ## 4. Preserve all existing work and data
 
@@ -340,3 +340,180 @@ The first agent run must:
 8. Open reviewable PRs and continue through the ordered roadmap.
 
 **The task is not complete when the plan is written. It is complete only when all phases are implemented, tested, documented, safely integrated and the verified Windows release is published.**
+
+
+---
+
+## 13. Owner-requested product transformation — rebuild IDEAL as a complete professional product
+
+This section is an explicit owner-approved product direction and is binding. Do not interpret the roadmap as a request to merely patch the current screens. The goal is to transform IDEAL into a unified, polished, comprehensive BTP management product with a consistent experience from first launch to daily operations.
+
+### 13.1 Rebuild the complete experience, not just selected pages
+
+- Re-evaluate the entire information architecture, navigation, module hierarchy, dashboard structure, workflows and terminology.
+- Redesign every module and every screen—not only the home page, sidebar or a few recently touched pages.
+- Establish a coherent design system and apply it consistently to dashboards, tables, forms, detail views, calendars, kanban/boards, charts, dialogs, settings, reports, document previews and admin screens.
+- Make common actions predictable: create, view, edit, duplicate, archive, restore, approve, reject, cancel, export, download and print wherever relevant.
+- Use contextual actions, clear status indicators, useful filters, sorting, pagination, saved views where justified, bulk actions with safeguards, and meaningful empty/loading/error states.
+- Create useful role-based home dashboards for company owner/admin, accountant, project/site manager, storekeeper and driver. Each dashboard must show actionable information appropriate to that role, not decorative metrics.
+- Provide a consistent record-detail layout with tabs/sections for overview, commercial/financial data, activity history, documents, photos and related records where appropriate.
+- Provide a global command/search experience across all authorized modules, with keyboard navigation and clear result types.
+- Add an in-app help/onboarding layer and contextual explanations for complex BTP, accounting and stock workflows. Keep all user-facing content in French.
+- Keep the application responsive for normal Windows desktop resolutions and usable on low-spec hardware. Prefer fast, restrained transitions over heavy animations or 3D effects.
+- Remove redundant, confusing, duplicate or dead screens only after confirming that their functionality and data are safely migrated or intentionally consolidated.
+
+### 13.2 Professional company identity and company profile
+
+Create a complete company profile/settings area. Support multiple company branches or legal entities only if the data model and permissions can support them safely; otherwise design the foundation without pretending multi-company is already available.
+
+Company profile fields should include, as applicable:
+- Legal/company name and commercial name.
+- Logo and optional secondary brand mark.
+- Main business activity and BTP specialization.
+- Full postal address: street, locality, commune, wilaya and postal code.
+- Primary and secondary phone numbers, mobile number and optional WhatsApp contact.
+- Professional email, website and other contact channels.
+- Official registration and tax identifiers such as RC, NIF, NIS, AI and other applicable identifiers, with field applicability configurable and legal requirements verified before being presented as mandatory.
+- Bank name, account holder and bank/RIB details, with strict access control and safe display/masking.
+- Default currency (DZD), document language (French), date/number formats and company timezone.
+- Authorized signatories, job titles, stamp/signature image where legally and operationally appropriate.
+- Default document footer, payment instructions, commercial terms and contact details.
+
+Company information must be reusable automatically in invoices, quotations, purchase orders, delivery notes, receipts, statements, contracts, certificates and other generated documents. Provide validation, preview, version history and audit logging for changes. Never invent official identifiers or prefill fake company information.
+
+### 13.3 Professional document generation, storage, export and printing
+
+Treat business documents as a core product capability, not a basic browser print button. Design a unified document engine and reusable professional templates for at least:
+
+- Quotations/devis and estimates.
+- Customer invoices/factures, deposits/acompte invoices, progress invoices/situations and credit notes/avoir.
+- Receipts/reçus, payment confirmations and customer statements/relevés.
+- Purchase requests, supplier quotation comparisons, purchase orders and goods-received notes.
+- Delivery notes/bons de livraison, return notes and stock movement slips.
+- Contracts, amendments, work orders and subcontractor documents.
+- BOQ/BPU/DQE, rate analysis, progress measurement sheets and progress certificates.
+- Daily site reports, attendance summaries, work completion records and handover/acceptance reports.
+- Employee/work certificates, payroll slips and authorized HR documents.
+- Vehicle/equipment assignment, maintenance and inspection forms.
+- Inventory lists, stocktakes, transfer slips and asset registers.
+- Financial, tax and management reports, with statutory reports enabled only after legal/professional validation.
+
+Every generated document must:
+- Use a clean, professional, print-ready layout with consistent typography, spacing, page numbering, headers and footers.
+- Display the correct company logo/name/contact details and applicable legal identifiers.
+- Display customer/supplier/employee/project identity and relevant address/contact details according to document type and permissions.
+- Include a unique human-readable document number, issue date, status, linked source record and applicable due date/validity period.
+- Present line descriptions, quantities, units, unit prices, discounts, tax bases, tax amounts, totals HT, TVA and TTC where applicable, plus amounts in words when appropriate.
+- Clearly show payment terms, bank/payment information, notes, approvals and signature/stamp areas when relevant.
+- Support long documents with repeated table headers, no clipped totals, no orphaned headings and sensible page breaks.
+- Support A4 by default and other practical paper sizes only where needed; provide print preview and printer-friendly output.
+- Export to PDF reliably without requiring an internet connection or paid service. Provide CSV/XLSX export for suitable structured reports where useful.
+- Allow download, re-open, reprint and controlled regeneration. Issued documents must remain immutable snapshots: later edits to a customer, company profile, price or template must not silently alter an already issued document.
+- Support draft preview before issue, controlled issue/approval, cancellation/credit-note/reversal flows and complete version/audit history.
+- Prevent duplicate numbering during concurrent creation; numbering series must be configurable by document type, fiscal year and company where appropriate.
+- Store the generated file and its metadata against the source record, with checksum/integrity verification where practical.
+- Offer safe email-ready file export without requiring the app to send email or depend on a paid email service.
+- Never label an ordinary management document as a legally compliant tax invoice unless its content and legal requirements have been verified for the applicable date and business regime.
+
+### 13.4 Document center and permanent business archive
+
+Create a central Documents & Archives module that acts as a searchable, organized company repository.
+
+- Store generated PDFs and user-uploaded files with metadata: title, category, document number, date, company, project, customer/supplier, employee/asset, status, tags and related records.
+- Support common office formats and images where safe and technically appropriate: PDF, PNG, JPG/JPEG, WebP, and selected office formats. Do not execute uploaded files.
+- Allow multiple attachments per business record and show them in the record's Documents section.
+- Support drag-and-drop where practical, multi-file upload, upload progress, preview, download, rename metadata, versioning, archive and restore.
+- Add document categories, tags, filters, full-text metadata search and date/project/partner filters. Do not claim OCR or full-text content search unless implemented and tested.
+- Store files under an application-controlled data directory with safe generated filenames, path-traversal protection, file size/type validation and backup/restore coverage.
+- Preserve original uploads; do not overwrite or destructively compress them. Generate thumbnails/previews as separate derived files.
+- Add retention/expiry reminders for contracts, insurance, vehicle papers, employee documents, certifications and other configurable categories.
+- Use role permissions for viewing, uploading, downloading, deleting, restoring and exporting sensitive documents. Prefer archive/soft-delete with audit trail over permanent deletion.
+- Include all required document files and metadata in backup/restore, and verify restored attachments can be opened.
+- Keep the archive fully offline and local. No mandatory cloud storage, external drive, subscription or AI processing.
+
+### 13.5 Photos, images and visual evidence
+
+Make photo and image management a first-class feature throughout IDEAL.
+
+- Allow users to attach multiple photos to projects, construction sites, daily reports, tasks, work progress, quality inspections, HSE incidents, equipment, vehicles, materials, deliveries, employees (only when justified and permission-controlled), customers/suppliers where useful, and general documents.
+- Provide a photo gallery with thumbnails, full-size preview, zoom, captions, date, category, uploader and links to the related record.
+- Support before/during/after progress photo sets and chronological project/site timelines.
+- Allow a cover image for a project, company profile and selected assets; provide safe crop/thumbnail generation without altering the original.
+- Support optional manually entered photo date, location/site zone and description. Do not assume GPS metadata is present or accurate.
+- Support multiple photos per report/inspection and include selected images in generated PDF reports with captions and page-safe sizing.
+- Allow users to download one image or a selected group and export a photo report/contact sheet.
+- Preserve original image quality; generate optimized thumbnails for performance. Make compression optional and non-destructive.
+- Validate file type and size, protect against malformed files, and ensure backups include original images and metadata.
+- Enforce privacy and role access. Do not expose private employee/customer images through public URLs.
+- Keep the UI fast on a 4 GB RAM computer by lazy-loading thumbnails and avoiding loading entire image collections at once.
+
+### 13.6 Complete customer, supplier and contact records
+
+Upgrade partner/contact records to be useful operational profiles rather than simple name-and-phone fields.
+
+- Support individual/company type, legal name, commercial name, contact person, role, phone/mobile, email, full address, wilaya/commune, identifiers when applicable, payment terms, credit limit where authorized, notes and active/archive state.
+- Allow multiple contacts and addresses where needed, with a clearly selected primary contact/address.
+- Show a timeline of quotations, invoices, receipts, payments, orders, contracts, deliveries, disputes/notes and attached files.
+- Provide customer balance and aging views from authoritative financial records, with drill-down.
+- Provide supplier purchasing history, delivered items, outstanding obligations and document expiry information.
+- Prevent duplicate records with safe matching suggestions; never auto-merge records without explicit confirmation and a reversible process.
+- Support import/export templates with validation, duplicate preview and error reports.
+
+### 13.7 Record lifecycle, traceability and company history
+
+- Give each important business record a clear lifecycle and status history.
+- Provide an activity timeline showing who created, edited, approved, issued, downloaded/exported where appropriate, archived, restored or reversed a record, with timestamps and meaningful change summaries.
+- Keep immutable snapshots for issued commercial documents and posted accounting/stock movements.
+- Support corrections through revisions, credit notes, reversals or compensating entries rather than silently rewriting history.
+- Provide safe archive/restore and retention rules.
+- Add global and per-record audit history with permission checks and exportable evidence for authorized administrators.
+- Ensure backup/restore preserves IDs, relations, audit records, generated documents, uploaded files, photos and numbering state.
+
+### 13.8 Reporting, dashboards and management outputs
+
+- Provide polished, filterable reports with date range, project, customer, supplier, status and other relevant dimensions.
+- Support printable PDF and structured export where useful.
+- Include project profitability, planned vs actual cost, cash flow, customer receivables, supplier payables, tax summaries, payroll totals, stock valuation, purchasing, fleet costs, equipment utilization, subcontractor costs, quality and HSE indicators.
+- Show formula definitions and source records for important totals. Avoid double counting and distinguish invoiced, certified, collected, committed and paid values.
+- Allow authorized users to save report filters and generate period snapshots.
+- Add charts only where they improve decisions; all charts must have accessible tabular detail and consistent filters.
+
+### 13.9 Practical quality-of-life features
+
+Evaluate and implement where they improve real workflows:
+- Global quick-create menu and keyboard shortcuts.
+- Recent records and favorites, per-user.
+- Bulk import with preview, validation and downloadable error report.
+- Bulk export and bulk actions with permission checks and confirmation.
+- Duplicate/clone a project, quotation, task template or recurring setup without copying unique financial postings or audit history.
+- Reusable document, BOQ, task, inspection and report templates.
+- Configurable numbering series and document prefixes.
+- Configurable company settings, tax rules and approval thresholds with effective dates and audit history.
+- Notifications and reminders with read/unread state, priority and links to the source record.
+- Data quality checks for missing company details, duplicate contacts, incomplete projects, unmatched payments and invalid relationships.
+- Safe data portability: full company backup, verified restore, and structured export of company-owned records and attachments.
+- Clear application health/status page showing database, backup age, storage usage, app version and diagnostic export without leaking secrets.
+
+### 13.10 Data safety and migration during the transformation
+
+The product transformation must never be used as an excuse to discard existing data or rewrite history.
+
+- Inventory all existing tables, fields, relations, files, migrations, APIs and business workflows before redesigning a module.
+- Map old records to the new model and document every transformation.
+- Prefer expand-and-contract migrations, compatibility adapters and staged rollout.
+- Test upgrades using copies of representative real-version databases, including large datasets and attachments.
+- Verify row counts, key relationships, balances, numbering sequences, audit history and file checksums before and after migration.
+- Keep a tested backup and recovery path before migration.
+- Do not silently drop, truncate, reset or reseed company data.
+- If a clean installation experience is desired, provide it as a separate first-run path; it must not overwrite an existing company database.
+- Maintain a clear migration report and recovery instructions.
+
+**Exit criteria for this product transformation:** the redesigned application has a coherent end-to-end experience across all modules; company identity is reused correctly; professional documents can be created, issued, stored, downloaded and printed; images and attachments remain linked and backed up; all important records are searchable and auditable; all existing company data survives supported upgrades; and the complete workflow passes role-based, offline, performance, migration and Windows packaged tests.
+
+## 14. Explicit product vision and acceptance principle
+
+The final IDEAL must feel like one integrated professional business system—not a collection of disconnected CRUD pages. A user should be able to manage a company from its profile and contacts through projects, estimates, contracts, site execution, purchasing, stock, workforce, fleet, subcontractors, invoices, payments, accounting, reports and archive without losing context or re-entering the same information unnecessarily.
+
+For every major workflow, the agent must demonstrate the complete journey with realistic synthetic data in the isolated test company, including document preview, PDF generation, archive retrieval, download and print layout. Screenshots or test artifacts should be attached to relevant PRs when they help verify visual quality. Never use real customer or employee personal data in test artifacts.
+
+The owner values a substantial, complete, durable product over superficial feature counts. Prioritize correctness, data integrity, clarity, professional output and long-term maintainability. Do not claim completion based on mockups, static pages or buttons that do not perform the advertised action.
