@@ -3,10 +3,12 @@ import path from 'path';
 import { getDb } from './server/db.ts';
 import { syncRetentionNotifications } from './server/lifecycle.ts';
 import apiRouter from './server/routes.ts';
-import { createFullBackup } from './server/backup.ts';
+import { createFullBackup, runStartupIntegrityCheck } from './server/backup.ts';
 
 async function startServer() {
   getDb();
+  // A corrupted database is cheaper to notice at startup than after a day of work.
+  try { runStartupIntegrityCheck(); } catch (e) { console.error('IDEAL_INTEGRITY_ERROR', e); }
   try { syncRetentionNotifications(); } catch (e) { console.error('LIFECYCLE_SYNC_ERROR', e); }
   const app = express();
   app.use(express.json({ limit: '15mb' }));

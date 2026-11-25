@@ -6,6 +6,15 @@ import { Modal, PageHeader, StatusText } from '../components/ui';
 export function TaxesPage({ permissions }: { permissions: string[] }) {
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState('');
+  const [ruleOpen, setRuleOpen] = useState(false);
+  const [busyRule, setBusyRule] = useState(false);
+  const [newRule, setNewRule] = useState({
+    code: '',
+    name: '',
+    rate: 0,
+    effective_date: new Date().toISOString().slice(0, 10),
+    notes: '',
+  });
   const canWrite = hasPerm(permissions, 'taxes:write');
 
   async function load() {
@@ -25,6 +34,35 @@ export function TaxesPage({ permissions }: { permissions: string[] }) {
       await load();
     } catch (e: any) {
       setError(e.message);
+    }
+  }
+
+  async function createRule(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    try {
+      await apiFetch('/taxes/rules', { method: 'POST', body: JSON.stringify(newRule) });
+      setRuleOpen(false);
+      setNewRule({ code: '', name: '', rate: 0, effective_date: new Date().toISOString().slice(0, 10), notes: '' });
+      await load();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }
+
+  async function toggleRuleStatus(rule: any) {
+    setError('');
+    setBusyRule(true);
+    try {
+      await apiFetch(`/taxes/rules/${rule.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: rule.status === 'archived' ? 'active' : 'archived' }),
+      });
+      await load();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setBusyRule(false);
     }
   }
 
@@ -57,8 +95,13 @@ export function TaxesPage({ permissions }: { permissions: string[] }) {
       </div>
 
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 font-semibold text-sm">
-          Paramètres fiscaux &amp; cotisations configurables
+        <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+          <span className="font-semibold text-sm">Paramètres fiscaux &amp; cotisations configurables</span>
+          {canWrite && (
+            <button type="button" onClick={() => setRuleOpen(true)} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-blue-700 rounded-lg">
+              <Plus className="w-3.5 h-3.5" /> Nouveau paramètre
+            </button>
+          )}
         </div>
         <table className="w-full text-xs">
           <thead className="bg-slate-50 dark:bg-slate-800/60">
@@ -68,9 +111,17 @@ export function TaxesPage({ permissions }: { permissions: string[] }) {
               <th className="p-3 text-right">Taux (%)</th>
               <th className="p-3 text-left">Effet</th>
               <th className="p-3 text-left">Notes</th>
+              <th className="p-3 text-left">Statut</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+            {data.rules.length === 0 && (
+              <tr>
+                <td colSpan={6} className="p-8 text-center text-slate-500">
+                  Aucun paramètre fiscal enregistré. Ajoutez les taux validés par votre comptable.
+                </td>
+              </tr>
+            )}
             {data.rules.map((r: any) => (
               <tr key={r.id}>
                 <td className="p-3 font-mono font-semibold">{r.code}</td>
@@ -93,11 +144,94 @@ export function TaxesPage({ permissions }: { permissions: string[] }) {
                 </td>
                 <td className="p-3 font-mono">{formatDateFr(r.effective_date)}</td>
                 <td className="p-3 text-slate-500">{r.notes}</td>
+                <td className="p-3">
+                  <div className="flex flex-col gap-1">
+                    <span className={`text-[11px] font-medium ${r.status === 'archived' ? 'text-slate-500' : 'text-emerald-700'}`}>
+                      {r.status === 'archived' ? 'Archivée' : 'Active'}
+                    </span>
+                    {canWrite && (
+                      <button
+                        type="button"
+                        disabled={busyRule}
+                        onClick={() => toggleRuleStatus(r)}
+                        className="text-blue-700 hover:underline text-left disabled:opacity-50"
+                      >
+                        {r.status === 'archived' ? 'Réactiver' : 'Archiver'}
+                      </button>
+                    )}
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      <Modal open={ruleOpen} onClose={() => setRuleOpen(false)} title="Nouveau paramètre fiscal" maxWidth="max-w-md">
+        <form onSubmit={createRule} className="space-y-3 text-xs">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block font-medium mb-1">Code *</label>
+              <input
+                type="text"
+                required
+                placeholder="Ex. TVA_SERVICES"
+                value={newRule.code}
+                onChange={(e) => setNewRule({ ...newRule, code: e.target.value.toUpperCase() })}
+                className="w-full px-3 py-2 border rounded-lg font-mono bg-white dark:bg-slate-950"
+              />
+            </div>
+            <div>
+              <label className="block font-medium mb-1">Taux (%) *</label>
+              <input
+                type="number"
+                required
+                min="0"
+                max="100"
+                step="0.5"
+                value={newRule.rate}
+                onChange={(e) => setNewRule({ ...newRule, rate: Number(e.target.value) })}
+                className="w-full px-3 py-2 border rounded-lg font-mono bg-white dark:bg-slate-950"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block font-medium mb-1">Libellé *</label>
+            <input
+              type="text"
+              required
+              value={newRule.name}
+              onChange={(e) => setNewRule({ ...newRule, name: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"
+            />
+          </div>
+          <div>
+            <label className="block font-medium mb-1">Date d’effet</label>
+            <input
+              type="date"
+              value={newRule.effective_date}
+              onChange={(e) => setNewRule({ ...newRule, effective_date: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"
+            />
+          </div>
+          <div>
+            <label className="block font-medium mb-1">Notes / référence légale</label>
+            <textarea
+              value={newRule.notes}
+              onChange={(e) => setNewRule({ ...newRule, notes: e.target.value })}
+              rows={2}
+              className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"
+            />
+          </div>
+          <div className="text-[11px] text-slate-500">
+            Les taux fiscaux et cotisations doivent être confirmés par un comptable algérien avant utilisation réelle.
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setRuleOpen(false)} className="px-3 py-2 border rounded-lg">Annuler</button>
+            <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg">Enregistrer</button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }
@@ -573,14 +707,40 @@ export function SettingsPage({ permissions }: { permissions: string[] }) {
 
 export function BackupPage() {
   const [backups, setBackups] = useState<any[]>([]);
+  const [health, setHealth] = useState<any | null>(null);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
+  const [backupForm, setBackupForm] = useState({ external_dir: '', keep_manual: 10, warn_after_days: 2 });
+  const [savingSettings, setSavingSettings] = useState(false);
 
   async function load() {
     try {
-      setBackups(await apiFetch('/backups'));
+      const [rows, healthRow] = await Promise.all([apiFetch('/backups'), apiFetch('/backups/health')]);
+      setBackups(rows);
+      setHealth(healthRow);
+      setBackupForm({
+        external_dir: healthRow?.external_dir || '',
+        keep_manual: Number(healthRow?.keep_manual ?? 10),
+        warn_after_days: Number(healthRow?.warn_after_days ?? 2),
+      });
     } catch (e: any) {
       setError(e.message);
+    }
+  }
+
+  async function saveBackupSettingsForm(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingSettings(true);
+    setError('');
+    setStatus('');
+    try {
+      await apiFetch('/backups/settings', { method: 'PUT', body: JSON.stringify(backupForm) });
+      setStatus('Dossier de copie externe enregistré.');
+      await load();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSavingSettings(false);
     }
   }
   useEffect(() => {
@@ -659,6 +819,56 @@ export function BackupPage() {
 
       {status && <div className="p-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg">{status}</div>}
       {error && <div className="p-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg">{error}</div>}
+      {health && (health.stale || !health.external_ok) && (
+        <div className="p-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg">
+          {health.stale
+            ? `Aucune sauvegarde récente : ${health.last_backup_at ? `la dernière date du ${String(health.last_backup_at).replace('T', ' ').slice(0, 16)}` : 'aucune archive enregistrée'}. Une sauvegarde sur ce poste disparaît avec lui : configurez un dossier de copie ci-dessous.`
+            : 'La dernière archive n’a pas pu être copiée vers le dossier externe. Vérifiez que le dossier existe et reste accessible.'}
+        </div>
+      )}
+
+      <form onSubmit={saveBackupSettingsForm} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-3 text-xs">
+        <div className="flex items-center gap-2 font-semibold text-sm">
+          <HardDrive className="w-4 h-4 text-blue-600" /> Copie hors de ce poste (OneDrive, réseau)
+        </div>
+        <p className="text-slate-500 dark:text-slate-400">
+          Chaque archive vérifiée est recopiée dans ce dossier. Si le PC est volé ou tombe en panne, la copie reste disponible sur le dossier synchronisé. Aucune donnée n’est envoyée sur Internet par IDEAL.
+        </p>
+        <div>
+          <label className="block font-medium mb-1">Dossier de copie</label>
+          <input
+            type="text"
+            value={backupForm.external_dir}
+            onChange={(e) => setBackupForm({ ...backupForm, external_dir: e.target.value })}
+            placeholder="C:\\Users\\Nom\\OneDrive\\IDEAL\\Sauvegardes"
+            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg font-mono bg-white dark:bg-slate-950"
+          />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block font-medium mb-1">Archives manuelles conservées</label>
+            <input type="number" min="1" max="365" value={backupForm.keep_manual} onChange={(e) => setBackupForm({ ...backupForm, keep_manual: Number(e.target.value) })} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg font-mono bg-white dark:bg-slate-950" />
+          </div>
+          <div>
+            <label className="block font-medium mb-1">Alerte si aucune sauvegarde depuis (jours)</label>
+            <input type="number" min="1" max="90" value={backupForm.warn_after_days} onChange={(e) => setBackupForm({ ...backupForm, warn_after_days: Number(e.target.value) })} className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg font-mono bg-white dark:bg-slate-950" />
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+          <div className="text-[11px]">
+            {health?.integrity_ok ? (
+              <span className="text-emerald-700 dark:text-emerald-400">
+                Base intègre au démarrage{health.integrity_checked_at ? ` (${String(health.integrity_checked_at).replace('T', ' ').slice(0, 16)})` : ''}.
+              </span>
+            ) : (
+              <span className="text-red-700 dark:text-red-400">Contrôle d’intégrité en échec : {health?.integrity_detail || 'voir le journal'}</span>
+            )}
+          </div>
+          <button type="submit" disabled={savingSettings} className="px-4 py-2 text-xs font-medium text-white bg-blue-700 rounded-lg disabled:opacity-50">
+            Enregistrer
+          </button>
+        </div>
+      </form>
 
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex flex-wrap items-center justify-between gap-4 text-xs">
         <div>
@@ -686,6 +896,7 @@ export function BackupPage() {
               <th className="p-3 text-left">Type</th>
               <th className="p-3 text-right">Taille</th>
               <th className="p-3 text-left">Intégrité</th>
+              <th className="p-3 text-left">Copie externe</th>
               <th className="p-3 text-left">Créée par / Date</th>
               <th className="p-3 text-right">Actions</th>
             </tr>
@@ -700,6 +911,13 @@ export function BackupPage() {
                   <span className={`inline-flex items-center gap-1 font-medium ${b.verified ? 'text-emerald-700' : 'text-red-700'}`}>
                     <ShieldCheck className="w-3.5 h-3.5" /> {b.verified ? 'Vérifiée' : 'À vérifier'}
                   </span>
+                </td>
+                <td className="p-3">
+                  {b.external_path ? (
+                    <span className="font-medium text-emerald-700 dark:text-emerald-400">Copiée</span>
+                  ) : (
+                    <span className="text-slate-400">—</span>
+                  )}
                 </td>
                 <td className="p-3 text-slate-500">{b.created_by} · {b.created_at}</td>
                 <td className="p-3 text-right whitespace-nowrap space-x-3">

@@ -1,0 +1,48 @@
+name: Tests
+
+on:
+  push:
+    branches-ignore:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ideal-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: TypeScript check
+        run: npm run lint
+      - name: Verify French-only application interface
+        run: npm run check:french-ui
+      # The migration chain must be proven before anything else: a bad migration
+      # destroys a customer's books, which no later test can undo.
+      - name: Migrate a captured company database through the whole chain
+        run: npm run test:migrations
+      - name: Test backup, restore and session protection
+        run: npm run test:data-protection
+      - name: Test lifecycle policies in an isolated temporary database
+        run: npm run test:lifecycle
+      - name: Simulate a complete business workflow in an isolated database
+        run: npm run test:simulation
+      - name: Test tax rules, contracts, cancellations and reversals in an isolated database
+        run: npm run test:regressions
+      - name: Build the application
+        run: npm run build

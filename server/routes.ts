@@ -23,7 +23,7 @@ import {
   getTaxRate,
   round2,
 } from './calculations.ts';
-import { createFullBackup, listBackups, restoreFromZip, verifyBackupArchive } from './backup.ts';
+import { createFullBackup, getBackupHealth, listBackups, restoreFromZip, saveBackupSettings, verifyBackupArchive } from './backup.ts';
 import { DOCS_DIR, getDb } from './db.ts';
 import { archiveEntity, clientDependencies, isDeletionEligible, projectDependencies, restoreEntity, vehicleDependencies, workerDependencies, materialDependencies, markReviewed, isReviewDue, listLifecycleRecords, syncRetentionNotifications } from './lifecycle.ts';
 
@@ -292,7 +292,7 @@ router.get('/dashboard', requireAuth, requirePermission('dashboard:view'), (req:
   const expRow = db
     .prepare(
       `SELECT
-        (SELECT COALESCE(SUM(amount), 0) FROM expenses) +
+        (SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE status <> 'cancelled') +
         (SELECT COALESCE(SUM(total_cost), 0) FROM stock_movements WHERE movement_type = 'exit') +
         (SELECT COALESCE(SUM(total_cost), 0) FROM fuel_entries) +
         (SELECT COALESCE(SUM(total_cost), 0) FROM repair_orders) AS total`
@@ -356,6 +356,7 @@ router.get('/dashboard', requireAuth, requirePermission('dashboard:view'), (req:
   }
 
   const lastBackup = db.prepare('SELECT created_at, file_name FROM backup_history ORDER BY id DESC LIMIT 1').get() as any;
+  const backupHealth = getBackupHealth();
   const recentLogs = db.prepare('SELECT * FROM audit_logs ORDER BY id DESC LIMIT 8').all();
   const canSeeFinance = ['admin', 'accountant'].includes(req.user!.role);
 
@@ -381,6 +382,7 @@ router.get('/dashboard', requireAuth, requirePermission('dashboard:view'), (req:
       pendingAttendance,
       lastBackupAt: lastBackup?.created_at || null,
     },
+    backupHealth,
     alerts,
     activeProjects,
     unpaidInvoices: canSeeFinance ? unpaidInvoices : [],
@@ -644,29 +646,36 @@ router.post('/projects', requireAuth, requirePermission('projects:write'), (req:
   }
   const db = getDb();
   const settings = db.prepare('SELECT prefix_project FROM company_settings WHERE id = 1').get() as { prefix_project: string };
-  const projectNumber = b.project_number?.trim() || generateNextNumber(settings?.prefix_project || 'CH', 'projects', 'project_number');
+  let projectNumber = b.project_number?.trim() || '';
 
   const info = db
-    .prepare(
-      `INSERT INTO projects (project_number, client_id, title, address, project_type, start_date, expected_end_date, status, manager_user_id, expected_cost, expected_selling_price, progress_percent, include_overhead, notes, lifecycle_status, deletion_eligible_until)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', datetime('now', '+7 days'))`
-    )
-    .run(
-      projectNumber,
-      Number(b.client_id),
-      b.title.trim(),
-      b.address || '',
-      b.project_type || 'Travaux généraux BTP',
-      b.start_date || new Date().toISOString().slice(0, 10),
-      b.expected_end_date || null,
-      b.status || 'in_progress',
-      b.manager_user_id ? Number(b.manager_user_id) : req.user!.id,
-      Number(b.expected_cost || 0),
-      Number(b.expected_selling_price || 0),
-      Number(b.progress_percent || 0),
-      b.include_overhead ? 1 : 0,
-      b.notes || ''
-    );
+    .transaction(() => {
+      if (!projectNumber) {
+        projectNumber = generateNextNumber(settings?.prefix_project || 'CH', 'projects', 'project_number');
+      }
+      return db
+        .prepare(
+          `INSERT INTO projects (project_number, client_id, title, address, project_type, start_date, expected_end_date, status, manager_user_id, expected_cost, expected_selling_price, progress_percent, include_overhead, notes, lifecycle_status, deletion_eligible_until)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', datetime('now', '+7 days'))`
+        )
+        .run(
+          projectNumber,
+          Number(b.client_id),
+          b.title.trim(),
+          b.address || '',
+          b.project_type || 'Travaux généraux BTP',
+          b.start_date || new Date().toISOString().slice(0, 10),
+          b.expected_end_date || null,
+          b.status || 'in_progress',
+          b.manager_user_id ? Number(b.manager_user_id) : req.user!.id,
+          Number(b.expected_cost || 0),
+          Number(b.expected_selling_price || 0),
+          Number(b.progress_percent || 0),
+          b.include_overhead ? 1 : 0,
+          b.notes || ''
+        );
+    })
+    .immediate();
   logAudit(req.user!, 'CREATE', 'project', projectNumber, '', b.title.trim());
   res.status(201).json(db.prepare('SELECT * FROM projects WHERE id = ?').get(info.lastInsertRowid));
 });
@@ -1089,6 +1098,25 @@ const DOC_PREFIX_MAP: Record<string, string> = {
   avoir: 'prefix_credit',
 };
 
+// Optimistic concurrency: financial rows carry a revision, and a save must match the
+// revision the user loaded. Two people editing the same invoice, payment or payroll
+// period therefore cannot silently overwrite each other.
+const REVISION_CONFLICT_MESSAGE =
+  'Ce document a été modifié par un autre utilisateur depuis son ouverture. Rechargez la page pour reprendre la version à jour avant de réessayer.';
+
+function readRevision(value: unknown): number | null {
+  const revision = Number(value);
+  return Number.isInteger(revision) && revision > 0 ? revision : null;
+}
+
+function sendRevisionRequired(res: express.Response) {
+  res.status(400).json({ error: 'Numéro de révision manquant : rechargez le document avant de l’enregistrer.' });
+}
+
+function sendStaleRevision(res: express.Response) {
+  res.status(409).json({ error: REVISION_CONFLICT_MESSAGE, stale: true });
+}
+
 router.get('/commercial-documents', requireAuth, requirePermission('invoices:read'), (_req, res) => {
   const db = getDb();
   const docs = db
@@ -1111,9 +1139,8 @@ router.get('/commercial-documents', requireAuth, requirePermission('invoices:rea
   res.json(docs);
 });
 
-router.get('/commercial-documents/:id', requireAuth, requirePermission('invoices:read'), (req, res) => {
+function loadCommercialDocument(id: number) {
   const db = getDb();
-  const id = Number(req.params.id);
   const doc = db
     .prepare(
       `SELECT d.*, c.name AS client_name, c.nif AS client_nif, c.nis AS client_nis, c.rc AS client_rc, c.ai AS client_ai, c.address AS client_address, c.phone AS client_phone,
@@ -1124,13 +1151,19 @@ router.get('/commercial-documents/:id', requireAuth, requirePermission('invoices
        WHERE d.id = ?`
     )
     .get(id) as any;
+  if (!doc) return null;
+  doc.lines = db.prepare('SELECT * FROM commercial_lines WHERE document_id = ? ORDER BY sort_order ASC').all(id);
+  doc.payments = db.prepare('SELECT * FROM payments WHERE document_id = ? ORDER BY payment_date DESC, id DESC').all(id);
+  doc.amount_in_words = amountToFrenchWords(doc.total_ttc);
+  return doc;
+}
+
+router.get('/commercial-documents/:id', requireAuth, requirePermission('invoices:read'), (req, res) => {
+  const doc = loadCommercialDocument(Number(req.params.id));
   if (!doc) {
     res.status(404).json({ error: 'Document introuvable.' });
     return;
   }
-  doc.lines = db.prepare('SELECT * FROM commercial_lines WHERE document_id = ? ORDER BY sort_order ASC').all(id);
-  doc.payments = db.prepare('SELECT * FROM payments WHERE document_id = ? ORDER BY payment_date DESC, id DESC').all(id);
-  doc.amount_in_words = amountToFrenchWords(doc.total_ttc);
   res.json(doc);
 });
 
@@ -1178,7 +1211,7 @@ router.post('/commercial-documents', requireAuth, requirePermission('invoices:wr
   const settings = db.prepare('SELECT * FROM company_settings WHERE id = 1').get() as any;
   const prefixCol = DOC_PREFIX_MAP[docType] || 'prefix_quote';
   const prefix = settings?.[prefixCol] || 'DOC';
-  const docNumber = generateNextNumber(prefix, 'commercial_documents', 'doc_number', `AND doc_type = '${docType}'`);
+  let docNumber = '';
 
   const discount = Number(b.discount_percent || 0);
   const calc = computeDocLines(b.lines, discount);
@@ -1186,6 +1219,7 @@ router.post('/commercial-documents', requireAuth, requirePermission('invoices:wr
   const lockedAt = b.issue_immediately ? new Date().toISOString() : null;
 
   const tx = db.transaction(() => {
+    docNumber = generateNextNumber(prefix, 'commercial_documents', 'doc_number', `AND doc_type = '${docType}'`);
     const info = db
       .prepare(
         `INSERT INTO commercial_documents (doc_type, doc_number, client_id, project_id, linked_doc_id, issue_date, due_date, status, discount_percent, total_ht, total_tva, total_ttc, amount_paid, notes, created_by, locked_at, lifecycle_status, deletion_eligible_until)
@@ -1238,24 +1272,34 @@ router.put('/commercial-documents/:id', requireAuth, requirePermission('invoices
     });
     return;
   }
+  const revision = readRevision(b.revision);
+  if (revision === null) {
+    sendRevisionRequired(res);
+    return;
+  }
+
   const discount = Number(b.discount_percent ?? doc.discount_percent);
   const calc = computeDocLines(b.lines || [], discount);
 
-  db.transaction(() => {
-    db.prepare(
-      `UPDATE commercial_documents SET client_id=?, project_id=?, issue_date=?, due_date=?, discount_percent=?, total_ht=?, total_tva=?, total_ttc=?, notes=? WHERE id=?`
-    ).run(
-      Number(b.client_id ?? doc.client_id),
-      b.project_id ? Number(b.project_id) : null,
-      b.issue_date ?? doc.issue_date,
-      b.due_date ?? doc.due_date,
-      discount,
-      calc.total_ht,
-      calc.total_tva,
-      calc.total_ttc,
-      b.notes ?? doc.notes,
-      id
-    );
+  const saved = db.transaction(() => {
+    const updated = db
+      .prepare(
+        `UPDATE commercial_documents SET client_id=?, project_id=?, issue_date=?, due_date=?, discount_percent=?, total_ht=?, total_tva=?, total_ttc=?, notes=?, revision = revision + 1 WHERE id=? AND revision=?`
+      )
+      .run(
+        Number(b.client_id ?? doc.client_id),
+        b.project_id ? Number(b.project_id) : null,
+        b.issue_date ?? doc.issue_date,
+        b.due_date ?? doc.due_date,
+        discount,
+        calc.total_ht,
+        calc.total_tva,
+        calc.total_ttc,
+        b.notes ?? doc.notes,
+        id,
+        revision
+      );
+    if (updated.changes === 0) return false;
     if (Array.isArray(b.lines)) {
       db.prepare('DELETE FROM commercial_lines WHERE document_id = ?').run(id);
       for (const l of calc.lines) {
@@ -1265,7 +1309,13 @@ router.put('/commercial-documents/:id', requireAuth, requirePermission('invoices
         ).run(id, l.description, l.unit, l.quantity, l.unit_price, l.tva_rate, l.line_ht, l.line_tva, l.line_ttc, l.sort_order);
       }
     }
+    return true;
   })();
+
+  if (!saved) {
+    sendStaleRevision(res);
+    return;
+  }
 
   logAudit(req.user!, 'UPDATE', doc.doc_type, doc.doc_number, '', `TTC: ${calc.total_ttc} DA`);
   res.json(db.prepare('SELECT * FROM commercial_documents WHERE id = ?').get(id));
@@ -1279,7 +1329,7 @@ router.post('/commercial-documents/:id/issue', requireAuth, requirePermission('i
     res.status(404).json({ error: 'Document introuvable.' });
     return;
   }
-  db.prepare("UPDATE commercial_documents SET status='issued', locked_at=datetime('now') WHERE id=?").run(id);
+  db.prepare("UPDATE commercial_documents SET status='issued', locked_at=datetime('now'), revision = revision + 1 WHERE id=?").run(id);
   logAudit(req.user!, 'ISSUE', doc.doc_type, doc.doc_number, doc.status, 'issued');
   res.json(db.prepare('SELECT * FROM commercial_documents WHERE id = ?').get(id));
 });
@@ -1294,11 +1344,12 @@ router.post('/commercial-documents/:id/convert-to-invoice', requireAuth, require
   }
   const lines = db.prepare('SELECT * FROM commercial_lines WHERE document_id = ? ORDER BY sort_order ASC').all(id) as any[];
   const settings = db.prepare('SELECT prefix_invoice FROM company_settings WHERE id = 1').get() as { prefix_invoice: string };
-  const invNumber = generateNextNumber(settings?.prefix_invoice || 'FAC', 'commercial_documents', 'doc_number', "AND doc_type = 'facture'");
+  let invNumber = '';
   const today = new Date().toISOString().slice(0, 10);
   const due = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
 
   const newId = db.transaction(() => {
+    invNumber = generateNextNumber(settings?.prefix_invoice || 'FAC', 'commercial_documents', 'doc_number', "AND doc_type = 'facture'");
     const info = db
       .prepare(
         `INSERT INTO commercial_documents (doc_type, doc_number, client_id, project_id, linked_doc_id, issue_date, due_date, status, discount_percent, total_ht, total_tva, total_ttc, amount_paid, notes, created_by, locked_at, lifecycle_status, deletion_eligible_until)
@@ -1312,7 +1363,7 @@ router.post('/commercial-documents/:id/convert-to-invoice', requireAuth, require
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(invId, l.description, l.unit, l.quantity, l.unit_price, l.tva_rate, l.line_ht, l.line_tva, l.line_ttc, l.sort_order);
     }
-    db.prepare("UPDATE commercial_documents SET status = 'accepted' WHERE id = ? AND doc_type = 'devis'").run(id);
+    db.prepare("UPDATE commercial_documents SET status = 'accepted', revision = revision + 1 WHERE id = ? AND doc_type = 'devis'").run(id);
     return invId;
   })();
 
@@ -1331,9 +1382,10 @@ router.post('/commercial-documents/:id/credit-note', requireAuth, requirePermiss
   }
   const lines = db.prepare('SELECT * FROM commercial_lines WHERE document_id = ? ORDER BY sort_order ASC').all(id) as any[];
   const settings = db.prepare('SELECT prefix_credit FROM company_settings WHERE id = 1').get() as { prefix_credit: string };
-  const avoNumber = generateNextNumber(settings?.prefix_credit || 'AVO', 'commercial_documents', 'doc_number', "AND doc_type = 'avoir'");
+  let avoNumber = '';
 
   const avoId = db.transaction(() => {
+    avoNumber = generateNextNumber(settings?.prefix_credit || 'AVO', 'commercial_documents', 'doc_number', "AND doc_type = 'avoir'");
     const info = db
       .prepare(
         `INSERT INTO commercial_documents (doc_type, doc_number, client_id, project_id, linked_doc_id, issue_date, status, discount_percent, total_ht, total_tva, total_ttc, amount_paid, notes, created_by, locked_at, lifecycle_status, deletion_eligible_until)
@@ -1407,9 +1459,10 @@ router.post('/commercial-documents/:id/payments', requireAuth, requirePermission
   }
 
   const settings = db.prepare('SELECT prefix_receipt FROM company_settings WHERE id = 1').get() as { prefix_receipt: string };
-  const receiptNumber = generateNextNumber(settings?.prefix_receipt || 'REC', 'payments', 'receipt_number', "AND direction = 'inflow'");
+  let receiptNumber = '';
 
   const payId = db.transaction(() => {
+    receiptNumber = generateNextNumber(settings?.prefix_receipt || 'REC', 'payments', 'receipt_number', "AND direction = 'inflow'");
     const pInfo = db
       .prepare(
         `INSERT INTO payments (receipt_number, direction, client_id, document_id, payment_date, amount, payment_method, reference, notes, user_id)
@@ -1419,7 +1472,7 @@ router.post('/commercial-documents/:id/payments', requireAuth, requirePermission
 
     const newPaid = round2(doc.amount_paid + amount);
     const newStatus = newPaid >= doc.total_ttc - 0.01 ? 'paid' : 'partial';
-    db.prepare('UPDATE commercial_documents SET amount_paid=?, status=? WHERE id=?').run(newPaid, newStatus, docId);
+    db.prepare('UPDATE commercial_documents SET amount_paid=?, status=?, revision = revision + 1 WHERE id=?').run(newPaid, newStatus, docId);
 
     // Record in treasury
     const account = method === 'Espèces' ? 'Caisse' : 'Banque';
@@ -1451,8 +1504,18 @@ router.post('/payments/:id/reverse', requireAuth, requirePermission('invoices:ap
     return;
   }
 
+  const revision = readRevision(req.body?.revision);
+  if (revision === null) {
+    sendRevisionRequired(res);
+    return;
+  }
+
   const revNumber = `ANN-${orig.receipt_number}`;
-  db.transaction(() => {
+  const reversed = db.transaction(() => {
+    // Claim the payment at the revision the user saw, so a stale client cannot
+    // reverse a payment another user already acted on.
+    const claim = db.prepare('UPDATE payments SET revision = revision + 1 WHERE id = ? AND revision = ?').run(id, revision);
+    if (claim.changes === 0) return false;
     const revInfo = db
       .prepare(
         `INSERT INTO payments (receipt_number, direction, client_id, supplier_id, document_id, purchase_id, payment_date, amount, payment_method, reference, is_reversal, reversed_payment_id, notes, user_id)
@@ -1479,7 +1542,7 @@ router.post('/payments/:id/reverse', requireAuth, requirePermission('invoices:ap
       if (doc) {
         const newPaid = Math.max(0, round2(doc.amount_paid - orig.amount));
         const newStatus = newPaid <= 0 ? 'issued' : newPaid >= doc.total_ttc - 0.01 ? 'paid' : 'partial';
-        db.prepare('UPDATE commercial_documents SET amount_paid=?, status=? WHERE id=?').run(newPaid, newStatus, doc.id);
+        db.prepare('UPDATE commercial_documents SET amount_paid=?, status=?, revision = revision + 1 WHERE id=?').run(newPaid, newStatus, doc.id);
       }
     }
 
@@ -1509,7 +1572,13 @@ router.post('/payments/:id/reverse', requireAuth, requirePermission('invoices:ap
       `INSERT INTO treasury_transactions (tx_date, tx_type, account, category, amount, payment_method, client_id, supplier_id, linked_payment_id, notes, user_id)
        VALUES (?, ?, ?, 'Annulation règlement', ?, ?, ?, ?, ?, ?, ?)`
     ).run(new Date().toISOString().slice(0, 10), txType, account, orig.amount, orig.payment_method, orig.client_id, orig.supplier_id, revInfo.lastInsertRowid, reason || revNumber, req.user!.id);
+    return true;
   })();
+
+  if (!reversed) {
+    sendStaleRevision(res);
+    return;
+  }
 
   logAudit(req.user!, 'REVERSE', 'payment', orig.receipt_number, `${orig.amount} DA`, reason || 'Contre-passation');
   res.json({ ok: true });
@@ -2065,10 +2134,12 @@ router.post('/payroll/calculate', requireAuth, requirePermission('payroll:write'
            base_gross=excluded.base_gross, overtime_pay=excluded.overtime_pay,
            gross_salary=excluded.gross_salary, cnas_employee=excluded.cnas_employee,
            cnas_employer=excluded.cnas_employer, irg_amount=excluded.irg_amount,
-           advances_deducted=excluded.advances_deducted, net_pay=excluded.net_pay`
+           advances_deducted=excluded.advances_deducted, net_pay=excluded.net_pay,
+           revision = payslips.revision + 1`
       ).run(pid, w.id, att.days, att.ot, baseGross, otPay, bonus, piece, gross, cnasEmp, cnasPat, irg, att.adv, penalties, otherDed, net);
     }
 
+    db.prepare('UPDATE payroll_periods SET revision = revision + 1 WHERE id = ?').run(pid);
     return pid;
   })();
 
@@ -2100,9 +2171,21 @@ router.put('/payroll/payslips/:id', requireAuth, requirePermission('payroll:writ
   const irg = calculateAlgerianIRG(Math.max(0, gross - cnasEmp), getTaxConfigFromDb());
   const net = Math.max(0, round2(gross - cnasEmp - irg - slip.advances_deducted - penalties - otherDed));
 
-  db.prepare(
-    `UPDATE payslips SET bonus_amount=?, piecework_amount=?, gross_salary=?, cnas_employee=?, cnas_employer=?, irg_amount=?, penalties_deducted=?, other_deductions=?, net_pay=? WHERE id=?`
-  ).run(bonus, piece, gross, cnasEmp, cnasPat, irg, penalties, otherDed, net, id);
+  const revision = readRevision(b.revision);
+  if (revision === null) {
+    sendRevisionRequired(res);
+    return;
+  }
+
+  const saved = db
+    .prepare(
+      `UPDATE payslips SET bonus_amount=?, piecework_amount=?, gross_salary=?, cnas_employee=?, cnas_employer=?, irg_amount=?, penalties_deducted=?, other_deductions=?, net_pay=?, revision = revision + 1 WHERE id=? AND revision=?`
+    )
+    .run(bonus, piece, gross, cnasEmp, cnasPat, irg, penalties, otherDed, net, id, revision);
+  if (saved.changes === 0) {
+    sendStaleRevision(res);
+    return;
+  }
 
   logAudit(req.user!, 'UPDATE', 'payslip', id, `${slip.net_pay} DA`, `${net} DA`);
   res.json(db.prepare('SELECT * FROM payslips WHERE id = ?').get(id));
@@ -2121,9 +2204,18 @@ router.post('/payroll/periods/:id/approve', requireAuth, requirePermission('payr
     return;
   }
 
-  db.transaction(() => {
-    db.prepare("UPDATE payroll_periods SET status='approved', approved_by=?, approved_at=datetime('now') WHERE id=?").run(req.user!.id, id);
-    db.prepare('UPDATE payslips SET locked=1 WHERE payroll_period_id=?').run(id);
+  const revision = readRevision(req.body?.revision);
+  if (revision === null) {
+    sendRevisionRequired(res);
+    return;
+  }
+
+  const approved = db.transaction(() => {
+    const claim = db
+      .prepare("UPDATE payroll_periods SET status='approved', approved_by=?, approved_at=datetime('now'), revision = revision + 1 WHERE id=? AND revision=?")
+      .run(req.user!.id, id, revision);
+    if (claim.changes === 0) return false;
+    db.prepare('UPDATE payslips SET locked=1, revision = revision + 1 WHERE payroll_period_id=?').run(id);
     const tot = db.prepare('SELECT COALESCE(SUM(net_pay), 0) AS net FROM payslips WHERE payroll_period_id=?').get(id) as { net: number };
     if (tot.net > 0) {
       db.prepare(
@@ -2131,7 +2223,13 @@ router.post('/payroll/periods/:id/approve', requireAuth, requirePermission('payr
          VALUES (?, 'cash_outflow', 'Caisse', 'Salaires & Paie', ?, ?, ?, ?)`
       ).run(new Date().toISOString().slice(0, 10), tot.net, period.payment_method || 'Espèces', `Décaissement paie ${period.month}/${period.year}`, req.user!.id);
     }
+    return true;
   })();
+
+  if (!approved) {
+    sendStaleRevision(res);
+    return;
+  }
 
   logAudit(req.user!, 'APPROVE', 'payroll_period', `${period.month}/${period.year}`, 'draft', 'approved');
   res.json({ ok: true });
@@ -2392,7 +2490,7 @@ router.post('/purchases', requireAuth, requirePermission('suppliers:write'), (re
   }
   const db = getDb();
   const settings = db.prepare('SELECT prefix_po FROM company_settings WHERE id = 1').get() as { prefix_po: string };
-  const poNumber = generateNextNumber(settings?.prefix_po || 'BC', 'purchases', 'po_number');
+  let poNumber = '';
 
   let sumHt = 0;
   let sumTva = 0;
@@ -2415,6 +2513,7 @@ router.post('/purchases', requireAuth, requirePermission('suppliers:write'), (re
   });
 
   const poId = db.transaction(() => {
+    poNumber = generateNextNumber(settings?.prefix_po || 'BC', 'purchases', 'po_number');
     const info = db
       .prepare(
         `INSERT INTO purchases (po_number, supplier_invoice_no, supplier_id, project_id, order_date, status, total_ht, total_tva, total_ttc, amount_paid, notes, created_by)
@@ -2771,9 +2870,10 @@ router.post('/repair-orders', requireAuth, requirePermission('repairs:write'), (
   const labor = Number(b.labor_cost || 0);
   const towing = Number(b.towing_cost || 0);
   const total = round2(parts + labor + towing);
-  const orderNumber = generateNextNumber('OR', 'repair_orders', 'order_number');
+  let orderNumber = '';
 
   const id = db.transaction(() => {
+    orderNumber = generateNextNumber('OR', 'repair_orders', 'order_number');
     const info = db
       .prepare(
         `INSERT INTO repair_orders (order_number, vehicle_id, repair_date, problem_category, description, priority, workshop, parts_used, parts_cost, labor_cost, towing_cost, total_cost, downtime_days, status, project_id, notes)
@@ -2870,8 +2970,9 @@ router.post('/maintenance-rules/:id/create-order', requireAuth, requirePermissio
     res.status(404).json({ error: 'Règle de maintenance introuvable.' });
     return;
   }
-  const orderNumber = generateNextNumber('OR', 'repair_orders', 'order_number');
+  let orderNumber = '';
   const roId = db.transaction(() => {
+    orderNumber = generateNextNumber('OR', 'repair_orders', 'order_number');
     const info = db
       .prepare(
         `INSERT INTO repair_orders (order_number, vehicle_id, repair_date, problem_category, description, priority, status, notes)
@@ -3322,7 +3423,7 @@ router.get('/taxes/summary', requireAuth, requirePermission('taxes:read'), (_req
   const ibsRate = getTaxRate('IBS', 19);
   const tapRate = getTaxRate('TAP', 0);
 
-  const expensesRow = db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM expenses').get() as { total: number };
+  const expensesRow = db.prepare("SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE status <> 'cancelled'").get() as { total: number };
   const grossProfit = Math.max(0, salesRow.ca_ht - purchRow.achats_ht - expensesRow.total);
 
   res.json({
@@ -3342,6 +3443,86 @@ router.get('/taxes/summary', requireAuth, requirePermission('taxes:read'), (_req
   });
 });
 
+const TAX_RULE_CODE = /^[A-Z0-9_]{2,32}$/;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function isValidIsoDate(value: string): boolean {
+  if (!ISO_DATE.test(value)) return false;
+  const parsed = new Date(value + 'T00:00:00Z');
+  if (!Number.isFinite(parsed.getTime())) return false;
+  // Reject rolled-over calendar dates such as 2026-02-31, which Date.parse accepts.
+  return parsed.toISOString().slice(0, 10) === value;
+}
+
+// IRG_BAREME holds the progressive bracket configuration (config_json), not a single rate.
+const IRG_BAREME_CODE = 'IRG_BAREME';
+
+function findActiveRuleWithSameCodeAndDate(code: string, effectiveDate: string, excludeId = 0): { id: number } | undefined {
+  return getDb()
+    .prepare(
+      `SELECT id FROM tax_rules
+       WHERE code = ? AND effective_date = ? AND status = 'active' AND id <> ?
+       LIMIT 1`
+    )
+    .get(code, effectiveDate, excludeId) as { id: number } | undefined;
+}
+
+router.post('/taxes/rules', requireAuth, requirePermission('taxes:write'), (req: AuthedRequest, res) => {
+  const b = req.body || {};
+  const code = String(b.code || '').trim().toUpperCase();
+  const name = String(b.name || '').trim();
+  const rate = Number(b.rate);
+  const effectiveDate = String(b.effective_date || new Date().toISOString().slice(0, 10));
+  if (!TAX_RULE_CODE.test(code)) {
+    res.status(400).json({ error: 'Le code doit contenir 2 à 32 caractères (lettres, chiffres ou tiret bas).' });
+    return;
+  }
+  if (code === IRG_BAREME_CODE) {
+    res.status(400).json({
+      error: 'IRG_BAREME est un barème progressif : il se configure par tranches et ne peut pas être créé avec un taux simple.',
+    });
+    return;
+  }
+  if (!name) {
+    res.status(400).json({ error: 'Le libellé de la règle fiscale est obligatoire.' });
+    return;
+  }
+  if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+    res.status(400).json({ error: 'Le taux doit être un nombre compris entre 0 et 100.' });
+    return;
+  }
+  if (!isValidIsoDate(effectiveDate)) {
+    res.status(400).json({ error: 'La date d’effet est invalide.' });
+    return;
+  }
+  const db = getDb();
+  const insertRule = db.transaction(() => {
+    if (findActiveRuleWithSameCodeAndDate(code, effectiveDate)) {
+      throw new Error('DUPLICATE_ACTIVE_TAX_RULE');
+    }
+    return db
+      .prepare(
+        `INSERT INTO tax_rules (code, name, rate, config_json, effective_date, status, notes, validated_by)
+         VALUES (?, ?, ?, '{}', ?, 'active', ?, ?)`
+      )
+      .run(code, name, round2(rate), effectiveDate, String(b.notes || ''), req.user!.name);
+  });
+  let info: { lastInsertRowid: number | bigint };
+  try {
+    info = insertRule.immediate();
+  } catch (error: any) {
+    if (error?.message === 'DUPLICATE_ACTIVE_TAX_RULE') {
+      res.status(400).json({
+        error: 'Une règle active avec ce code et cette date d’effet existe déjà. Archivez-la ou choisissez une autre date.',
+      });
+      return;
+    }
+    throw error;
+  }
+  logAudit(req.user!, 'CREATE', 'tax_rule', code, '', `${rate}%`);
+  res.status(201).json(db.prepare('SELECT * FROM tax_rules WHERE id = ?').get(info.lastInsertRowid));
+});
+
 router.put('/taxes/rules/:id', requireAuth, requirePermission('taxes:write'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const b = req.body || {};
@@ -3351,14 +3532,58 @@ router.put('/taxes/rules/:id', requireAuth, requirePermission('taxes:write'), (r
     res.status(404).json({ error: 'Règle fiscale introuvable.' });
     return;
   }
-  db.prepare('UPDATE tax_rules SET rate=?, notes=?, effective_date=?, validated_by=? WHERE id=?').run(
-    b.rate !== undefined ? Number(b.rate) : old.rate,
-    b.notes ?? old.notes,
-    b.effective_date ?? old.effective_date,
-    req.user!.name,
-    id
-  );
-  logAudit(req.user!, 'UPDATE', 'tax_rule', old.code, `${old.rate}%`, `${b.rate ?? old.rate}%`);
+  if (old.code === IRG_BAREME_CODE && b.rate !== undefined) {
+    res.status(400).json({
+      error: 'IRG_BAREME est un barème progressif : il se configure par tranches et ne peut pas être modifié par un taux unique.',
+    });
+    return;
+  }
+  const rate = b.rate !== undefined ? Number(b.rate) : Number(old.rate);
+  if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+    res.status(400).json({ error: 'Le taux doit être un nombre compris entre 0 et 100.' });
+    return;
+  }
+  const effectiveDate = String(b.effective_date ?? old.effective_date);
+  if (!isValidIsoDate(effectiveDate)) {
+    res.status(400).json({ error: 'La date d’effet est invalide.' });
+    return;
+  }
+  const name = b.name !== undefined ? String(b.name).trim() : old.name;
+  if (!name) {
+    res.status(400).json({ error: 'Le libellé de la règle fiscale est obligatoire.' });
+    return;
+  }
+  const status = b.status !== undefined ? String(b.status) : old.status;
+  if (!['active', 'archived'].includes(status)) {
+    res.status(400).json({ error: 'Statut de règle fiscale invalide.' });
+    return;
+  }
+  const applyUpdate = db.transaction(() => {
+    if (status === 'active' && findActiveRuleWithSameCodeAndDate(old.code, effectiveDate, id)) {
+      throw new Error('DUPLICATE_ACTIVE_TAX_RULE');
+    }
+    db.prepare('UPDATE tax_rules SET name=?, rate=?, notes=?, effective_date=?, status=?, validated_by=? WHERE id=?').run(
+      name,
+      round2(rate),
+      b.notes ?? old.notes,
+      effectiveDate,
+      status,
+      req.user!.name,
+      id
+    );
+  });
+  try {
+    applyUpdate.immediate();
+  } catch (error: any) {
+    if (error?.message === 'DUPLICATE_ACTIVE_TAX_RULE') {
+      res.status(400).json({
+        error: 'Une règle active avec ce code et cette date d’effet existe déjà. Archivez-la ou choisissez une autre date.',
+      });
+      return;
+    }
+    throw error;
+  }
+  logAudit(req.user!, status === 'archived' && old.status !== 'archived' ? 'ARCHIVE' : 'UPDATE', 'tax_rule', old.code, `${old.rate}%`, `${rate}%`);
   res.json(db.prepare('SELECT * FROM tax_rules WHERE id = ?').get(id));
 });
 
@@ -3926,6 +4151,27 @@ router.get('/backups', requireAuth, requirePermission('backup:manage'), (_req, r
   res.json(listBackups());
 });
 
+router.get('/backups/health', requireAuth, requirePermission('backup:manage'), (_req, res) => {
+  res.json(getBackupHealth());
+});
+
+router.put('/backups/settings', requireAuth, requirePermission('backup:manage'), (req: AuthedRequest, res) => {
+  try {
+    const settings = saveBackupSettings(req.body || {});
+    logAudit(
+      req.user!,
+      'UPDATE',
+      'backup_settings',
+      settings.externalDir || 'dossier non configuré',
+      '',
+      `Copie externe : ${settings.externalDir || 'aucune'} · conservation ${settings.keepManual} · alerte ${settings.warnAfterDays} jour(s)`
+    );
+    res.json(settings);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || 'Réglages de sauvegarde invalides.' });
+  }
+});
+
 router.post('/backups/create', requireAuth, requirePermission('backup:manage'), (req: AuthedRequest, res) => {
   const type = req.body?.backup_type === 'usb_export' ? 'usb_export' : 'manual_local';
   const entry = createFullBackup(type, req.user!.name);
@@ -4039,7 +4285,7 @@ router.post('/commercial-documents/:id/cancel', requireAuth, requirePermission('
     res.status(400).json({ error: 'Annulation impossible : des règlements sont liés.' });
     return;
   }
-  db.prepare("UPDATE commercial_documents SET status='cancelled', updated_at=? WHERE id=?").run(new Date().toISOString().slice(0,19).replace('T',' '), id);
+  db.prepare("UPDATE commercial_documents SET status='cancelled', updated_at=?, revision = revision + 1 WHERE id=?").run(new Date().toISOString().slice(0,19).replace('T',' '), id);
   logAudit(req.user!, 'CANCEL', 'commercial_document', row.doc_number, row.status, 'cancelled');
   res.json({ ok: true, status: 'cancelled' });
 });
@@ -4088,6 +4334,564 @@ router.post('/notifications/:id/read', requireAuth, requirePermission('lifecycle
 router.post('/lifecycle/notifications/sync', requireAuth, requirePermission('audit:read'), requirePermission('lifecycle:review'), (_req, res) => {
   const created = syncRetentionNotifications();
   res.json({ created });
+});
+
+// ==================== BOQ / ESTIMATES / RATE ANALYSIS ====================
+const BOQ_RESOURCE_TYPES = ['material', 'labour', 'equipment', 'subcontract', 'transport'];
+
+function boqItemTotals(item: any) {
+  const resources = Array.isArray(item.resources) ? item.resources : [];
+  const unitCost = round2(
+    resources.reduce((sum: number, r: any) => sum + Number(r.quantity || 0) * Number(r.unit_cost || 0), 0)
+  );
+  const quantity = Number(item.quantity || 0);
+  const unitPrice = Number(item.unit_price || 0);
+  return { ...item, unit_cost: unitCost, line_ht: round2(quantity * unitPrice), line_cost: round2(quantity * unitCost) };
+}
+
+function loadBoqVersion(versionId: number) {
+  const db = getDb();
+  const version = db
+    .prepare('SELECT v.*, u.name AS created_by_name FROM boq_versions v LEFT JOIN users u ON u.id = v.created_by WHERE v.id = ?')
+    .get(versionId) as any;
+  if (!version) return null;
+  const sections = db.prepare('SELECT * FROM boq_sections WHERE version_id = ? ORDER BY sort_order ASC, id ASC').all(versionId) as any[];
+  const items = db.prepare('SELECT * FROM boq_items WHERE version_id = ? ORDER BY sort_order ASC, id ASC').all(versionId) as any[];
+  const resources = db
+    .prepare(
+      `SELECT r.* FROM boq_item_resources r
+       JOIN boq_items i ON i.id = r.item_id
+       WHERE i.version_id = ? ORDER BY r.sort_order ASC, r.id ASC`
+    )
+    .all(versionId) as any[];
+  const byItem = new Map<number, any[]>();
+  for (const r of resources) {
+    const list = byItem.get(r.item_id) || [];
+    list.push(r);
+    byItem.set(r.item_id, list);
+  }
+  const computed = items.map((i) => boqItemTotals({ ...i, resources: byItem.get(i.id) || [] }));
+  const totalHt = round2(computed.reduce((s, i) => s + i.line_ht, 0));
+  const totalCost = round2(computed.reduce((s, i) => s + i.line_cost, 0));
+  return {
+    ...version,
+    sections,
+    items: computed,
+    totals: {
+      item_count: computed.length,
+      total_ht: totalHt,
+      total_cost: totalCost,
+      margin: round2(totalHt - totalCost),
+      margin_percent: totalHt > 0 ? round2(((totalHt - totalCost) / totalHt) * 100) : 0,
+    },
+  };
+}
+
+function readDraftBoqVersion(versionId: number, res: express.Response) {
+  const version = getDb().prepare('SELECT * FROM boq_versions WHERE id = ?').get(versionId) as any;
+  if (!version) {
+    res.status(404).json({ error: 'Version de BOQ introuvable.' });
+    return null;
+  }
+  if (version.status !== 'draft') {
+    res.status(400).json({ error: 'Cette version de BOQ est approuvée ou remplacée : dupliquez-la pour la modifier.' });
+    return null;
+  }
+  return version;
+}
+
+function readBoqItemDraft(itemId: number, res: express.Response) {
+  const item = getDb().prepare('SELECT * FROM boq_items WHERE id = ?').get(itemId) as any;
+  if (!item) {
+    res.status(404).json({ error: 'Poste de BOQ introuvable.' });
+    return null;
+  }
+  const version = getDb().prepare('SELECT * FROM boq_versions WHERE id = ?').get(item.version_id) as any;
+  if (!version || version.status !== 'draft') {
+    res.status(400).json({ error: 'Seule une version de BOQ en brouillon peut être modifiée.' });
+    return null;
+  }
+  return item;
+}
+
+function normalizeBoqUnit(value: unknown): string | null {
+  const unit = String(value ?? 'U').trim();
+  if (!unit) return 'U';
+  if (unit.length > 20) return null;
+  return unit;
+}
+
+function normalizeBoqQuantity(value: unknown, fallback: number): number | null {
+  const n = value === undefined ? fallback : Number(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return round2(n);
+}
+
+router.get('/projects/:id/boq', requireAuth, requirePermission('projects:read'), (req, res) => {
+  const projectId = Number(req.params.id);
+  const db = getDb();
+  const project = db.prepare('SELECT id, project_number, title FROM projects WHERE id = ?').get(projectId) as any;
+  if (!project) {
+    res.status(404).json({ error: 'Chantier introuvable.' });
+    return;
+  }
+  const versions = db
+    .prepare('SELECT id FROM boq_versions WHERE project_id = ? ORDER BY version_number DESC')
+    .all(projectId) as Array<{ id: number }>;
+  const detailed = versions.map((v) => loadBoqVersion(v.id));
+  res.json({
+    project,
+    versions: detailed.map((v: any) => ({
+      id: v.id,
+      project_id: v.project_id,
+      version_number: v.version_number,
+      label: v.label,
+      status: v.status,
+      notes: v.notes,
+      created_by_name: v.created_by_name,
+      approved_at: v.approved_at,
+      created_at: v.created_at,
+      updated_at: v.updated_at,
+      totals: v.totals,
+      section_count: v.sections.length,
+    })),
+  });
+});
+
+router.post('/projects/:id/boq/versions', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const projectId = Number(req.params.id);
+  const db = getDb();
+  const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId) as any;
+  if (!project) {
+    res.status(404).json({ error: 'Chantier introuvable.' });
+    return;
+  }
+  const createVersion = db.transaction(() => {
+    const next = db
+      .prepare('SELECT COALESCE(MAX(version_number), 0) + 1 AS n FROM boq_versions WHERE project_id = ?')
+      .get(projectId) as { n: number };
+    const info = db
+      .prepare(
+        `INSERT INTO boq_versions (project_id, version_number, label, status, notes, created_by)
+         VALUES (?, ?, ?, 'draft', ?, ?)`
+      )
+      .run(projectId, next.n, String(req.body?.label || `Version ${next.n}`).trim(), String(req.body?.notes || ''), req.user!.id);
+    return Number(info.lastInsertRowid);
+  });
+  const versionId = createVersion.immediate();
+  logAudit(req.user!, 'CREATE', 'boq_version', versionId, '', `Chantier ${projectId}`);
+  res.status(201).json(loadBoqVersion(versionId));
+});
+
+router.get('/boq/versions/:id', requireAuth, requirePermission('projects:read'), (req, res) => {
+  const version = loadBoqVersion(Number(req.params.id));
+  if (!version) {
+    res.status(404).json({ error: 'Version de BOQ introuvable.' });
+    return;
+  }
+  res.json(version);
+});
+
+router.put('/boq/versions/:id', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const version = readDraftBoqVersion(Number(req.params.id), res) as any;
+  if (!version) return;
+  const label = String(req.body?.label ?? version.label).trim();
+  if (!label) {
+    res.status(400).json({ error: 'Le libellé de la version est obligatoire.' });
+    return;
+  }
+  getDb()
+    .prepare("UPDATE boq_versions SET label = ?, notes = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(label, String(req.body?.notes ?? version.notes), version.id);
+  logAudit(req.user!, 'UPDATE', 'boq_version', version.id, version.label, label);
+  res.json(loadBoqVersion(version.id));
+});
+
+router.post('/boq/versions/:id/approve', requireAuth, requirePermission('projects:approve'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const version = db.prepare('SELECT * FROM boq_versions WHERE id = ?').get(id) as any;
+  if (!version) {
+    res.status(404).json({ error: 'Version de BOQ introuvable.' });
+    return;
+  }
+  if (version.status === 'approved') {
+    res.status(400).json({ error: 'Cette version de BOQ est déjà approuvée.' });
+    return;
+  }
+  const itemCount = (db.prepare('SELECT COUNT(*) AS c FROM boq_items WHERE version_id = ?').get(id) as any).c;
+  if (itemCount === 0) {
+    res.status(400).json({ error: 'Impossible d’approuver une version de BOQ sans aucun poste.' });
+    return;
+  }
+  db.transaction(() => {
+    db.prepare("UPDATE boq_versions SET status='superseded', updated_at=datetime('now') WHERE project_id = ? AND status='approved' AND id <> ?").run(
+      version.project_id,
+      id
+    );
+    db.prepare("UPDATE boq_versions SET status='approved', approved_by=?, approved_at=datetime('now'), updated_at=datetime('now') WHERE id=?").run(
+      req.user!.id,
+      id
+    );
+  })();
+  logAudit(req.user!, 'APPROVE', 'boq_version', id, version.status, 'approved');
+  res.json(loadBoqVersion(id));
+});
+
+router.post('/boq/versions/:id/duplicate', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const source = db.prepare('SELECT * FROM boq_versions WHERE id = ?').get(id) as any;
+  if (!source) {
+    res.status(404).json({ error: 'Version de BOQ introuvable.' });
+    return;
+  }
+  const newId = db.transaction(() => {
+    const next = db
+      .prepare('SELECT COALESCE(MAX(version_number), 0) + 1 AS n FROM boq_versions WHERE project_id = ?')
+      .get(source.project_id) as { n: number };
+    const info = db
+      .prepare(
+        `INSERT INTO boq_versions (project_id, version_number, label, status, notes, created_by)
+         VALUES (?, ?, ?, 'draft', ?, ?)`
+      )
+      .run(
+        source.project_id,
+        next.n,
+        String(req.body?.label || `Version ${next.n}`).trim(),
+        String(req.body?.notes || `Révision de la version ${source.version_number}`),
+        req.user!.id
+      );
+    const copyId = Number(info.lastInsertRowid);
+    const sectionMap = new Map<number, number>();
+    for (const s of db.prepare('SELECT * FROM boq_sections WHERE version_id = ? ORDER BY sort_order, id').all(id) as any[]) {
+      const si = db
+        .prepare('INSERT INTO boq_sections (version_id, code, title, sort_order) VALUES (?, ?, ?, ?)')
+        .run(copyId, s.code, s.title, s.sort_order);
+      sectionMap.set(s.id, Number(si.lastInsertRowid));
+    }
+    for (const item of db.prepare('SELECT * FROM boq_items WHERE version_id = ? ORDER BY sort_order, id').all(id) as any[]) {
+      const ii = db
+        .prepare(
+          `INSERT INTO boq_items (version_id, section_id, code, description, unit, quantity, unit_price, sort_order)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          copyId,
+          item.section_id ? sectionMap.get(item.section_id) ?? null : null,
+          item.code,
+          item.description,
+          item.unit,
+          item.quantity,
+          item.unit_price,
+          item.sort_order
+        );
+      const newItemId = Number(ii.lastInsertRowid);
+      for (const r of db.prepare('SELECT * FROM boq_item_resources WHERE item_id = ? ORDER BY sort_order, id').all(item.id) as any[]) {
+        db.prepare(
+          `INSERT INTO boq_item_resources (item_id, resource_type, label, unit, quantity, unit_cost, sort_order)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+        ).run(newItemId, r.resource_type, r.label, r.unit, r.quantity, r.unit_cost, r.sort_order);
+      }
+    }
+    return copyId;
+  })();
+  logAudit(req.user!, 'DUPLICATE', 'boq_version', newId, source.version_number, 'Nouvelle révision brouillon');
+  res.status(201).json(loadBoqVersion(newId));
+});
+
+router.post('/boq/versions/:id/sections', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const version = readDraftBoqVersion(Number(req.params.id), res) as any;
+  if (!version) return;
+  const title = String(req.body?.title || '').trim();
+  if (!title) {
+    res.status(400).json({ error: 'Le titre de la section est obligatoire.' });
+    return;
+  }
+  const info = getDb()
+    .prepare('INSERT INTO boq_sections (version_id, code, title, sort_order) VALUES (?, ?, ?, ?)')
+    .run(version.id, String(req.body?.code || '').trim(), title, Number(req.body?.sort_order || 1));
+  logAudit(req.user!, 'CREATE', 'boq_section', info.lastInsertRowid, '', title);
+  res.status(201).json(loadBoqVersion(version.id));
+});
+
+router.put('/boq/sections/:id', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const db = getDb();
+  const section = db.prepare('SELECT * FROM boq_sections WHERE id = ?').get(Number(req.params.id)) as any;
+  if (!section) {
+    res.status(404).json({ error: 'Section de BOQ introuvable.' });
+    return;
+  }
+  const version = readDraftBoqVersion(section.version_id, res) as any;
+  if (!version) return;
+  const title = String(req.body?.title ?? section.title).trim();
+  if (!title) {
+    res.status(400).json({ error: 'Le titre de la section est obligatoire.' });
+    return;
+  }
+  db.prepare('UPDATE boq_sections SET code = ?, title = ?, sort_order = ? WHERE id = ?').run(
+    String(req.body?.code ?? section.code),
+    title,
+    Number(req.body?.sort_order ?? section.sort_order),
+    section.id
+  );
+  logAudit(req.user!, 'UPDATE', 'boq_section', section.id, section.title, title);
+  res.json(loadBoqVersion(version.id));
+});
+
+router.delete('/boq/sections/:id', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const db = getDb();
+  const section = db.prepare('SELECT * FROM boq_sections WHERE id = ?').get(Number(req.params.id)) as any;
+  if (!section) {
+    res.status(404).json({ error: 'Section de BOQ introuvable.' });
+    return;
+  }
+  const version = readDraftBoqVersion(section.version_id, res) as any;
+  if (!version) return;
+  db.prepare('DELETE FROM boq_sections WHERE id = ?').run(section.id);
+  logAudit(req.user!, 'DELETE', 'boq_section', section.id, section.title, 'Section supprimée (brouillon)');
+  res.json(loadBoqVersion(version.id));
+});
+
+router.post('/boq/versions/:id/items', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const version = readDraftBoqVersion(Number(req.params.id), res) as any;
+  if (!version) return;
+  const b = req.body || {};
+  const description = String(b.description || '').trim();
+  const unit = normalizeBoqUnit(b.unit);
+  const quantity = normalizeBoqQuantity(b.quantity, 0);
+  const unitPrice = normalizeBoqQuantity(b.unit_price, 0);
+  if (!description) {
+    res.status(400).json({ error: 'La désignation du poste est obligatoire.' });
+    return;
+  }
+  if (unit === null) {
+    res.status(400).json({ error: 'L’unité de mesure est invalide (20 caractères maximum).' });
+    return;
+  }
+  if (quantity === null || unitPrice === null) {
+    res.status(400).json({ error: 'La quantité et le prix unitaire doivent être des nombres positifs ou nuls.' });
+    return;
+  }
+  const sectionId = b.section_id ? Number(b.section_id) : null;
+  if (sectionId !== null) {
+    const section = getDb().prepare('SELECT id FROM boq_sections WHERE id = ? AND version_id = ?').get(sectionId, version.id);
+    if (!section) {
+      res.status(400).json({ error: 'La section sélectionnée n’appartient pas à cette version de BOQ.' });
+      return;
+    }
+  }
+  const info = getDb()
+    .prepare(
+      `INSERT INTO boq_items (version_id, section_id, code, description, unit, quantity, unit_price, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(version.id, sectionId, String(b.code || '').trim(), description, unit, quantity, unitPrice, Number(b.sort_order || 1));
+  logAudit(req.user!, 'CREATE', 'boq_item', info.lastInsertRowid, '', description);
+  res.status(201).json(loadBoqVersion(version.id));
+});
+
+router.put('/boq/items/:id', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const item = readBoqItemDraft(Number(req.params.id), res) as any;
+  if (!item) return;
+  const b = req.body || {};
+  const description = String(b.description ?? item.description).trim();
+  const unit = normalizeBoqUnit(b.unit ?? item.unit);
+  const quantity = normalizeBoqQuantity(b.quantity, Number(item.quantity));
+  const unitPrice = normalizeBoqQuantity(b.unit_price, Number(item.unit_price));
+  if (!description) {
+    res.status(400).json({ error: 'La désignation du poste est obligatoire.' });
+    return;
+  }
+  if (unit === null || quantity === null || unitPrice === null) {
+    res.status(400).json({ error: 'Unité, quantité et prix unitaire doivent être valides et positifs ou nuls.' });
+    return;
+  }
+  let sectionId = item.section_id;
+  if (b.section_id !== undefined) {
+    sectionId = b.section_id ? Number(b.section_id) : null;
+    if (sectionId !== null) {
+      const section = getDb().prepare('SELECT id FROM boq_sections WHERE id = ? AND version_id = ?').get(sectionId, item.version_id);
+      if (!section) {
+        res.status(400).json({ error: 'La section sélectionnée n’appartient pas à cette version de BOQ.' });
+        return;
+      }
+    }
+  }
+  getDb()
+    .prepare('UPDATE boq_items SET section_id = ?, code = ?, description = ?, unit = ?, quantity = ?, unit_price = ?, sort_order = ? WHERE id = ?')
+    .run(sectionId, String(b.code ?? item.code).trim(), description, unit, quantity, unitPrice, Number(b.sort_order ?? item.sort_order), item.id);
+  logAudit(req.user!, 'UPDATE', 'boq_item', item.id, item.description, description);
+  res.json(loadBoqVersion(item.version_id));
+});
+
+router.delete('/boq/items/:id', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const item = readBoqItemDraft(Number(req.params.id), res) as any;
+  if (!item) return;
+  getDb().prepare('DELETE FROM boq_items WHERE id = ?').run(item.id);
+  logAudit(req.user!, 'DELETE', 'boq_item', item.id, item.description, 'Poste supprimé (brouillon)');
+  res.json(loadBoqVersion(item.version_id));
+});
+
+router.post('/boq/items/:id/resources', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const item = readBoqItemDraft(Number(req.params.id), res) as any;
+  if (!item) return;
+  const b = req.body || {};
+  const resourceType = String(b.resource_type || 'material');
+  const label = String(b.label || '').trim();
+  const quantity = normalizeBoqQuantity(b.quantity, 0);
+  const unitCost = normalizeBoqQuantity(b.unit_cost, 0);
+  if (!BOQ_RESOURCE_TYPES.includes(resourceType)) {
+    res.status(400).json({ error: 'Type de ressource invalide.' });
+    return;
+  }
+  if (!label) {
+    res.status(400).json({ error: 'Le libellé de la ressource est obligatoire.' });
+    return;
+  }
+  if (quantity === null || unitCost === null) {
+    res.status(400).json({ error: 'Quantité et coût unitaire doivent être positifs ou nuls.' });
+    return;
+  }
+  getDb()
+    .prepare(
+      `INSERT INTO boq_item_resources (item_id, resource_type, label, unit, quantity, unit_cost, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(item.id, resourceType, label, String(b.unit || '').trim(), quantity, unitCost, Number(b.sort_order || 1));
+  logAudit(req.user!, 'CREATE', 'boq_resource', item.id, '', `${resourceType}: ${label}`);
+  res.status(201).json(loadBoqVersion(item.version_id));
+});
+
+router.put('/boq/resources/:id', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const db = getDb();
+  const resource = db.prepare('SELECT * FROM boq_item_resources WHERE id = ?').get(Number(req.params.id)) as any;
+  if (!resource) {
+    res.status(404).json({ error: 'Ressource de BOQ introuvable.' });
+    return;
+  }
+  const item = readBoqItemDraft(resource.item_id, res) as any;
+  if (!item) return;
+  const b = req.body || {};
+  const resourceType = String(b.resource_type ?? resource.resource_type);
+  const label = String(b.label ?? resource.label).trim();
+  const quantity = normalizeBoqQuantity(b.quantity, Number(resource.quantity));
+  const unitCost = normalizeBoqQuantity(b.unit_cost, Number(resource.unit_cost));
+  if (!BOQ_RESOURCE_TYPES.includes(resourceType) || !label || quantity === null || unitCost === null) {
+    res.status(400).json({ error: 'Ressource invalide : type, libellé, quantité et coût unitaire sont requis.' });
+    return;
+  }
+  db.prepare('UPDATE boq_item_resources SET resource_type = ?, label = ?, unit = ?, quantity = ?, unit_cost = ?, sort_order = ? WHERE id = ?').run(
+    resourceType,
+    label,
+    String(b.unit ?? resource.unit),
+    quantity,
+    unitCost,
+    Number(b.sort_order ?? resource.sort_order),
+    resource.id
+  );
+  logAudit(req.user!, 'UPDATE', 'boq_resource', resource.id, resource.label, label);
+  res.json(loadBoqVersion(item.version_id));
+});
+
+router.delete('/boq/resources/:id', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const db = getDb();
+  const resource = db.prepare('SELECT * FROM boq_item_resources WHERE id = ?').get(Number(req.params.id)) as any;
+  if (!resource) {
+    res.status(404).json({ error: 'Ressource de BOQ introuvable.' });
+    return;
+  }
+  const item = readBoqItemDraft(resource.item_id, res) as any;
+  if (!item) return;
+  db.prepare('DELETE FROM boq_item_resources WHERE id = ?').run(resource.id);
+  logAudit(req.user!, 'DELETE', 'boq_resource', resource.id, resource.label, 'Ressource supprimée (brouillon)');
+  res.json(loadBoqVersion(item.version_id));
+});
+
+// ==================== BOQ → DEVIS ====================
+// Turns an approved bill of quantities into a real quotation document, keeping the
+// approved quantities and prices, so the estimate can be printed and sent with the
+// existing quotation layout.
+router.post('/boq/versions/:id/convert-to-quotation', requireAuth, requirePermission('invoices:write'), (req: AuthedRequest, res) => {
+  const versionId = Number(req.params.id);
+  const db = getDb();
+  const version = loadBoqVersion(versionId);
+  if (!version) {
+    res.status(404).json({ error: 'Version de BOQ introuvable.' });
+    return;
+  }
+  if (version.status !== 'approved') {
+    res.status(400).json({ error: 'Seule une version de BOQ approuvée peut être convertie en devis.' });
+    return;
+  }
+  if (version.items.length === 0) {
+    res.status(400).json({ error: 'Cette version de BOQ ne contient aucun poste à deviser.' });
+    return;
+  }
+
+  const project = db.prepare('SELECT id, client_id, title FROM projects WHERE id = ?').get(version.project_id) as any;
+  if (!project) {
+    res.status(404).json({ error: 'Chantier introuvable.' });
+    return;
+  }
+  if (!project.client_id) {
+    res.status(400).json({ error: 'Ce chantier n’a pas de client : le devis ne peut pas être établi.' });
+    return;
+  }
+
+  const existing = db
+    .prepare("SELECT id, doc_number FROM commercial_documents WHERE boq_version_id = ? AND doc_type = 'devis' AND status <> 'cancelled' LIMIT 1")
+    .get(versionId) as any;
+  if (existing) {
+    res.status(409).json({ error: `Cette version a déjà été convertie en devis ${existing.doc_number}.`, doc_id: existing.id });
+    return;
+  }
+
+  const settings = db.prepare('SELECT prefix_quote FROM company_settings WHERE id = 1').get() as { prefix_quote: string };
+  const quoteLines = version.items.map((item: any) => ({
+    description: item.code ? `${item.code} — ${item.description}` : item.description,
+    unit: item.unit,
+    quantity: Number(item.quantity),
+    unit_price: Number(item.unit_price),
+  }));
+  const calc = computeDocLines(quoteLines, 0);
+  const issueDate = new Date().toISOString().slice(0, 10);
+
+  let docNumber = '';
+  const docId = db
+    .transaction(() => {
+      docNumber = generateNextNumber(settings?.prefix_quote || 'DEV', 'commercial_documents', 'doc_number', "AND doc_type = 'devis'");
+      const info = db
+        .prepare(
+          `INSERT INTO commercial_documents (doc_type, doc_number, client_id, project_id, issue_date, status, discount_percent, total_ht, total_tva, total_ttc, amount_paid, notes, created_by, lifecycle_status, deletion_eligible_until, boq_version_id)
+           VALUES ('devis', ?, ?, ?, ?, 'draft', 0, ?, ?, ?, 0, ?, ?, 'new', datetime('now', '+7 days'), ?)`
+        )
+        .run(
+          docNumber,
+          project.client_id,
+          project.id,
+          issueDate,
+          calc.total_ht,
+          calc.total_tva,
+          calc.total_ttc,
+          `Établi depuis le BOQ V${version.version_number} — ${version.label}`,
+          req.user!.id,
+          versionId
+        );
+      const id = info.lastInsertRowid as number;
+      const insertLine = db.prepare(
+        `INSERT INTO commercial_lines (document_id, description, unit, quantity, unit_price, tva_rate, line_ht, line_tva, line_ttc, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      for (const line of calc.lines) {
+        insertLine.run(id, line.description, line.unit, line.quantity, line.unit_price, line.tva_rate, line.line_ht, line.line_tva, line.line_ttc, line.sort_order);
+      }
+      return id;
+    })
+    .immediate();
+
+  logAudit(req.user!, 'CONVERT', 'devis', docNumber, `BOQ V${version.version_number}`, `Devis créé depuis le BOQ V${version.version_number}`);
+  res.status(201).json(loadCommercialDocument(docId));
 });
 
 export default router;

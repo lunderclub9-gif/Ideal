@@ -38,10 +38,20 @@ let dbInstance: Database.Database | null = null;
 export function getDb(): Database.Database {
   if (!dbInstance) {
     ensureDirectories();
-    dbInstance = new Database(DB_PATH);
-    dbInstance.pragma('journal_mode = WAL');
-    dbInstance.pragma('foreign_keys = ON');
-    runMigrations(dbInstance);
+    const opened = new Database(DB_PATH);
+    try {
+      opened.pragma('journal_mode = WAL');
+      // A shared office install writes from several browsers at once: wait for the
+      // write lock instead of surfacing SQLITE_BUSY in the middle of a save.
+      opened.pragma('busy_timeout = 5000');
+      opened.pragma('foreign_keys = ON');
+      runMigrations(opened);
+    } catch (error) {
+      // Never leave a half-open handle behind when the migrations refuse the file.
+      try { opened.close(); } catch {}
+      throw error;
+    }
+    dbInstance = opened;
   }
   return dbInstance;
 }
@@ -58,7 +68,10 @@ export function reopenDb(): Database.Database {
   return getDb();
 }
 
-function runMigrations(db: Database.Database) {
+/** Highest schema version this build understands. The migration test keeps it honest. */
+export const LATEST_SCHEMA_VERSION = 11;
+
+export function runMigrations(db: Database.Database, upTo: number = LATEST_SCHEMA_VERSION) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version INTEGER PRIMARY KEY,
@@ -71,7 +84,16 @@ function runMigrations(db: Database.Database) {
     .all()
     .map((r: any) => r.version as number);
 
-  if (!applied.includes(1)) {
+  // Opening a database written by a newer build would let this build write data the
+  // newer one cannot read back. Refuse, and say why instead of corrupting silently.
+  const highestApplied = applied.length ? Math.max(...applied) : 0;
+  if (highestApplied > LATEST_SCHEMA_VERSION) {
+    throw new Error(
+      `Cette base de données a été ouverte par une version plus récente de IDEAL (schéma ${highestApplied}, cette version prend en charge jusqu’au schéma ${LATEST_SCHEMA_VERSION}). Installez la dernière version du logiciel avant d’ouvrir ce dossier de données ; aucune modification n’a été apportée.`
+    );
+  }
+
+  if (upTo >= 1 && !applied.includes(1)) {
     db.exec(`
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -680,7 +702,7 @@ function runMigrations(db: Database.Database) {
   // Version 2: extend the existing service catalogue without replacing or rewriting
   // any service rows. This catalogue is the configurable "Types de travaux" source.
   const migration2 = db.prepare('SELECT version FROM schema_migrations WHERE version = 2').get();
-  if (!migration2) {
+  if (upTo >= 2 && !migration2) {
     const serviceColumns = (db.pragma('table_info(services)') as Array<{ name: string }>).map((c) => c.name);
     if (!serviceColumns.includes('category')) {
       db.exec("ALTER TABLE services ADD COLUMN category TEXT NOT NULL DEFAULT 'Général'");
@@ -723,7 +745,7 @@ function runMigrations(db: Database.Database) {
 
   // Version 3: Smart Lifecycle Management columns (additive, idempotent).
   const migration3 = db.prepare('SELECT version FROM schema_migrations WHERE version = 3').get();
-  if (!migration3) {
+  if (upTo >= 3 && !migration3) {
     const lifecycleTables = ['clients', 'suppliers', 'workers', 'projects', 'vehicles', 'materials', 'services', 'commercial_documents'];
     for (const t of lifecycleTables) {
       const cols = (db.pragma(`table_info(${t})`) as Array<{ name: string }>).map((c) => c.name);
@@ -755,7 +777,7 @@ function runMigrations(db: Database.Database) {
 
   // Version 4: one-year retention review for archived records (additive, idempotent).
   const migration4 = db.prepare('SELECT version FROM schema_migrations WHERE version = 4').get();
-  if (!migration4) {
+  if (upTo >= 4 && !migration4) {
     const retentionTables = ['clients', 'suppliers', 'workers', 'projects', 'vehicles', 'materials', 'services', 'commercial_documents'];
     for (const t of retentionTables) {
       const cols = (db.pragma(`table_info(${t})`) as Array<{ name: string }>).map((c) => c.name);
@@ -780,7 +802,7 @@ function runMigrations(db: Database.Database) {
 
   // Version 5: extend lifecycle metadata to every business table + notifications.
   const migration5 = db.prepare('SELECT version FROM schema_migrations WHERE version = 5').get();
-  if (!migration5) {
+  if (upTo >= 5 && !migration5) {
     const allTables = [
       'users','company_settings','tax_rules','reusable_lists','clients','suppliers','workers','projects',
       'project_assignments','project_phases','project_tasks','change_orders','contracts','contract_milestones',
@@ -831,7 +853,7 @@ function runMigrations(db: Database.Database) {
 
   // Version 6: cancellation/reversal status for expenses and treasury.
   const migration6 = db.prepare('SELECT version FROM schema_migrations WHERE version = 6').get();
-  if (!migration6) {
+  if (upTo >= 6 && !migration6) {
     const addCol = (t: string, name: string, sql: string) => {
       const cols = (db.pragma(`table_info(${t})`) as Array<{ name: string }>).map((c) => c.name);
       if (!cols.includes(name)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${name} ${sql}`);
@@ -842,5 +864,156 @@ function runMigrations(db: Database.Database) {
     db.exec("UPDATE expenses SET status='active' WHERE status IS NULL OR status=''");
     db.exec("UPDATE treasury_transactions SET status='active' WHERE status IS NULL OR status=''");
     db.prepare('INSERT INTO schema_migrations (version) VALUES (6)').run();
+  }
+
+  // Version 7: Bill of Quantities (BOQ) — versioned estimates with sections, items
+  // and editable rate analysis (resource breakdown). Additive only; no existing table is modified.
+  const migration7 = db.prepare('SELECT version FROM schema_migrations WHERE version = 7').get();
+  if (upTo >= 7 && !migration7) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS boq_versions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        version_number INTEGER NOT NULL,
+        label TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','approved','superseded')),
+        notes TEXT DEFAULT '',
+        created_by INTEGER REFERENCES users(id),
+        approved_by INTEGER REFERENCES users(id),
+        approved_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(project_id, version_number)
+      );
+
+      CREATE TABLE IF NOT EXISTS boq_sections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        version_id INTEGER NOT NULL REFERENCES boq_versions(id) ON DELETE CASCADE,
+        code TEXT DEFAULT '',
+        title TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 1
+      );
+
+      CREATE TABLE IF NOT EXISTS boq_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        version_id INTEGER NOT NULL REFERENCES boq_versions(id) ON DELETE CASCADE,
+        section_id INTEGER REFERENCES boq_sections(id) ON DELETE SET NULL,
+        code TEXT DEFAULT '',
+        description TEXT NOT NULL,
+        unit TEXT NOT NULL DEFAULT 'U',
+        quantity REAL NOT NULL DEFAULT 0,
+        unit_price REAL NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS boq_item_resources (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id INTEGER NOT NULL REFERENCES boq_items(id) ON DELETE CASCADE,
+        resource_type TEXT NOT NULL CHECK(resource_type IN ('material','labour','equipment','subcontract','transport')),
+        label TEXT NOT NULL,
+        unit TEXT DEFAULT '',
+        quantity REAL NOT NULL DEFAULT 0,
+        unit_cost REAL NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 1
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_boq_versions_project ON boq_versions(project_id);
+      CREATE INDEX IF NOT EXISTS idx_boq_sections_version ON boq_sections(version_id);
+      CREATE INDEX IF NOT EXISTS idx_boq_items_version ON boq_items(version_id);
+      CREATE INDEX IF NOT EXISTS idx_boq_items_section ON boq_items(section_id);
+      CREATE INDEX IF NOT EXISTS idx_boq_resources_item ON boq_item_resources(item_id);
+    `);
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (7)').run();
+  }
+
+  // Version 8: atomic document numbering. A sequence per prefix and fiscal exercise
+  // replaces the read-then-insert race that let two users obtain the same invoice number.
+  // Additive only; existing numbers are seeded from the documents on first use.
+  const migration8 = db.prepare('SELECT version FROM schema_migrations WHERE version = 8').get();
+  if (upTo >= 8 && !migration8) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS document_sequences (
+        prefix TEXT NOT NULL,
+        exercise INTEGER NOT NULL,
+        last_value INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (prefix, exercise)
+      );
+    `);
+
+    // A duplicated document number is a legal defect, so let the database refuse one.
+    // Installs that already contain duplicates keep working (the upgrade must not block
+    // on legacy data) and the conflict is reported instead of silently ignored.
+    const duplicate = db
+      .prepare(
+        `SELECT doc_type, doc_number, COUNT(*) AS occurrences
+         FROM commercial_documents
+         GROUP BY doc_type, doc_number
+         HAVING COUNT(*) > 1
+         LIMIT 1`
+      )
+      .get() as { doc_type: string; doc_number: string; occurrences: number } | undefined;
+    if (duplicate) {
+      console.warn(
+        `[migrations] duplicate document number left unchanged: ${duplicate.doc_type} ${duplicate.doc_number} (${duplicate.occurrences} occurrences)`
+      );
+    } else {
+      db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_commercial_documents_number ON commercial_documents(doc_type, doc_number)');
+    }
+
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (8)').run();
+  }
+
+  // Version 9: traceability from a quotation back to the approved BOQ version it came
+  // from. Additive column on an existing table; documents created before it stay NULL.
+  const migration9 = db.prepare('SELECT version FROM schema_migrations WHERE version = 9').get();
+  if (upTo >= 9 && !migration9) {
+    const columns = db.prepare('PRAGMA table_info(commercial_documents)').all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === 'boq_version_id')) {
+      db.exec('ALTER TABLE commercial_documents ADD COLUMN boq_version_id INTEGER REFERENCES boq_versions(id) ON DELETE SET NULL');
+    }
+    db.exec('CREATE INDEX IF NOT EXISTS idx_commercial_documents_boq ON commercial_documents(boq_version_id)');
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (9)').run();
+  }
+
+  // Version 10: optimistic concurrency for financial records. Every row carries a
+  // revision that the client sends back when saving; a stale revision is refused
+  // instead of silently overwriting what another user saved in the meantime.
+  const migration10 = db.prepare('SELECT version FROM schema_migrations WHERE version = 10').get();
+  if (upTo >= 10 && !migration10) {
+    for (const table of ['commercial_documents', 'payments', 'payslips', 'payroll_periods']) {
+      const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+      if (!columns.some((column) => column.name === 'revision')) {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`);
+      }
+    }
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (10)').run();
+  }
+
+  // Version 11: backups that survive the machine. Settings for an external copy folder
+  // (synced OneDrive folder or network share), retention counts and the staleness
+  // warning, plus where each archive was copied. Additive only.
+  const migration11 = db.prepare('SELECT version FROM schema_migrations WHERE version = 11').get();
+  if (upTo >= 11 && !migration11) {
+    const settingsColumns = db.prepare('PRAGMA table_info(company_settings)').all() as Array<{ name: string }>;
+    const addSetting = (name: string, definition: string) => {
+      if (!settingsColumns.some((column) => column.name === name)) {
+        db.exec(`ALTER TABLE company_settings ADD COLUMN ${name} ${definition}`);
+      }
+    };
+    addSetting('backup_external_dir', "TEXT NOT NULL DEFAULT ''");
+    addSetting('backup_keep_manual', 'INTEGER NOT NULL DEFAULT 10');
+    addSetting('backup_warn_after_days', 'INTEGER NOT NULL DEFAULT 2');
+
+    const historyColumns = db.prepare('PRAGMA table_info(backup_history)').all() as Array<{ name: string }>;
+    if (!historyColumns.some((column) => column.name === 'external_path')) {
+      db.exec('ALTER TABLE backup_history ADD COLUMN external_path TEXT');
+    }
+    if (!historyColumns.some((column) => column.name === 'external_copied_at')) {
+      db.exec('ALTER TABLE backup_history ADD COLUMN external_copied_at TEXT');
+    }
+
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (11)').run();
   }
 }

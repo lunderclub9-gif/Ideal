@@ -31,6 +31,21 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
   });
   const [newTask, setNewTask] = useState({ title: '', phase_id: '', assigned_worker_id: '', due_date: '', status: 'planned', delay_reason: '' });
   const [newAvenant, setNewAvenant] = useState({ title: '', description: '', additional_price: 0, additional_cost: 0 });
+  const [phaseOpen, setPhaseOpen] = useState(false);
+  const [newPhase, setNewPhase] = useState({ name: '', sort_order: 1, status: 'planned' });
+  const [contractOpen, setContractOpen] = useState(false);
+  const [newContract, setNewContract] = useState({
+    reference: '',
+    signing_date: new Date().toISOString().slice(0, 10),
+    start_date: new Date().toISOString().slice(0, 10),
+    planned_end_date: '',
+    contract_amount: 0,
+    retention_rate: 5,
+    notes: '',
+    milestones: [{ title: '', due_date: new Date().toISOString().slice(0, 10), expected_amount: 0 }],
+  });
+  const [milestoneDraft, setMilestoneDraft] = useState<Record<number, number>>({});
+  const [milestoneBusy, setMilestoneBusy] = useState<number | null>(null);
 
   const canWrite = hasPerm(permissions, 'projects:write');
   const canApprove = hasPerm(permissions, 'projects:approve');
@@ -119,6 +134,80 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
       await openDetail(selected.project.id);
     } catch (err: any) {
       setError(err.message);
+    }
+  }
+
+  async function handleAddPhase(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selected) return;
+    setError('');
+    try {
+      await apiFetch(`/projects/${selected.project.id}/phases`, {
+        method: 'POST',
+        body: JSON.stringify({ ...newPhase, sort_order: Number(newPhase.sort_order) || 1 }),
+      });
+      setPhaseOpen(false);
+      setNewPhase({ name: '', sort_order: 1, status: 'planned' });
+      await openDetail(selected.project.id);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }
+
+  async function handleAddContract(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selected) return;
+    setError('');
+    try {
+      await apiFetch('/contracts', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...newContract,
+          client_id: Number(selected.project.client_id),
+          project_id: selected.project.id,
+          contract_amount: Number(newContract.contract_amount),
+          retention_rate: Number(newContract.retention_rate),
+          milestones: newContract.milestones.filter((m) => m.title.trim() !== ''),
+        }),
+      });
+      setContractOpen(false);
+      setNewContract({
+        reference: '',
+        signing_date: new Date().toISOString().slice(0, 10),
+        start_date: new Date().toISOString().slice(0, 10),
+        planned_end_date: '',
+        contract_amount: 0,
+        retention_rate: 5,
+        notes: '',
+        milestones: [{ title: '', due_date: new Date().toISOString().slice(0, 10), expected_amount: 0 }],
+      });
+      await openDetail(selected.project.id);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }
+
+  async function saveMilestoneReceived(milestone: any) {
+    const value = milestoneDraft[milestone.id];
+    if (value === undefined) return;
+    if (!selected) return;
+    setError('');
+    setMilestoneBusy(milestone.id);
+    try {
+      await apiFetch(`/contracts/milestones/${milestone.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ received_amount: Number(value) }),
+      });
+      setMilestoneDraft((d) => {
+        const next = { ...d };
+        delete next[milestone.id];
+        return next;
+      });
+      await openDetail(selected.project.id);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setMilestoneBusy(null);
     }
   }
 
@@ -335,17 +424,36 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
         {tab === 'tasks' && (
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4 text-xs">
             <div className="flex justify-between items-center">
-              <h3 className="font-semibold text-sm">Tâches &amp; suivi des retards</h3>
+              <h3 className="font-semibold text-sm">Phases, tâches &amp; suivi des retards</h3>
               {canWrite && (
-                <button
-                  type="button"
-                  onClick={() => setTaskOpen(true)}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 text-white bg-blue-700 rounded-lg"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Ajouter tâche
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPhaseOpen(true)}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 border border-blue-700 text-blue-700 rounded-lg"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Nouvelle phase
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTaskOpen(true)}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-white bg-blue-700 rounded-lg"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Ajouter tâche
+                  </button>
+                </div>
               )}
             </div>
+            {selected.phases.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {selected.phases.map((ph: any) => (
+                  <span key={ph.id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800">
+                    {ph.name}
+                    <StatusText status={ph.status} />
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg">
               {selected.tasks.map((t: any) => (
                 <div key={t.id} className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -449,6 +557,23 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
 
         {tab === 'contracts' && (
           <div className="space-y-4 text-xs">
+            <div className="flex justify-between items-center">
+              <h3 className="font-semibold text-sm">Contrats &amp; échéancier de retenue de garantie</h3>
+              {canWrite && (
+                <button
+                  type="button"
+                  onClick={() => setContractOpen(true)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 text-white bg-blue-700 rounded-lg"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Nouveau contrat
+                </button>
+              )}
+            </div>
+            {selected.contracts.length === 0 && (
+              <div className="p-8 text-center text-slate-500 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
+                Aucun contrat enregistré. Créez un contrat pour suivre les jalons et la retenue de garantie.
+              </div>
+            )}
             {selected.contracts.map((ctr: any) => (
               <div key={ctr.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
                 <div className="flex flex-wrap justify-between gap-2 pb-3 border-b border-slate-200 dark:border-slate-800">
@@ -468,11 +593,33 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
                         <div className="font-medium">{m.title}</div>
                         <div className="text-[11px] text-slate-500">Échéance : {formatDateFr(m.due_date)}</div>
                       </div>
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-3">
                         <span className="font-mono tabular-nums">
                           {formatDA(m.received_amount)} / {formatDA(m.expected_amount)}
                         </span>
                         <StatusText status={m.status} />
+                        {canWrite && (
+                          <span className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              aria-label={`Montant reçu pour ${m.title}`}
+                              value={milestoneDraft[m.id] ?? ''}
+                              placeholder="Reçu"
+                              onChange={(e) => setMilestoneDraft((d) => ({ ...d, [m.id]: Number(e.target.value) }))}
+                              className="w-24 px-2 py-1 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-950 text-right font-mono"
+                            />
+                            <button
+                              type="button"
+                              disabled={milestoneBusy === m.id || milestoneDraft[m.id] === undefined}
+                              onClick={() => saveMilestoneReceived(m)}
+                              className="px-2 py-1 bg-emerald-700 text-white rounded disabled:opacity-50"
+                            >
+                              Encaisser
+                            </button>
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -526,6 +673,200 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
             </div>
           </div>
         )}
+
+        <Modal open={phaseOpen} onClose={() => setPhaseOpen(false)} title="Nouvelle phase de chantier" maxWidth="max-w-md">
+          <form onSubmit={handleAddPhase} className="space-y-3 text-xs">
+            <div>
+              <label className="block font-medium mb-1">Nom de la phase *</label>
+              <input
+                type="text"
+                required
+                value={newPhase.name}
+                onChange={(e) => setNewPhase({ ...newPhase, name: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block font-medium mb-1">Ordre d’affichage</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={newPhase.sort_order}
+                  onChange={(e) => setNewPhase({ ...newPhase, sort_order: Number(e.target.value) })}
+                  className="w-full px-3 py-2 border rounded-lg font-mono bg-white dark:bg-slate-950"
+                />
+              </div>
+              <div>
+                <label className="block font-medium mb-1">Statut</label>
+                <select
+                  value={newPhase.status}
+                  onChange={(e) => setNewPhase({ ...newPhase, status: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"
+                >
+                  <option value="planned">Planifiée</option>
+                  <option value="in_progress">En cours</option>
+                  <option value="completed">Terminée</option>
+                  <option value="delayed">En retard</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setPhaseOpen(false)} className="px-3 py-2 border rounded-lg">Annuler</button>
+              <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg">Ajouter la phase</button>
+            </div>
+          </form>
+        </Modal>
+
+        <Modal open={contractOpen} onClose={() => setContractOpen(false)} title="Nouveau contrat chantier">
+          <form onSubmit={handleAddContract} className="space-y-3 text-xs">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block font-medium mb-1">Montant du contrat (DA) *</label>
+                <input
+                  type="number"
+                  required
+                  min="0.01"
+                  step="0.01"
+                  value={newContract.contract_amount}
+                  onChange={(e) => setNewContract({ ...newContract, contract_amount: Number(e.target.value) })}
+                  className="w-full px-3 py-2 border rounded-lg font-mono bg-white dark:bg-slate-950"
+                />
+              </div>
+              <div>
+                <label className="block font-medium mb-1">Retenue de garantie (%)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.5"
+                  value={newContract.retention_rate}
+                  onChange={(e) => setNewContract({ ...newContract, retention_rate: Number(e.target.value) })}
+                  className="w-full px-3 py-2 border rounded-lg font-mono bg-white dark:bg-slate-950"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block font-medium mb-1">Date de signature</label>
+                <input
+                  type="date"
+                  value={newContract.signing_date}
+                  onChange={(e) => setNewContract({ ...newContract, signing_date: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"
+                />
+              </div>
+              <div>
+                <label className="block font-medium mb-1">Début</label>
+                <input
+                  type="date"
+                  value={newContract.start_date}
+                  onChange={(e) => setNewContract({ ...newContract, start_date: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"
+                />
+              </div>
+              <div>
+                <label className="block font-medium mb-1">Fin prévue</label>
+                <input
+                  type="date"
+                  value={newContract.planned_end_date}
+                  onChange={(e) => setNewContract({ ...newContract, planned_end_date: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block font-medium mb-1">Référence (laisser vide pour générer)</label>
+              <input
+                type="text"
+                value={newContract.reference}
+                onChange={(e) => setNewContract({ ...newContract, reference: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg font-mono bg-white dark:bg-slate-950"
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">Jalons de paiement</span>
+                <button
+                  type="button"
+                  onClick={() => setNewContract({ ...newContract, milestones: [...newContract.milestones, { title: '', due_date: new Date().toISOString().slice(0, 10), expected_amount: 0 }] })}
+                  className="inline-flex items-center gap-1 text-blue-700"
+                >
+                  <Plus className="w-3 h-3" /> Ajouter un jalon
+                </button>
+              </div>
+              {newContract.milestones.map((m, idx) => (
+                <div key={idx} className="grid grid-cols-12 gap-2 items-end">
+                  <div className="col-span-5">
+                    <label className="block text-[11px] text-slate-500 mb-1">Intitulé</label>
+                    <input
+                      type="text"
+                      value={m.title}
+                      onChange={(e) => {
+                        const milestones = [...newContract.milestones];
+                        milestones[idx] = { ...m, title: e.target.value };
+                        setNewContract({ ...newContract, milestones });
+                      }}
+                      className="w-full px-2 py-1.5 border rounded-lg bg-white dark:bg-slate-950"
+                    />
+                  </div>
+                  <div className="col-span-3">
+                    <label className="block text-[11px] text-slate-500 mb-1">Échéance</label>
+                    <input
+                      type="date"
+                      value={m.due_date}
+                      onChange={(e) => {
+                        const milestones = [...newContract.milestones];
+                        milestones[idx] = { ...m, due_date: e.target.value };
+                        setNewContract({ ...newContract, milestones });
+                      }}
+                      className="w-full px-2 py-1.5 border rounded-lg bg-white dark:bg-slate-950"
+                    />
+                  </div>
+                  <div className="col-span-3">
+                    <label className="block text-[11px] text-slate-500 mb-1">Montant (DA)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={m.expected_amount}
+                      onChange={(e) => {
+                        const milestones = [...newContract.milestones];
+                        milestones[idx] = { ...m, expected_amount: Number(e.target.value) };
+                        setNewContract({ ...newContract, milestones });
+                      }}
+                      className="w-full px-2 py-1.5 border rounded-lg font-mono bg-white dark:bg-slate-950"
+                    />
+                  </div>
+                  <div className="col-span-1 text-right">
+                    <button
+                      type="button"
+                      aria-label="Supprimer ce jalon"
+                      disabled={newContract.milestones.length === 1}
+                      onClick={() => setNewContract({ ...newContract, milestones: newContract.milestones.filter((_, i) => i !== idx) })}
+                      className="p-1.5 text-red-700 disabled:opacity-30"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div>
+              <label className="block font-medium mb-1">Notes</label>
+              <textarea
+                value={newContract.notes}
+                onChange={(e) => setNewContract({ ...newContract, notes: e.target.value })}
+                rows={2}
+                className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setContractOpen(false)} className="px-3 py-2 border rounded-lg">Annuler</button>
+              <button type="submit" className="px-4 py-2 text-white bg-blue-700 rounded-lg">Créer le contrat</button>
+            </div>
+          </form>
+        </Modal>
 
         <Modal open={taskOpen} onClose={() => setTaskOpen(false)} title="Nouvelle tâche chantier">
           <form onSubmit={handleAddTask} className="space-y-3 text-xs">

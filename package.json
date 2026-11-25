@@ -18,10 +18,12 @@
     "postinstall": "electron-builder install-app-deps",
     "test:data-protection": "tsx scripts/test-data-protection.ts",
     "test:lifecycle": "tsx scripts/test-lifecycle.ts",
+    "test:regressions": "tsx scripts/test-regressions.ts",
     "check:french-ui": "node scripts/check-french-ui.cjs",
     "test:e2e": "playwright test",
     "test:simulation": "tsx scripts/test-simulation.ts",
-    "dist:win:store": "npm run build && node scripts/build-store-package.cjs"
+    "dist:win:store": "npm run build && node scripts/build-store-package.cjs",
+    "test:migrations": "tsx scripts/test-migration-chain.ts"
   },
   "dependencies": {
     "adm-zip": "^0.6.1",

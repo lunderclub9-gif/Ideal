@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   BarChart3,
   Building2,
+  Calculator,
   ChevronDown,
   ClipboardCheck,
   CreditCard,
@@ -46,6 +47,7 @@ import SetupPage from './pages/SetupPage';
 import DashboardPage from './pages/DashboardPage';
 import ClientsPage from './pages/ClientsPage';
 import ProjectsPage from './pages/ProjectsPage';
+import BoqPage from './pages/BoqPage';
 import ServicesPage from './pages/ServicesPage';
 import InvoicesPage from './pages/InvoicesPage';
 import LifecyclePage from './pages/LifecyclePage';
@@ -76,6 +78,7 @@ const NAV_ITEMS: NavEntry[] = [
   { id: 'dashboard', label: 'Tableau de bord', group: 'Pilotage', permission: 'dashboard:view', icon: LayoutDashboard },
   { id: 'clients', label: 'Clients', group: 'Chantiers & Commercial', permission: 'clients:read', icon: Users },
   { id: 'projects', label: 'Chantiers', group: 'Chantiers & Commercial', permission: 'projects:read', icon: Building2 },
+  { id: 'boq', label: 'BOQ & Études', group: 'Chantiers & Commercial', permission: 'projects:read', icon: Calculator },
   { id: 'services', label: 'Types de travaux', group: 'Chantiers & Commercial', permission: 'settings:read', icon: Hammer },
   { id: 'invoices', label: 'Devis & Factures', group: 'Chantiers & Commercial', permission: 'invoices:read', icon: FileSpreadsheet },
   { id: 'attendance', label: 'Pointage', group: 'Équipes & Paie', permission: 'attendance:read', icon: ClipboardCheck },
@@ -291,6 +294,8 @@ export default function App() {
         return <ClientsPage permissions={permissions} />;
       case 'projects':
         return <ProjectsPage permissions={permissions} />;
+      case 'boq':
+        return <BoqPage permissions={permissions} />;
       case 'services':
         return <ServicesPage permissions={permissions} />;
       case 'invoices':

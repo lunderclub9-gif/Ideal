@@ -15,6 +15,26 @@ export interface BackupEntry {
   verified: number;
   created_by: string;
   created_at: string;
+  external_path?: string | null;
+  external_copied_at?: string | null;
+}
+
+export interface BackupHealth {
+  last_backup_at: string | null;
+  last_backup_id: number | null;
+  last_backup_verified: boolean;
+  days_since_backup: number | null;
+  warn_after_days: number;
+  keep_manual: number;
+  keep_daily: number;
+  stale: boolean;
+  external_dir: string;
+  external_configured: boolean;
+  external_copied_at: string | null;
+  external_ok: boolean;
+  integrity_ok: boolean;
+  integrity_checked_at: string | null;
+  integrity_detail: string;
 }
 
 type BackupManifest = {
@@ -149,8 +169,12 @@ export function createFullBackup(
        VALUES (?, ?, ?, ?, 1, ?)`
     ).run(fileName, filePath, backupType, sizeBytes, createdBy);
 
-    if (backupType === 'auto_daily') pruneOldDailyBackups();
-    return db.prepare('SELECT * FROM backup_history WHERE id = ?').get(info.lastInsertRowid) as BackupEntry;
+    const created = db.prepare('SELECT * FROM backup_history WHERE id = ?').get(info.lastInsertRowid) as BackupEntry;
+    // A local archive dies with the PC: copy it to the folder the owner chose, then
+    // rotate both the local history and the external copies.
+    copyBackupToExternalFolder(created);
+    rotateBackups();
+    return db.prepare('SELECT * FROM backup_history WHERE id = ?').get(created.id) as BackupEntry;
   } catch (error) {
     for (const temporary of [tempSnapshot, tempZipPath]) {
       try { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); } catch {}
@@ -159,21 +183,176 @@ export function createFullBackup(
   }
 }
 
-export function pruneOldDailyBackups() {
-  const db = getDb();
-  const settings = db.prepare('SELECT auto_backup_keep_daily FROM company_settings WHERE id = 1').get() as
-    | { auto_backup_keep_daily?: number }
-    | undefined;
-  const keepCount = Math.max(1, Math.min(365, Number(settings?.auto_backup_keep_daily ?? 30)));
-  const dailies = db
-    .prepare("SELECT id, file_path FROM backup_history WHERE backup_type = 'auto_daily' ORDER BY id DESC")
-    .all() as Array<{ id: number; file_path: string }>;
+interface BackupSettings {
+  externalDir: string;
+  keepManual: number;
+  keepDaily: number;
+  warnAfterDays: number;
+}
 
-  if (dailies.length <= keepCount) return;
-  for (const old of dailies.slice(keepCount)) {
-    try { if (fs.existsSync(old.file_path)) fs.unlinkSync(old.file_path); } catch {}
-    db.prepare('DELETE FROM backup_history WHERE id = ?').run(old.id);
+function clampCount(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(parsed)));
+}
+
+function readBackupSettings(): BackupSettings {
+  const row = getDb()
+    .prepare('SELECT backup_external_dir, backup_keep_manual, auto_backup_keep_daily, backup_warn_after_days FROM company_settings WHERE id = 1')
+    .get() as any;
+  return {
+    externalDir: String(row?.backup_external_dir || '').trim(),
+    keepManual: clampCount(row?.backup_keep_manual, 10, 1, 365),
+    keepDaily: clampCount(row?.auto_backup_keep_daily, 30, 1, 365),
+    warnAfterDays: clampCount(row?.backup_warn_after_days, 2, 1, 90),
+  };
+}
+
+/**
+ * A copy folder must be an existing, writable directory: a typo silently producing
+ * no off-machine copy would be worse than refusing the setting.
+ */
+export function validateBackupExternalDir(dirPath: string): string | null {
+  const candidate = String(dirPath || '').trim();
+  if (!candidate) return null;
+  if (/[\u0000-\u001f]/.test(candidate)) return 'Le chemin du dossier contient des caractères invalides.';
+  if (!path.isAbsolute(candidate)) return 'Indiquez un chemin complet, par exemple C:\\Users\\Nom\\OneDrive\\IDEAL.';
+  let stats: fs.Stats;
+  try {
+    stats = fs.statSync(candidate);
+  } catch {
+    return 'Ce dossier est introuvable. Vérifiez le chemin ou créez-le avant d’enregistrer.';
   }
+  if (!stats.isDirectory()) return 'Le chemin indiqué n’est pas un dossier.';
+  try {
+    fs.accessSync(candidate, fs.constants.W_OK);
+  } catch {
+    return 'Le dossier n’est pas accessible en écriture pour cette session Windows.';
+  }
+  return null;
+}
+
+export function saveBackupSettings(input: { external_dir?: unknown; keep_manual?: unknown; warn_after_days?: unknown }): BackupSettings {
+  const db = getDb();
+  const current = readBackupSettings();
+  const nextDir = input.external_dir === undefined ? current.externalDir : String(input.external_dir || '').trim();
+  const problem = validateBackupExternalDir(nextDir);
+  if (problem) throw new Error(problem);
+
+  db.prepare('UPDATE company_settings SET backup_external_dir = ?, backup_keep_manual = ?, backup_warn_after_days = ?, updated_at = datetime(\'now\') WHERE id = 1').run(
+    nextDir,
+    clampCount(input.keep_manual ?? current.keepManual, current.keepManual, 1, 365),
+    clampCount(input.warn_after_days ?? current.warnAfterDays, current.warnAfterDays, 1, 90)
+  );
+  return readBackupSettings();
+}
+
+/** Copies a finished archive to the configured folder; a failure never invalidates the local backup. */
+function copyBackupToExternalFolder(entry: BackupEntry): void {
+  const { externalDir } = readBackupSettings();
+  if (!externalDir) return;
+  const problem = validateBackupExternalDir(externalDir);
+  if (problem) {
+    console.warn('IDEAL_BACKUP_EXTERNAL_SKIPPED', problem);
+    return;
+  }
+  const target = path.join(externalDir, entry.file_name);
+  const temporary = `${target}.tmp-${process.pid}`;
+  try {
+    fs.copyFileSync(entry.file_path, temporary);
+    fs.renameSync(temporary, target);
+    getDb()
+      .prepare('UPDATE backup_history SET external_path = ?, external_copied_at = ? WHERE id = ?')
+      .run(target, new Date().toISOString(), entry.id);
+  } catch (error: any) {
+    try { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); } catch {}
+    console.warn('IDEAL_BACKUP_EXTERNAL_FAILED', error?.message || error);
+  }
+}
+
+/** Deletes the oldest archives (local file, external copy and history row) beyond retention. */
+export function rotateBackups() {
+  const db = getDb();
+  const { keepDaily, keepManual } = readBackupSettings();
+  const policies: Array<[string, number]> = [
+    ['auto_daily', keepDaily],
+    ['manual_local', keepManual],
+    ['usb_export', keepManual],
+    ['pre_restore_safety', keepManual],
+  ];
+
+  for (const [type, keep] of policies) {
+    const rows = db
+      .prepare('SELECT id, file_path, external_path FROM backup_history WHERE backup_type = ? ORDER BY id DESC')
+      .all(type) as Array<{ id: number; file_path: string; external_path: string | null }>;
+    for (const old of rows.slice(keep)) {
+      try { if (old.file_path && fs.existsSync(old.file_path)) fs.unlinkSync(old.file_path); } catch {}
+      try { if (old.external_path && fs.existsSync(old.external_path)) fs.unlinkSync(old.external_path); } catch {}
+      db.prepare('DELETE FROM backup_history WHERE id = ?').run(old.id);
+    }
+  }
+}
+
+let startupIntegrity: { ok: boolean; checkedAt: string; detail: string } | null = null;
+
+/** Runs once at startup: a damaged database must be known before anyone saves into it. */
+export function runStartupIntegrityCheck(): { ok: boolean; checkedAt: string; detail: string } {
+  const db = getDb();
+  let result: { ok: boolean; checkedAt: string; detail: string };
+  try {
+    const row = db.prepare('PRAGMA integrity_check').get() as { integrity_check?: string } | undefined;
+    const foreignKeyIssue = db.prepare('PRAGMA foreign_key_check').get();
+    const ok = row?.integrity_check === 'ok' && !foreignKeyIssue;
+    result = {
+      ok,
+      checkedAt: new Date().toISOString(),
+      detail: ok
+        ? 'Contrôle d’intégrité réussi au démarrage.'
+        : `Contrôle d’intégrité en échec : ${row?.integrity_check || 'résultat inconnu'}${foreignKeyIssue ? ' (références internes incohérentes)' : ''}`,
+    };
+  } catch (error: any) {
+    result = {
+      ok: false,
+      checkedAt: new Date().toISOString(),
+      detail: `Contrôle d’intégrité impossible : ${error?.message || error}`,
+    };
+  }
+  startupIntegrity = result;
+  if (!result.ok) console.error('IDEAL_INTEGRITY_ERROR', result.detail);
+  return result;
+}
+
+export function getBackupHealth(): BackupHealth {
+  const db = getDb();
+  const settings = readBackupSettings();
+  const last = db.prepare('SELECT * FROM backup_history ORDER BY id DESC LIMIT 1').get() as BackupEntry | undefined;
+
+  let daysSince: number | null = null;
+  if (last?.created_at) {
+    const iso = String(last.created_at).includes('T')
+      ? String(last.created_at)
+      : `${String(last.created_at).replace(' ', 'T')}Z`;
+    const created = new Date(iso).getTime();
+    if (Number.isFinite(created)) daysSince = Math.floor((Date.now() - created) / 86_400_000);
+  }
+
+  return {
+    last_backup_at: last?.created_at || null,
+    last_backup_id: last?.id || null,
+    last_backup_verified: Boolean(last?.verified),
+    days_since_backup: daysSince,
+    warn_after_days: settings.warnAfterDays,
+    keep_manual: settings.keepManual,
+    keep_daily: settings.keepDaily,
+    stale: daysSince === null || daysSince >= settings.warnAfterDays,
+    external_dir: settings.externalDir,
+    external_configured: Boolean(settings.externalDir),
+    external_copied_at: last?.external_copied_at || null,
+    external_ok: !settings.externalDir || Boolean(last?.external_copied_at),
+    integrity_ok: startupIntegrity ? startupIntegrity.ok : true,
+    integrity_checked_at: startupIntegrity?.checkedAt || null,
+    integrity_detail: startupIntegrity?.detail || '',
+  };
 }
 
 export function listBackups(): BackupEntry[] {

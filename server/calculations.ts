@@ -226,8 +226,10 @@ export function calculateProjectFinancials(projectId: number): ProjectFinancials
     )
     .get(projectId) as { cost: number };
 
+  // Cancelled expenses must not inflate the project cost: their treasury movement
+  // is counter-passed separately, but the expense line itself stays cancelled.
   const expRow = db
-    .prepare('SELECT COALESCE(SUM(amount), 0) AS cost FROM expenses WHERE project_id = ? AND is_overhead = 0')
+    .prepare("SELECT COALESCE(SUM(amount), 0) AS cost FROM expenses WHERE project_id = ? AND is_overhead = 0 AND status <> 'cancelled'")
     .get(projectId) as { cost: number };
 
   const materialsCost = round2(Math.max(0, matRow.cost));
@@ -304,6 +306,16 @@ export function calculateProjectFinancials(projectId: number): ProjectFinancials
   };
 }
 
+/**
+ * Reserves the next document number for a prefix and the current fiscal exercise.
+ *
+ * The counter lives in `document_sequences`, unique on (prefix, exercise), and is
+ * incremented by a single upsert, so two writers can never receive the same number.
+ * Call it inside the same transaction as the document insert: when that insert fails
+ * the increment rolls back with it, which keeps the numbering gap-free per exercise.
+ * Numbers issued before the sequence existed (or under a prefix changed mid-year) are
+ * seeded from the documents themselves on first use.
+ */
 export function generateNextNumber(
   prefix: string,
   table: string,
@@ -311,21 +323,27 @@ export function generateNextNumber(
   extraWhere = ''
 ): string {
   const db = getDb();
-  const year = new Date().getFullYear();
-  const pattern = `${prefix}-${year}-%`;
-  const rows = db
-    .prepare(`SELECT ${column} AS num FROM ${table} WHERE ${column} LIKE ? ${extraWhere}`)
-    .all(pattern) as Array<{ num: string }>;
+  const exercise = new Date().getFullYear();
+  const pattern = `${prefix}-${exercise}-%`;
 
-  let maxSeq = 0;
-  for (const r of rows) {
-    const parts = String(r.num || '').split('-');
-    const last = Number(parts[parts.length - 1]);
-    if (Number.isFinite(last) && last > maxSeq) {
-      maxSeq = last;
-    }
-  }
-  return `${prefix}-${year}-${String(maxSeq + 1).padStart(4, '0')}`;
+  db.prepare(
+    `INSERT INTO document_sequences (prefix, exercise, last_value)
+     SELECT ?, ?, COALESCE(MAX(CAST(substr(${column}, ?) AS INTEGER)), 0)
+     FROM ${table}
+     WHERE ${column} LIKE ? ${extraWhere}
+     ON CONFLICT(prefix, exercise) DO NOTHING`
+  ).run(prefix, exercise, pattern.length + 1, pattern);
+
+  const row = db
+    .prepare(
+      `INSERT INTO document_sequences (prefix, exercise, last_value)
+       VALUES (?, ?, 1)
+       ON CONFLICT(prefix, exercise) DO UPDATE SET last_value = last_value + 1, updated_at = datetime('now')
+       RETURNING last_value`
+    )
+    .get(prefix, exercise) as { last_value: number };
+
+  return `${prefix}-${exercise}-${String(Number(row.last_value)).padStart(4, '0')}`;
 }
 
 const UNITS = [
