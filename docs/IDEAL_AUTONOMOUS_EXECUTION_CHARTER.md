@@ -517,3 +517,97 @@ The final IDEAL must feel like one integrated professional business system—not
 For every major workflow, the agent must demonstrate the complete journey with realistic synthetic data in the isolated test company, including document preview, PDF generation, archive retrieval, download and print layout. Screenshots or test artifacts should be attached to relevant PRs when they help verify visual quality. Never use real customer or employee personal data in test artifacts.
 
 The owner values a substantial, complete, durable product over superficial feature counts. Prioritize correctness, data integrity, clarity, professional output and long-term maintainability. Do not claim completion based on mockups, static pages or buttons that do not perform the advertised action.
+
+
+## 15. Locked visual direction, color tokens, interaction rules and functional reliability
+
+This section makes the design direction explicit so the implementation agent cannot interpret “blue and white” loosely or redesign only a few pages.
+
+### 15.1 IDEAL brand palette
+
+Use this as the initial canonical light-theme palette. Define these as centralized design tokens/CSS variables and use them consistently. Do not scatter literal color values across components.
+
+| Token | Color | Purpose |
+|---|---|---|
+| Brand navy | `#12304A` | Logo/nav structure, headings and strong brand surfaces |
+| Primary blue | `#2563EB` | Primary buttons, active navigation, links and key focus accents |
+| Primary hover | `#1D4ED8` | Hover/pressed primary action |
+| Pale blue | `#EFF6FF` | Selected rows, soft highlights and information surfaces |
+| App background | `#F4F7FB` | Main workspace background |
+| Surface white | `#FFFFFF` | Forms, cards, dialogs and document surfaces |
+| Main text | `#172B4D` | Primary readable text |
+| Secondary text | `#64748B` | Helper text and metadata |
+| Border | `#DCE4EE` | Dividers, input borders and table boundaries |
+
+Semantic status colors must be restrained and consistent: success green, warning amber, danger red and informational blue. Always pair a semantic color with a French text label and/or recognizable icon; never communicate status through color alone. Validate WCAG contrast for text and controls, and adjust a token only with documented accessibility evidence. The palette above is the starting specification; do not substitute teal/turquoise as the primary brand.
+
+The product should feel calm, modern, trustworthy and professional for BTP management. Use light theme by default. Dark mode is optional and must not be shipped as a half-themed collection of screens.
+
+### 15.2 Logo and brand application
+
+- Create a distinctive IDEAL logo system using the approved blue/white identity; provide full wordmark and compact application icon.
+- Use the same identity in login/setup, application shell, sidebar, splash/loading, company settings, generated documents, PDF exports and installer/app metadata where supported.
+- Do not use the current temporary “ID in a square” mark as the final identity unless it is deliberately redesigned and approved through the Visual Identity Studio.
+- Allow the company to configure its own legal/commercial identity separately from the IDEAL software brand. Never confuse the software vendor identity with the customer's company identity.
+- Provide preview and safe rollback for logo/brand asset changes.
+
+### 15.3 Button and control contract
+
+Every button/control must have a defined, tested action and state.
+
+- One clear primary action per page/major workflow when permitted; secondary actions are visually quieter.
+- Standardize button height, padding, radius, typography, icon placement and focus/hover/pressed/disabled/loading states.
+- Use explicit French labels for important actions: `Nouveau`, `Enregistrer`, `Modifier`, `Annuler`, `Valider`, `Archiver`, `Restaurer`, `Télécharger`, `Imprimer`, etc., according to context.
+- Use icon-only actions only for universally recognizable actions, with accessible labels/tooltips.
+- Destructive actions such as delete/permanent removal require a clear confirmation, explain the impact, and use archive/soft-delete by default where possible.
+- Do not show buttons a role cannot use. Enforce permissions again on the server.
+- Disable duplicate submissions while an operation is in progress; use idempotency for sensitive operations.
+- On success, show a clear French confirmation and refresh the affected view from persisted server data.
+- On failure, preserve entered data, show a useful French error message, identify recoverable next steps and never display a false success state.
+- Do not leave decorative, placeholder, dead or unimplemented buttons in production UI.
+
+### 15.4 Required behavior for every module
+
+For each entity/module, implement and test the applicable lifecycle:
+1. Create a record with required-field validation.
+2. Open and view its full details.
+3. Edit permitted fields and preserve data on validation/network/database errors.
+4. Search, filter, sort and paginate without leaking unauthorized records.
+5. Link/unlink related records with referential integrity.
+6. Attach, preview, download and archive relevant documents/photos.
+7. Approve/reject/issue/post only when the role and business state allow it.
+8. Print/export a correct document/report when applicable.
+9. Archive/restore or cancel/reverse safely; do not silently delete posted history.
+10. Inspect the activity/audit timeline and verify who changed what and when.
+
+Not every entity needs every action, but each omission must be intentional and documented. A button existing in the UI is not evidence that its workflow works.
+
+### 15.5 Error prevention, recovery and reliability
+
+The app must be designed to prevent common user errors and recover safely from expected failures.
+
+- Validate required fields, formats, dates, numeric ranges, references, totals and state transitions both client-side and server-side.
+- Show field-level French validation and a clear summary for multi-field errors.
+- Protect against duplicate clicks, duplicate requests, duplicate document numbers, duplicate payments/postings and stale concurrent edits.
+- Use database transactions for multi-record operations. If any step fails, do not leave partial financial, inventory or document state.
+- Handle missing files, unavailable printer, disk full, permission denied, corrupt attachment, failed export, failed backup, interrupted update and database busy errors without crashing or losing unrelated work.
+- Preserve unsaved form values when safe; warn before navigation that would discard them.
+- Provide retry only when the operation is safe/idempotent; otherwise explain how to verify the current status before retrying.
+- Never swallow errors silently or log success before the database transaction commits.
+- Add structured, privacy-safe diagnostics with no passwords, secrets, full bank details or unnecessary personal data.
+- Provide a visible application health/backup status and clear recovery instructions.
+
+### 15.6 Mandatory visual and functional acceptance
+
+Before a module or redesign phase is accepted:
+- Review every page, modal, drawer, table action, toolbar, keyboard shortcut and role state.
+- Test primary/secondary/destructive actions with both allowed and denied roles.
+- Test success, validation failure, server failure, duplicate submission, stale data, empty list, large list and offline/restart scenarios as applicable.
+- Confirm all UI strings are French and all money values use the correct DZD formatting.
+- Confirm the chosen brand tokens are used consistently and no legacy teal/turquoise primary theme remains.
+- Check text contrast, focus visibility, keyboard navigation, reduced motion and print styles.
+- Capture before/after screenshots for representative pages and attach visual evidence to the PR.
+- Run regression tests after redesigning shared components; visual changes must not break calculations, permissions or persistence.
+- Do not mark a page complete until the real action has been executed against the test database and its persisted result verified.
+
+**Visual/functional exit gate:** every module uses the canonical blue/white system; every visible control has a real, permission-checked behavior; success and error states are clear; data remains correct after restart; and the full role-based regression suite passes.
