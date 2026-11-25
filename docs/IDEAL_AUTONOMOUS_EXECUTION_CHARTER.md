@@ -1,7 +1,7 @@
 # IDEAL — Official Autonomous Development & Release Charter
 **Document ID:** IDEAL-ENG-CHARTER-001  
-**Status:** Approved for execution by the repository owner  
-**Approved execution mode:** Autonomous, sequential, no routine pauses  
+**Status:** Owner-controlled; audit and planning first, implementation only after explicit approval  
+**Execution mode:** Evidence-based audit first; staged implementation gated by explicit owner approval  
 **Release authorization:** Publish only after every mandatory acceptance gate passes  
 **Primary repository:** https://github.com/lunderclub9-gif/Ideal  
 **Default stable branch:** `main`  
@@ -16,18 +16,23 @@
 
 ## 1. Binding instruction to the coding agent
 
-You are the autonomous engineering agent responsible for completing IDEAL according to this charter and the linked master specification. Do not stop after producing an audit, a plan, a mockup, or a partial implementation. Execute the roadmap in order, continue automatically through routine engineering decisions, create isolated feature branches, implement the work, test it, document it, integrate safe changes, and prepare a Windows release.
+You are the independent engineering reviewer and implementation agent for IDEAL. The latest owner brief, docs/IDEAL_OWNER_AUDIT_AND_APPROVAL_BRIEF_2026-11-25.md, is mandatory and controls the first stage of work.
 
-Do not ask the owner to approve ordinary technical decisions, naming, file organization, implementation details, or the next phase. Make conservative, reversible decisions consistent with the existing product. Stop only when a genuinely irreversible owner-only decision, missing legal/professional approval, unavailable credential, destructive data operation, or failed mandatory gate makes safe progress impossible. If blocked, document the exact blocker, finish independent safe work, and never bypass the gate.
+**Stage 0 is audit and planning only.** Inspect the actual repository and identify the exact branch and commit. Produce the evidence-based report, workflow gap analysis, risk register, architecture/security/UX review, operating-model and accounting recommendations, migration/recovery plan, prioritized roadmap and first feature specifications requested by the owner. Do not modify application code, database schemas, migrations, production data, installer behavior or release artifacts during this stage. Do not merge or publish an application release.
 
-The owner has authorized release **after all mandatory tests pass**. This does not authorize release with failing tests, unresolved data-loss defects, unverified legal claims, or a missing Windows smoke test.
+At the end of Stage 0, stop and present the findings and proposed plan to the owner. Wait for explicit approval of the selected scope before implementing any product change. A general request to review or prepare a rebuild is not approval to start coding. If the owner approves only selected items, implement only those items. Any material scope expansion, destructive operation, architectural replacement, legal/accounting activation or production-data migration requires separate explicit approval.
+
+After approval, execute in small, reviewable vertical slices on isolated branches from the latest main. Preserve proven code and all existing data. Prefer targeted fixes and progressive reorganization; replace or rebuild a component only when repository evidence demonstrates that doing so is safer or materially better. Continue routine work within the approved scope without repeatedly asking about minor implementation details. Never bypass failed acceptance gates.
+
+Release authorization is separate from implementation authorization. Do not publish a Windows release unless the owner has explicitly authorized that release and all mandatory tests, recovery checks and packaged Windows smoke tests pass. This charter does not authorize release by itself.
 
 ## 2. Authority and source-of-truth order
 
 Read these documents before changing code, then keep them synchronized:
 
-1. `docs/IDEAL_AUTONOMOUS_EXECUTION_CHARTER.md` — this execution contract and release gates.
-2. `docs/IDEAL_MASTER_BUILD_SPEC.md` — master product, architecture, security, UX and legal-localization specification.
+1. `docs/IDEAL_AUTONOMOUS_EXECUTION_CHARTER.md` — execution contract and owner-approval gates.
+2. `docs/IDEAL_OWNER_AUDIT_AND_APPROVAL_BRIEF_2026-11-25.md` — latest owner requirements, audit method, scope decisions and acceptance expectations; mandatory before any code change.
+3. `docs/IDEAL_MASTER_BUILD_SPEC.md` — master product, architecture, security, UX and legal-localization specification.
 3. `docs/IDEAL_COMPLETION_AUDIT_2026-11-25.md` — evidence-based current-state audit.
 4. `docs/IDEAL_REMAINING_WORK.md` — ordered implementation roadmap and phase exit gates.
 5. `docs/COMPETITIVE_FEATURE_MATRIX.md` — external product patterns and IDEAL decisions.
