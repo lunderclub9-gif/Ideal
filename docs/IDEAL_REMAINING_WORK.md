@@ -13,7 +13,7 @@ This roadmap is based on `docs/IDEAL_COMPLETION_AUDIT_2026-11-25.md`, `docs/IMPL
 - No AI, mandatory cloud, paid service or always-online dependency.
 - No legal claims without current official Algerian sources and independent professional review.
 - Merge only after CI and code review. Do not force-push or delete branches.
-- The owner has authorized automatic progression and release after all gates pass; this is not permission to bypass failed tests or legal review.
+- Stage 0 is audit and planning only. Stop and obtain explicit owner approval before any product-code, schema, migration or release change. Approval is limited to the selected scope; release authorization is separate.
 
 ## Phase 0 — Baseline and branch preservation
 
