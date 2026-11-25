@@ -137,6 +137,53 @@ This roadmap is based on `docs/IDEAL_COMPLETION_AUDIT_2026-11-25.md`, `docs/IMPL
 - Verify French-only UI, DZD, installer metadata, SHA-256, unsigned installer warnings and release notes.
 - Publish only when all mandatory gates pass; provide exact release tag, installer link, SHA-256, CI run and known limitations.
 
+
+
+## Product transformation workstream — complete rebuild of the user experience
+
+This workstream is required in addition to the technical phases above. Follow Section 13–14 of `docs/IDEAL_AUTONOMOUS_EXECUTION_CHARTER.md`. The target is a cohesive professional product, not a collection of incremental CRUD screens.
+
+### A. Re-architecture and redesign across every module
+- Rework the information architecture, navigation, dashboards, record details, forms, tables, dialogs, filters, search, settings and role-specific workflows.
+- Redesign every module and every user-facing screen with one consistent French-first design system.
+- Consolidate duplicate workflows only after preserving their behavior and data.
+- Add contextual activity timelines, related-record navigation, clear lifecycle states and role-specific actions.
+- Validate all major screens at supported Windows resolutions and on low-memory hardware.
+
+### B. Company profile and reusable identity
+- Build a complete company profile: legal/commercial name, logo, business activity, full address, wilaya/commune, phone/mobile, email, website, applicable registration/tax identifiers, bank details, authorized signatories and default commercial terms.
+- Validate identifier applicability and legal wording; never fabricate company details.
+- Reuse approved company details automatically in every relevant document template.
+- Include permissions, preview, versioning and audit history for sensitive settings.
+
+### C. Professional documents and PDF workflow
+- Build a unified template and document-generation engine for quotations, invoices, credit notes, receipts, statements, purchase orders, delivery notes, contracts, BOQ/BPU/DQE, progress certificates, site reports, HR documents, fleet/equipment forms and management reports.
+- Support professional A4 layouts, company logo/contact block, partner details, unique numbering, dates, line items, HT/TVA/TTC where applicable, payment terms, signature areas, page numbering and reliable page breaks.
+- Provide draft preview, issue/approval, PDF generation, download, re-open, reprint and immutable issued snapshots.
+- Prevent duplicate document numbers and preserve historical documents when company data or templates change.
+- Enable statutory claims only after official-source and qualified-professional validation.
+
+### D. Document archive, photos and attachments
+- Create a central searchable archive with categories, tags, metadata, versions, links to business records, expiry reminders and permission-controlled actions.
+- Attach multiple photos/files to projects, sites, reports, tasks, inspections, incidents, vehicles, equipment, materials and other relevant records.
+- Provide galleries, thumbnails, full-size preview, captions, before/during/after sequences, photo reports and selected-image PDF exports.
+- Preserve original files, generate separate thumbnails, and include files plus metadata in backup/restore.
+- Keep all file storage local and offline; validate uploads and prevent path traversal and unauthorized access.
+
+### E. Rich contacts and operational reporting
+- Upgrade customer/supplier profiles with legal identity, multiple contacts/addresses, phone/email, identifiers where applicable, payment terms, activity history, balances and attached documents.
+- Provide printable/exportable reports for project profitability, budget vs actual, receivables/payables, cash flow, taxes, payroll, stock, purchasing, fleet, equipment, subcontractors, quality and HSE.
+- Make every important KPI traceable to source records and prevent double counting.
+
+### Product transformation exit gate
+- All modules have a coherent redesigned workflow, not just a refreshed dashboard.
+- Company profile data appears correctly in generated documents.
+- At least one end-to-end acceptance scenario per document family verifies create → preview → issue/approve → PDF → archive → retrieve → download → print.
+- Issued documents remain immutable snapshots and numbering is concurrency-safe.
+- Photos and attachments can be added, previewed, retrieved, exported and restored from backup.
+- Role permissions, offline operation, French-only UI, DZD calculations, migration safety and 4 GB-class performance are tested.
+- Existing company data and historical records survive upgrades with reconciliation evidence.
+
 ## Release decision
 
 A passing TypeScript check or browser build alone is not release approval. A release candidate must pass all relevant automated tests, migration/data-protection checks, Windows packaging and packaged smoke test. Legal/accounting compliance must be independently reviewed or explicitly labelled not professionally validated. Preserve all existing branches and historical releases.
