@@ -29,7 +29,7 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
     include_overhead: false,
     notes: '',
   });
-  const [newTask, setNewTask] = useState({ title: '', phase_id: '', assigned_worker_id: '', due_date: '', status: 'planned', delay_reason: '' });
+  const [newTask, setNewTask] = useState({ title: '', phase_id: '', assigned_worker_id: '', planned_start: '', due_date: '', status: 'planned', delay_reason: '' });
   const [newAvenant, setNewAvenant] = useState({ title: '', description: '', additional_price: 0, additional_cost: 0 });
   const [phaseOpen, setPhaseOpen] = useState(false);
   const [newPhase, setNewPhase] = useState({ name: '', sort_order: 1, status: 'planned' });
@@ -130,7 +130,7 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
     try {
       await apiFetch(`/projects/${selected.project.id}/tasks`, { method: 'POST', body: JSON.stringify(newTask) });
       setTaskOpen(false);
-      setNewTask({ title: '', phase_id: '', assigned_worker_id: '', due_date: '', status: 'planned', delay_reason: '' });
+      setNewTask({ title: '', phase_id: '', assigned_worker_id: '', planned_start: '', due_date: '', status: 'planned', delay_reason: '' });
       await openDetail(selected.project.id);
     } catch (err: any) {
       setError(err.message);
@@ -233,6 +233,31 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
         method: 'PUT',
         body: JSON.stringify({ assigned_worker_id: workerId || null }),
       });
+      await openDetail(selected.project.id);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }
+
+  async function addTaskDependency(successorTaskId: number, predecessorTaskId: number) {
+    if (!selected || !predecessorTaskId) return;
+    setError('');
+    try {
+      await apiFetch(`/projects/${selected.project.id}/task-dependencies`, {
+        method: 'POST',
+        body: JSON.stringify({ predecessor_task_id: predecessorTaskId, successor_task_id: successorTaskId }),
+      });
+      await openDetail(selected.project.id);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }
+
+  async function removeTaskDependency(dependencyId: number) {
+    if (!selected) return;
+    setError('');
+    try {
+      await apiFetch(`/projects/${selected.project.id}/task-dependencies/${dependencyId}`, { method: 'DELETE' });
       await openDetail(selected.project.id);
     } catch (err: any) {
       setError(err.message);
@@ -460,8 +485,22 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
                   <div>
                     <div className="font-medium text-slate-900 dark:text-white">{t.title}</div>
                     <div className="text-[11px] text-slate-500">
-                      Responsable : {t.worker_name || 'Non assigné'} · Échéance : {formatDateFr(t.due_date)}
+                      Responsable : {t.worker_name || 'Non assigné'} · Début : {formatDateFr(t.planned_start)} · Échéance : {formatDateFr(t.due_date)}
                     </div>
+                    {(selected.taskDependencies || []).filter((d: any) => d.successor_task_id === t.id).length > 0 && (
+                      <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-slate-600 dark:text-slate-300">
+                        <span>Précédée par :</span>
+                        {(selected.taskDependencies || []).filter((d: any) => d.successor_task_id === t.id).map((d: any) => {
+                          const predecessor = selected.tasks.find((candidate: any) => candidate.id === d.predecessor_task_id);
+                          return (
+                            <span key={d.id} className="inline-flex items-center gap-1 rounded bg-slate-100 dark:bg-slate-800 px-2 py-0.5">
+                              {predecessor?.title || `Tâche #${d.predecessor_task_id}`}
+                              {canWrite && <button type="button" onClick={() => removeTaskDependency(d.id)} className="text-red-600 hover:text-red-800" aria-label="Retirer la dépendance">×</button>}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
                     {t.delay_reason && (
                       <div className="text-[11px] text-red-700 dark:text-red-400 mt-1">
                         Motif du retard : {t.delay_reason}
@@ -481,6 +520,20 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
                           <option value="">Non assigné</option>
                           {workers.filter((w) => w.status === 'active' || w.id === t.assigned_worker_id).map((w) => (
                             <option key={w.id} value={w.id}>{w.full_name}</option>
+                          ))}
+                        </select>
+                        <select
+                          aria-label={`Ajouter une tâche précédente à ${t.title}`}
+                          value=""
+                          onChange={(e) => { const predecessorId = Number(e.target.value); if (predecessorId) addTaskDependency(t.id, predecessorId); }}
+                          className="max-w-[190px] px-2 py-1 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-950"
+                        >
+                          <option value="">Ajouter une dépendance…</option>
+                          {selected.tasks.filter((candidate: any) =>
+                            candidate.id !== t.id &&
+                            !(selected.taskDependencies || []).some((d: any) => d.predecessor_task_id === candidate.id && d.successor_task_id === t.id)
+                          ).map((candidate: any) => (
+                            <option key={candidate.id} value={candidate.id}>{candidate.title}</option>
                           ))}
                         </select>
                         <select
@@ -908,14 +961,26 @@ export default function ProjectsPage({ permissions }: { permissions: string[] })
                 </select>
               </div>
             </div>
-            <div>
-              <label className="block font-medium mb-1">Date d’échéance</label>
-              <input
-                type="date"
-                value={newTask.due_date}
-                onChange={(e) => setNewTask({ ...newTask, due_date: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block font-medium mb-1">Début prévu</label>
+                <input
+                  type="date"
+                  value={newTask.planned_start}
+                  onChange={(e) => setNewTask({ ...newTask, planned_start: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"
+                />
+              </div>
+              <div>
+                <label className="block font-medium mb-1">Date d’échéance</label>
+                <input
+                  type="date"
+                  value={newTask.due_date}
+                  min={newTask.planned_start || undefined}
+                  onChange={(e) => setNewTask({ ...newTask, due_date: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-950"
+                />
+              </div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" onClick={() => setTaskOpen(false)} className="px-3 py-2 border rounded-lg">Annuler</button>
