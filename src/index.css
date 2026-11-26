@@ -70,7 +70,7 @@
 
 @layer base {
   :focus-visible {
-    outline: 2px solid #0f8a80;
+    outline: 2px solid #2563EB;
     outline-offset: 2px;
   }
 
@@ -89,7 +89,7 @@
   }
 
   ::selection {
-    background: rgb(15 138 128 / 20%);
+    background: rgb(37 99 235 / 18%);
   }
 }
 
@@ -103,46 +103,48 @@
 }
 
 
-/* IDEAL — calm teal workspace theme */
+/* IDEAL — official identity: dark blue #12304A, main blue #2563EB, white and light neutrals */
 @layer base {
   body {
-    background: #f3f7f6;
-    color: #1c2b2a;
+    background: #f4f7fb;
+    color: #16283b;
     -webkit-font-smoothing: antialiased;
   }
   .dark body {
-    background: #101b1b;
-    color: #e5efed;
+    background: #0b1726;
+    color: #e7eef7;
   }
   input, select, textarea {
-    border-color: #d6e2df;
+    border-color: #d5dfeb;
     border-radius: 0.65rem;
     transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
   }
   input:focus, select:focus, textarea:focus {
-    border-color: #0f8a80;
-    box-shadow: 0 0 0 3px rgb(15 138 128 / 12%);
+    border-color: #2563EB;
+    box-shadow: 0 0 0 3px rgb(37 99 235 / 14%);
     outline: none;
   }
 }
 @layer utilities {
-  .bg-blue-700 { background-color: #087f75 !important; }
-  .hover\:bg-blue-800:hover { background-color: #06665f !important; }
-  .text-blue-700 { color: #087f75 !important; }
-  .border-blue-700 { border-color: #087f75 !important; }
-  .border-slate-200 { border-color: #dce7e4 !important; }
-  .shadow-sm { box-shadow: 0 1px 2px rgb(20 55 50 / 5%), 0 4px 14px rgb(20 55 50 / 3%); }
-  .focus\:ring-blue-500:focus { --tw-ring-color: rgb(8 127 117 / 28%) !important; }
+  .bg-blue-700 { background-color: #1d4fd8 !important; }
+  .hover\:bg-blue-800:hover { background-color: #1a44bb !important; }
+  .text-blue-700 { color: #1d4fd8 !important; }
+  .border-blue-700 { border-color: #1d4fd8 !important; }
+  .border-slate-200 { border-color: #dde5ef !important; }
+  .shadow-sm { box-shadow: 0 1px 2px rgb(18 48 74 / 6%), 0 4px 14px rgb(18 48 74 / 4%); }
+  .focus\:ring-blue-500:focus { --tw-ring-color: rgb(37 99 235 / 30%) !important; }
 }
 
 @layer utilities {
-  .bg-blue-600 { background-color: #0f8a80 !important; }
-  .hover\:bg-blue-700:hover { background-color: #08746d !important; }
-  .text-blue-600 { color: #0f8a80 !important; }
-  .ring-blue-500 { --tw-ring-color: rgb(15 138 128 / 28%) !important; }
-  .border-blue-200 { border-color: #b9ded8 !important; }
-  .bg-blue-50 { background-color: #edf8f6 !important; }
-  .text-emerald-700 { color: #08746d !important; }
-  .bg-emerald-700 { background-color: #087f75 !important; }
-  .hover\:bg-emerald-800:hover { background-color: #06665f !important; }
+  .bg-blue-600 { background-color: #2563EB !important; }
+  .hover\:bg-blue-700:hover { background-color: #1d4fd8 !important; }
+  .text-blue-600 { color: #2563EB !important; }
+  .ring-blue-500 { --tw-ring-color: rgb(37 99 235 / 30%) !important; }
+  .border-blue-200 { border-color: #bfd3f8 !important; }
+  .bg-blue-50 { background-color: #eef4ff !important; }
+  .text-emerald-700 { color: #047857 !important; }
+  .bg-emerald-700 { background-color: #047857 !important; }
+  .hover\:bg-emerald-800:hover { background-color: #065f46 !important; }
+  .bg-teal-700 { background-color: #12304A !important; }
+  .text-teal-700 { color: #12304A !important; }
 }
