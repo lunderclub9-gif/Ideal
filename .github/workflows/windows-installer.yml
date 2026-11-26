@@ -62,6 +62,8 @@ jobs:
         run: npm run lint
       - name: Verify French-only application interface
         run: npm run check:french-ui
+      - name: Test project scheduling and dependency integrity
+        run: npm run test:project-scheduling
       - name: Test backup, restore and session protection
         run: npm run test:data-protection
       - name: Test lifecycle policies in an isolated temporary database
