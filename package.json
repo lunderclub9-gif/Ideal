@@ -23,7 +23,8 @@
     "test:e2e": "playwright test",
     "test:simulation": "tsx scripts/test-simulation.ts",
     "dist:win:store": "npm run build && node scripts/build-store-package.cjs",
-    "test:migrations": "tsx scripts/test-migration-chain.ts"
+    "test:migrations": "tsx scripts/test-migration-chain.ts",
+    "test:project-scheduling": "tsx scripts/test-project-scheduling.ts"
   },
   "dependencies": {
     "adm-zip": "^0.6.1",
