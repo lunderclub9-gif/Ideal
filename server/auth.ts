@@ -70,6 +70,7 @@ export type PermissionAction =
   | 'dashboard:view'
   | 'clients:read' | 'clients:write' | 'clients:delete'
   | 'projects:read' | 'projects:write' | 'projects:delete' | 'projects:approve'
+  | 'sites:read' | 'sites:write' | 'sites:approve'
   | 'invoices:read' | 'invoices:write' | 'invoices:delete' | 'invoices:approve'
   | 'attendance:read' | 'attendance:write' | 'attendance:approve'
   | 'payroll:read' | 'payroll:write' | 'payroll:approve'
@@ -92,6 +93,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Set<string>> = {
     'dashboard:view',
     'clients:read', 'clients:write',
     'projects:read',
+    'sites:read',
     'invoices:read', 'invoices:write', 'invoices:approve',
     'attendance:read',
     'payroll:read', 'payroll:write',
@@ -109,6 +111,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Set<string>> = {
     'dashboard:view',
     'clients:read',
     'projects:read', 'projects:write',
+    'sites:read', 'sites:write',
     'attendance:read', 'attendance:write',
     'materials:read', 'materials:write',
     'vehicles:read', 'fuel:write', 'repairs:write',
@@ -119,6 +122,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Set<string>> = {
   storekeeper: new Set([
     'dashboard:view',
     'projects:read',
+    'sites:read',
     'materials:read', 'materials:write', 'materials:adjust',
     'suppliers:read', 'suppliers:write',
     'vehicles:read',
@@ -128,6 +132,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Set<string>> = {
   driver: new Set([
     'dashboard:view',
     'projects:read',
+    'sites:read',
     'vehicles:read', 'fuel:write', 'repairs:write',
     'documents:read',
     'lifecycle:view',

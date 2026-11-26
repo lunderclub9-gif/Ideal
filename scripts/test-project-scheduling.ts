@@ -13,7 +13,8 @@ try {
   runMigrations(db, 11);
   const beforeProjects = db.prepare('SELECT COUNT(*) AS count FROM projects').get() as { count: number };
   runMigrations(db, 12);
-  assert.equal(LATEST_SCHEMA_VERSION, 12, 'the application must advertise schema 12');
+  // Later additive migrations (13+) must not remove the scheduling schema.
+  assert.ok(LATEST_SCHEMA_VERSION >= 12, 'the application must advertise at least schema 12');
   assert.equal(
     (db.prepare('SELECT COUNT(*) AS count FROM schema_migrations WHERE version = 12').get() as { count: number }).count,
     1,

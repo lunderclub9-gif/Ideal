@@ -16,6 +16,7 @@ const STATUS_MAP: Record<string, { label: string; tone: 'green' | 'blue' | 'ambe
   blocked: { label: 'Bloqué', tone: 'red' },
   draft: { label: 'Brouillon', tone: 'neutral' },
   waiting_approval: { label: 'En attente', tone: 'amber' },
+  submitted: { label: 'Soumis', tone: 'blue' },
   in_progress: { label: 'En cours', tone: 'blue' },
   suspended: { label: 'Suspendu', tone: 'amber' },
   completed: { label: 'Terminé', tone: 'green' },

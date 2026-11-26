@@ -50,7 +50,7 @@ This roadmap is based on `docs/IDEAL_COMPLETION_AUDIT_2026-11-25.md`, `docs/IMPL
 
 ## Phase 3 — Field execution and progress billing
 
-- Daily site reports with date, project/site, weather (optional/manual), teams, equipment, materials, work performed, blockers, notes and attachments.
+- [x] Daily site reports with date, project/site, weather (optional/manual), teams, equipment, materials, work performed, blockers, notes and attachments — implemented 2026-11-26 (schema 13, `/site-reports` API, `SiteReportsPage`, submit/approve/reject, attachments, XLSX export, printable report, `test:site-reports`).
 - Measured quantities against BOQ items and approved revisions.
 - Progress certificates / situations de travaux with cumulative and period quantities.
 - Contract retention, advance recovery, deductions and approval history.
@@ -144,6 +144,7 @@ This roadmap is based on `docs/IDEAL_COMPLETION_AUDIT_2026-11-25.md`, `docs/IMPL
 This workstream is required in addition to the technical phases above. Follow Section 13–14 of `docs/IDEAL_AUTONOMOUS_EXECUTION_CHARTER.md`. The target is a cohesive professional product, not a collection of incremental CRUD screens.
 
 ### A. Re-architecture and redesign across every module
+- [x] Official `#12304A` / `#2563EB` / white theme replaces the previous teal palette in `src/index.css` and the application shell (2026-11-26).
 - Rework the information architecture, navigation, dashboards, record details, forms, tables, dialogs, filters, search, settings and role-specific workflows.
 - Redesign every module and every user-facing screen with one consistent French-first design system.
 - Consolidate duplicate workflows only after preserving their behavior and data.
