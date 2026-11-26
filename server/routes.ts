@@ -934,7 +934,7 @@ router.post('/projects/:id/tasks', requireAuth, requirePermission('projects:writ
   }
   const validDate = (value: unknown) => {
     if (value === null || value === undefined || value === '') return true;
-    if (typeof value !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return false;
+    if (typeof value !== 'string' || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value)) return false;
     const parsed = new Date(`${value}T00:00:00.000Z`);
     return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
   };
