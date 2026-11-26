@@ -40,8 +40,8 @@ This roadmap is based on `docs/IDEAL_COMPLETION_AUDIT_2026-11-25.md`, `docs/IMPL
 ## Phase 2 — Construction planning and cost control
 
 - WBS hierarchy for project → phase → work package → task.
-- Task dependencies with cycle detection and valid date constraints.
-- Baseline and revised schedules, milestones, Gantt view and critical-path indicators where justified.
+- [x] Task dependencies with cycle detection and valid date constraints — implemented in PR #20 (schema 12, API, French UI and isolated integrity test).
+- [ ] Baseline and revised schedules, milestones, Gantt view and critical-path indicators where justified.
 - Planned vs actual quantities, hours, cost and progress by cost code.
 - Link BOQ versions to contracts and project budgets; compare versions and print/export.
 - Keep project phase/task records backward compatible.
