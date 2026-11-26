@@ -30,6 +30,12 @@ on:
       - 'tsconfig.json'
       - '.github/workflows/windows-installer.yml'
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish a GitHub Release after all Windows checks pass
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -91,7 +97,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Publish downloadable GitHub Release
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish_release == true
         uses: softprops/action-gh-release@v2
         with:
           tag_name: windows-build-${{ github.run_number }}
