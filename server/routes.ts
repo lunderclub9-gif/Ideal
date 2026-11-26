@@ -3701,7 +3701,14 @@ function resolveDocumentRelation(typeValue: unknown, idValue: unknown) {
   const type = String(typeValue || '').trim();
   const id = idValue === '' || idValue === null || idValue === undefined ? null : Number(idValue);
   if (!type && id === null) return { type: '', id: null as number | null };
-  const tables: Record<string, string> = { client: 'clients', project: 'projects', supplier: 'suppliers', worker: 'workers' };
+  const tables: Record<string, string> = {
+    client: 'clients',
+    project: 'projects',
+    supplier: 'suppliers',
+    worker: 'workers',
+    site_report: 'site_reports',
+    task: 'project_tasks',
+  };
   const table = tables[type];
   if (!table || !Number.isSafeInteger(id) || Number(id) <= 0) throw new Error('La fiche associée est invalide.');
   const exists = getDb().prepare(`SELECT id FROM ${table} WHERE id = ?`).get(Number(id));
@@ -5001,6 +5008,510 @@ router.post('/boq/versions/:id/convert-to-quotation', requireAuth, requirePermis
 
   logAudit(req.user!, 'CONVERT', 'devis', docNumber, `BOQ V${version.version_number}`, `Devis créé depuis le BOQ V${version.version_number}`);
   res.status(201).json(loadCommercialDocument(docId));
+});
+
+// ==================== DAILY SITE REPORTS (JOURNAL DE CHANTIER) ====================
+const SITE_REPORT_WEATHER = ['', 'ensoleille', 'nuageux', 'pluvieux', 'venteux', 'tres_chaud', 'froid'];
+const SITE_REPORT_STATUSES = ['draft', 'submitted', 'approved', 'rejected'];
+
+function isIsoCalendarDate(value: unknown): boolean {
+  const text = String(value ?? '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  const parsed = new Date(`${text}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === text;
+}
+
+function loadSiteReport(id: number) {
+  const db = getDb();
+  const report = db
+    .prepare(
+      `SELECT r.*, p.project_number, p.title AS project_title, p.address AS project_address,
+              c.name AS client_name, ph.name AS phase_name, t.title AS task_title,
+              cu.name AS created_by_name, su.name AS submitted_by_name, ru.name AS reviewed_by_name
+       FROM site_reports r
+       JOIN projects p ON p.id = r.project_id
+       JOIN clients c ON c.id = p.client_id
+       LEFT JOIN project_phases ph ON ph.id = r.phase_id
+       LEFT JOIN project_tasks t ON t.id = r.task_id
+       LEFT JOIN users cu ON cu.id = r.created_by
+       LEFT JOIN users su ON su.id = r.submitted_by
+       LEFT JOIN users ru ON ru.id = r.reviewed_by
+       WHERE r.id = ?`
+    )
+    .get(id) as any;
+  if (!report) return null;
+  report.workforce = db
+    .prepare(
+      `SELECT w.*, k.full_name AS worker_name, k.job_title
+       FROM site_report_workforce w JOIN workers k ON k.id = w.worker_id
+       WHERE w.report_id = ? ORDER BY k.full_name COLLATE NOCASE ASC`
+    )
+    .all(id);
+  report.equipment = db
+    .prepare(
+      `SELECT e.*, v.name AS vehicle_name, v.registration
+       FROM site_report_equipment e JOIN vehicles v ON v.id = e.vehicle_id
+       WHERE e.report_id = ? ORDER BY v.name COLLATE NOCASE ASC`
+    )
+    .all(id);
+  report.materials = db
+    .prepare(
+      `SELECT m.*, mt.name AS material_name, mt.code AS material_code, mt.unit AS material_unit
+       FROM site_report_materials m JOIN materials mt ON mt.id = m.material_id
+       WHERE m.report_id = ? ORDER BY mt.name COLLATE NOCASE ASC, m.id ASC`
+    )
+    .all(id);
+  report.attachments = db
+    .prepare(
+      `SELECT id, title, category, file_name, mime_type, file_size, doc_date, created_at
+       FROM documents WHERE archived = 0 AND related_type = 'site_report' AND related_id = ?
+       ORDER BY id DESC`
+    )
+    .all(id);
+  report.total_hours = round2((report.workforce || []).reduce((sum: number, row: any) => sum + Number(row.hours_worked || 0), 0));
+  report.total_equipment_hours = round2((report.equipment || []).reduce((sum: number, row: any) => sum + Number(row.hours_used || 0), 0));
+  return report;
+}
+
+function insertSiteReportChildren(db: any, reportId: number, payload: any) {
+  const insertWorker = db.prepare(
+    'INSERT INTO site_report_workforce (report_id, worker_id, hours_worked, notes) VALUES (?, ?, ?, ?)'
+  );
+  for (const row of payload.workforce) {
+    insertWorker.run(reportId, row.worker_id, row.hours_worked, row.notes);
+  }
+  const insertEquipment = db.prepare(
+    'INSERT INTO site_report_equipment (report_id, vehicle_id, hours_used, notes) VALUES (?, ?, ?, ?)'
+  );
+  for (const row of payload.equipment) {
+    insertEquipment.run(reportId, row.vehicle_id, row.hours_used, row.notes);
+  }
+  const insertMaterial = db.prepare(
+    'INSERT INTO site_report_materials (report_id, material_id, quantity, unit, notes) VALUES (?, ?, ?, ?, ?)'
+  );
+  for (const row of payload.materials) {
+    insertMaterial.run(reportId, row.material_id, row.quantity, row.unit, row.notes);
+  }
+}
+
+function readSiteReportPayload(body: any) {
+  const db = getDb();
+  const projectId = Number(body?.project_id);
+  if (!Number.isSafeInteger(projectId) || projectId <= 0) throw new Error('Le chantier est obligatoire.');
+  if (!db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId)) throw new Error('Chantier introuvable.');
+  if (!isIsoCalendarDate(body?.report_date)) throw new Error('La date du rapport est invalide (format AAAA-MM-JJ).');
+
+  const optionalId = (value: unknown, label: string) => {
+    if (value === '' || value === null || value === undefined) return null;
+    const id = Number(value);
+    if (!Number.isSafeInteger(id) || id <= 0) throw new Error(`${label} est invalide.`);
+    return id;
+  };
+  const phaseId = optionalId(body?.phase_id, 'La phase');
+  if (phaseId !== null && !db.prepare('SELECT id FROM project_phases WHERE id = ? AND project_id = ?').get(phaseId, projectId)) {
+    throw new Error('La phase sélectionnée n’appartient pas à ce chantier.');
+  }
+  const taskId = optionalId(body?.task_id, 'La tâche');
+  if (taskId !== null && !db.prepare('SELECT id FROM project_tasks WHERE id = ? AND project_id = ?').get(taskId, projectId)) {
+    throw new Error('La tâche sélectionnée n’appartient pas à ce chantier.');
+  }
+
+  const weather = String(body?.weather ?? '');
+  if (!SITE_REPORT_WEATHER.includes(weather)) throw new Error('Les conditions météorologiques sont invalides.');
+  let temperature: number | null = null;
+  if (body?.temperature_c !== '' && body?.temperature_c !== null && body?.temperature_c !== undefined) {
+    const value = Number(body.temperature_c);
+    if (!Number.isFinite(value) || value < -30 || value > 60) throw new Error('La température doit être comprise entre -30 et 60 °C.');
+    temperature = round2(value);
+  }
+
+  const text = (value: unknown, max: number, label: string) => {
+    const result = String(value ?? '').trim();
+    if (result.length > max) throw new Error(`${label} ne doit pas dépasser ${max} caractères.`);
+    return result;
+  };
+  const workDone = text(body?.work_done, 5000, 'Le travail réalisé');
+  if (!workDone) throw new Error('Décrivez le travail réalisé sur le chantier.');
+  const siteCondition = text(body?.site_condition, 1000, 'L’état du chantier');
+  const observations = text(body?.observations, 2000, 'Les observations');
+  const incidents = text(body?.incidents, 2000, 'Les incidents');
+
+  const rows = (value: unknown, label: string, max: number) => {
+    if (value === undefined || value === null) return [] as any[];
+    if (!Array.isArray(value)) throw new Error(`${label} : format invalide.`);
+    if (value.length > max) throw new Error(`${label} : ${max} lignes maximum.`);
+    return value as any[];
+  };
+  const seenWorkers = new Set<number>();
+  const workforce = rows(body?.workforce, 'La main-d’œuvre', 200).map((row) => {
+    const workerId = Number(row?.worker_id);
+    if (!Number.isSafeInteger(workerId) || workerId <= 0) throw new Error('Chaque ligne de main-d’œuvre doit désigner un salarié.');
+    if (!db.prepare('SELECT id FROM workers WHERE id = ?').get(workerId)) throw new Error('Un salarié sélectionné est introuvable.');
+    if (seenWorkers.has(workerId)) throw new Error('Un salarié ne peut apparaître qu’une seule fois par rapport.');
+    seenWorkers.add(workerId);
+    const hours = row?.hours_worked === '' || row?.hours_worked === undefined || row?.hours_worked === null ? 8 : Number(row.hours_worked);
+    if (!Number.isFinite(hours) || hours < 0 || hours > 24) throw new Error('Les heures travaillées doivent être comprises entre 0 et 24 par salarié.');
+    return { worker_id: workerId, hours_worked: round2(hours), notes: text(row?.notes, 300, 'Une note de main-d’œuvre') };
+  });
+
+  const seenVehicles = new Set<number>();
+  const equipment = rows(body?.equipment, 'Les engins', 100).map((row) => {
+    const vehicleId = Number(row?.vehicle_id);
+    if (!Number.isSafeInteger(vehicleId) || vehicleId <= 0) throw new Error('Chaque ligne d’engin doit désigner un véhicule ou un engin.');
+    if (!db.prepare('SELECT id FROM vehicles WHERE id = ?').get(vehicleId)) throw new Error('Un engin sélectionné est introuvable.');
+    if (seenVehicles.has(vehicleId)) throw new Error('Un engin ne peut apparaître qu’une seule fois par rapport.');
+    seenVehicles.add(vehicleId);
+    const hours = row?.hours_used === '' || row?.hours_used === undefined || row?.hours_used === null ? 0 : Number(row.hours_used);
+    if (!Number.isFinite(hours) || hours < 0 || hours > 24) throw new Error('Les heures d’utilisation doivent être comprises entre 0 et 24 par engin.');
+    return { vehicle_id: vehicleId, hours_used: round2(hours), notes: text(row?.notes, 300, 'Une note d’engin') };
+  });
+
+  const materials = rows(body?.materials, 'Les matériaux', 200).map((row) => {
+    const materialId = Number(row?.material_id);
+    if (!Number.isSafeInteger(materialId) || materialId <= 0) throw new Error('Chaque ligne de matériau doit désigner un matériau.');
+    const material = db.prepare('SELECT id, unit FROM materials WHERE id = ?').get(materialId) as { id: number; unit: string } | undefined;
+    if (!material) throw new Error('Un matériau sélectionné est introuvable.');
+    const quantity = Number(row?.quantity ?? 0);
+    if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 1_000_000_000) throw new Error('La quantité consommée doit être strictement positive.');
+    return {
+      material_id: materialId,
+      quantity: round2(quantity),
+      unit: text(row?.unit, 20, 'L’unité') || material.unit || '',
+      notes: text(row?.notes, 300, 'Une note de matériau'),
+    };
+  });
+
+  return {
+    project_id: projectId,
+    phase_id: phaseId,
+    task_id: taskId,
+    report_date: String(body.report_date),
+    weather,
+    temperature_c: temperature,
+    site_condition: siteCondition,
+    work_done: workDone,
+    observations,
+    incidents,
+    workforce,
+    equipment,
+    materials,
+  };
+}
+
+router.get('/site-reports', requireAuth, requirePermission('sites:read'), (req, res) => {
+  const db = getDb();
+  const where: string[] = [];
+  const params: Array<string | number> = [];
+  const projectId = Number(req.query.project_id);
+  if (Number.isSafeInteger(projectId) && projectId > 0) {
+    where.push('r.project_id = ?');
+    params.push(projectId);
+  }
+  const status = String(req.query.status || '');
+  if (SITE_REPORT_STATUSES.includes(status)) {
+    where.push('r.status = ?');
+    params.push(status);
+  }
+  const from = String(req.query.from || '');
+  if (from) {
+    if (!isIsoCalendarDate(from)) {
+      res.status(400).json({ error: 'La date de début du filtre est invalide (format AAAA-MM-JJ).' });
+      return;
+    }
+    where.push('r.report_date >= ?');
+    params.push(from);
+  }
+  const to = String(req.query.to || '');
+  if (to) {
+    if (!isIsoCalendarDate(to)) {
+      res.status(400).json({ error: 'La date de fin du filtre est invalide (format AAAA-MM-JJ).' });
+      return;
+    }
+    where.push('r.report_date <= ?');
+    params.push(to);
+  }
+  const search = String(req.query.q || '').trim();
+  if (search) {
+    where.push('(r.report_number LIKE ? OR r.work_done LIKE ? OR p.title LIKE ?)');
+    const like = `%${search}%`;
+    params.push(like, like, like);
+  }
+  const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const rows = db
+    .prepare(
+      `SELECT r.*, p.project_number, p.title AS project_title, c.name AS client_name,
+              (SELECT COUNT(*) FROM site_report_workforce w WHERE w.report_id = r.id) AS workforce_count,
+              (SELECT COALESCE(SUM(w.hours_worked), 0) FROM site_report_workforce w WHERE w.report_id = r.id) AS workforce_hours,
+              (SELECT COUNT(*) FROM site_report_equipment e WHERE e.report_id = r.id) AS equipment_count,
+              (SELECT COUNT(*) FROM site_report_materials m WHERE m.report_id = r.id) AS material_count
+       FROM site_reports r
+       JOIN projects p ON p.id = r.project_id
+       JOIN clients c ON c.id = p.client_id
+       ${clause}
+       ORDER BY r.report_date DESC, r.id DESC
+       LIMIT 500`
+    )
+    .all(...params);
+  res.json(rows);
+});
+
+router.get('/site-reports/options', requireAuth, requirePermission('sites:read'), (req, res) => {
+  const db = getDb();
+  const projects = db
+    .prepare(
+      `SELECT p.id, p.project_number, p.title, p.status
+       FROM projects p WHERE p.lifecycle_status <> 'archived'
+       ORDER BY p.id DESC`
+    )
+    .all();
+  const workers = db
+    .prepare("SELECT id, full_name, job_title FROM workers WHERE status = 'active' ORDER BY full_name COLLATE NOCASE ASC")
+    .all();
+  const materials = db
+    .prepare("SELECT id, name, code, unit, current_quantity FROM materials WHERE status = 'active' ORDER BY name COLLATE NOCASE ASC")
+    .all();
+  const vehicles = db
+    .prepare('SELECT id, name, registration FROM vehicles ORDER BY name COLLATE NOCASE ASC')
+    .all();
+  const projectId = Number(req.query.project_id);
+  let phases: any[] = [];
+  let tasks: any[] = [];
+  if (Number.isSafeInteger(projectId) && projectId > 0) {
+    phases = db.prepare('SELECT id, name FROM project_phases WHERE project_id = ? ORDER BY sort_order ASC, id ASC').all(projectId);
+    tasks = db.prepare('SELECT id, title, phase_id FROM project_tasks WHERE project_id = ? ORDER BY id ASC').all(projectId);
+  }
+  res.json({ projects, workers, materials, vehicles, phases, tasks });
+});
+
+router.get('/site-reports/export/xlsx', requireAuth, requirePermission('sites:read'), (_req, res) => {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `SELECT r.report_number AS Numero, r.report_date AS Date, p.project_number AS Chantier,
+              p.title AS Intitule_chantier, c.name AS Client, r.weather AS Meteo,
+              r.temperature_c AS Temperature_C, r.work_done AS Travaux_realises,
+              r.observations AS Observations, r.incidents AS Incidents,
+              (SELECT COALESCE(SUM(w.hours_worked), 0) FROM site_report_workforce w WHERE w.report_id = r.id) AS Heures_main_oeuvre,
+              (SELECT COUNT(*) FROM site_report_equipment e WHERE e.report_id = r.id) AS Nb_engins,
+              (SELECT COUNT(*) FROM site_report_materials m WHERE m.report_id = r.id) AS Nb_materiaux,
+              r.status AS Statut
+       FROM site_reports r JOIN projects p ON p.id = r.project_id JOIN clients c ON c.id = p.client_id
+       ORDER BY r.report_date DESC, r.id DESC`
+    )
+    .all();
+  sendXlsx(res, 'journal_de_chantier.xlsx', [{ name: 'Rapports chantier', rows }]);
+});
+
+router.get('/site-reports/:id', requireAuth, requirePermission('sites:read'), (req, res) => {
+  const report = loadSiteReport(Number(req.params.id));
+  if (!report) {
+    res.status(404).json({ error: 'Rapport de chantier introuvable.' });
+    return;
+  }
+  res.json(report);
+});
+
+router.post('/site-reports', requireAuth, requirePermission('sites:write'), (req: AuthedRequest, res) => {
+  let payload: ReturnType<typeof readSiteReportPayload>;
+  try {
+    payload = readSiteReportPayload(req.body || {});
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+    return;
+  }
+  const db = getDb();
+  const duplicate = db
+    .prepare('SELECT id, report_number FROM site_reports WHERE project_id = ? AND report_date = ?')
+    .get(payload.project_id, payload.report_date) as { id: number; report_number: string } | undefined;
+  if (duplicate) {
+    res.status(409).json({
+      error: `Un rapport de chantier existe déjà pour ce chantier à cette date (${duplicate.report_number}). Modifiez le rapport existant plutôt que d’en créer un second.`,
+    });
+    return;
+  }
+  try {
+    const id = db
+      .transaction(() => {
+        const reportNumber = generateNextNumber('JC', 'site_reports', 'report_number');
+        const info = db
+          .prepare(
+            `INSERT INTO site_reports (project_id, phase_id, task_id, report_number, report_date, weather, temperature_c,
+                                       site_condition, work_done, observations, incidents, status, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)`
+          )
+          .run(
+            payload.project_id,
+            payload.phase_id,
+            payload.task_id,
+            reportNumber,
+            payload.report_date,
+            payload.weather,
+            payload.temperature_c,
+            payload.site_condition,
+            payload.work_done,
+            payload.observations,
+            payload.incidents,
+            req.user!.id
+          );
+        insertSiteReportChildren(db, Number(info.lastInsertRowid), payload);
+        return Number(info.lastInsertRowid);
+      })
+      .immediate();
+    const created = loadSiteReport(id);
+    logAudit(req.user!, 'CREATE', 'site_report', id, '', `Rapport ${created?.report_number} du ${payload.report_date}`);
+    res.status(201).json(created);
+  } catch (error: any) {
+    if (String(error?.message || '').includes('UNIQUE')) {
+      res.status(409).json({ error: 'Un rapport de chantier existe déjà pour ce chantier à cette date.' });
+      return;
+    }
+    throw error;
+  }
+});
+
+router.put('/site-reports/:id', requireAuth, requirePermission('sites:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM site_reports WHERE id = ?').get(id) as any;
+  if (!existing) {
+    res.status(404).json({ error: 'Rapport de chantier introuvable.' });
+    return;
+  }
+  if (!['draft', 'rejected'].includes(existing.status)) {
+    res.status(400).json({ error: 'Seul un rapport en brouillon ou refusé peut être modifié.' });
+    return;
+  }
+  if (req.body?.revision !== undefined && Number(req.body.revision) !== Number(existing.revision)) {
+    res.status(409).json({ error: 'Ce rapport a été modifié entre-temps par un autre utilisateur. Rechargez la fiche avant de l’enregistrer.' });
+    return;
+  }
+  let payload: ReturnType<typeof readSiteReportPayload>;
+  try {
+    payload = readSiteReportPayload(req.body || {});
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+    return;
+  }
+  const duplicate = db
+    .prepare('SELECT id FROM site_reports WHERE project_id = ? AND report_date = ? AND id <> ?')
+    .get(payload.project_id, payload.report_date, id) as { id: number } | undefined;
+  if (duplicate) {
+    res.status(409).json({ error: 'Un autre rapport de chantier existe déjà pour ce chantier à cette date.' });
+    return;
+  }
+  db.transaction(() => {
+    db.prepare(
+      `UPDATE site_reports
+       SET project_id = ?, phase_id = ?, task_id = ?, report_date = ?, weather = ?, temperature_c = ?,
+           site_condition = ?, work_done = ?, observations = ?, incidents = ?, status = 'draft',
+           rejection_reason = '', revision = revision + 1, updated_at = datetime('now')
+       WHERE id = ?`
+    ).run(
+      payload.project_id,
+      payload.phase_id,
+      payload.task_id,
+      payload.report_date,
+      payload.weather,
+      payload.temperature_c,
+      payload.site_condition,
+      payload.work_done,
+      payload.observations,
+      payload.incidents,
+      id
+    );
+    db.prepare('DELETE FROM site_report_workforce WHERE report_id = ?').run(id);
+    db.prepare('DELETE FROM site_report_equipment WHERE report_id = ?').run(id);
+    db.prepare('DELETE FROM site_report_materials WHERE report_id = ?').run(id);
+    insertSiteReportChildren(db, id, payload);
+  }).immediate();
+  logAudit(req.user!, 'UPDATE', 'site_report', id, existing.status, `Rapport ${existing.report_number} modifié`);
+  res.json(loadSiteReport(id));
+});
+
+router.post('/site-reports/:id/submit', requireAuth, requirePermission('sites:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM site_reports WHERE id = ?').get(id) as any;
+  if (!existing) {
+    res.status(404).json({ error: 'Rapport de chantier introuvable.' });
+    return;
+  }
+  if (!['draft', 'rejected'].includes(existing.status)) {
+    res.status(400).json({ error: 'Seul un rapport en brouillon ou refusé peut être soumis à validation.' });
+    return;
+  }
+  if (!String(existing.work_done || '').trim()) {
+    res.status(400).json({ error: 'Le travail réalisé doit être renseigné avant la soumission.' });
+    return;
+  }
+  db.prepare(
+    `UPDATE site_reports SET status = 'submitted', submitted_by = ?, submitted_at = datetime('now'),
+       rejection_reason = '', revision = revision + 1, updated_at = datetime('now') WHERE id = ?`
+  ).run(req.user!.id, id);
+  logAudit(req.user!, 'SUBMIT', 'site_report', id, existing.status, 'Soumis à validation');
+  res.json(loadSiteReport(id));
+});
+
+router.post('/site-reports/:id/approve', requireAuth, requirePermission('sites:approve'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM site_reports WHERE id = ?').get(id) as any;
+  if (!existing) {
+    res.status(404).json({ error: 'Rapport de chantier introuvable.' });
+    return;
+  }
+  if (existing.status !== 'submitted') {
+    res.status(400).json({ error: 'Seul un rapport soumis peut être validé.' });
+    return;
+  }
+  db.prepare(
+    `UPDATE site_reports SET status = 'approved', reviewed_by = ?, reviewed_at = datetime('now'),
+       rejection_reason = '', revision = revision + 1, updated_at = datetime('now') WHERE id = ?`
+  ).run(req.user!.id, id);
+  logAudit(req.user!, 'APPROVE', 'site_report', id, 'submitted', 'Rapport validé');
+  res.json(loadSiteReport(id));
+});
+
+router.post('/site-reports/:id/reject', requireAuth, requirePermission('sites:approve'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM site_reports WHERE id = ?').get(id) as any;
+  if (!existing) {
+    res.status(404).json({ error: 'Rapport de chantier introuvable.' });
+    return;
+  }
+  if (existing.status !== 'submitted') {
+    res.status(400).json({ error: 'Seul un rapport soumis peut être refusé.' });
+    return;
+  }
+  const reason = String(req.body?.reason || '').trim();
+  if (!reason || reason.length > 1000) {
+    res.status(400).json({ error: 'Indiquez un motif de refus (1 000 caractères maximum).' });
+    return;
+  }
+  db.prepare(
+    `UPDATE site_reports SET status = 'rejected', reviewed_by = ?, reviewed_at = datetime('now'),
+       rejection_reason = ?, revision = revision + 1, updated_at = datetime('now') WHERE id = ?`
+  ).run(req.user!.id, reason, id);
+  logAudit(req.user!, 'REJECT', 'site_report', id, 'submitted', reason);
+  res.json(loadSiteReport(id));
+});
+
+router.delete('/site-reports/:id', requireAuth, requirePermission('sites:write'), (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM site_reports WHERE id = ?').get(id) as any;
+  if (!existing) {
+    res.status(404).json({ error: 'Rapport de chantier introuvable.' });
+    return;
+  }
+  if (existing.status !== 'draft') {
+    res.status(400).json({ error: 'Un rapport soumis, validé ou refusé ne peut pas être supprimé : conservez la trace du chantier.' });
+    return;
+  }
+  db.prepare('DELETE FROM site_reports WHERE id = ?').run(id);
+  logAudit(req.user!, 'DELETE', 'site_report', id, existing.report_number, 'Brouillon supprimé');
+  res.json({ ok: true });
 });
 
 export default router;

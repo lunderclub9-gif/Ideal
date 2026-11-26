@@ -69,7 +69,7 @@ export function reopenDb(): Database.Database {
 }
 
 /** Highest schema version this build understands. The migration test keeps it honest. */
-export const LATEST_SCHEMA_VERSION = 12;
+export const LATEST_SCHEMA_VERSION = 13;
 
 export function runMigrations(db: Database.Database, upTo: number = LATEST_SCHEMA_VERSION) {
   db.exec(`
@@ -1065,5 +1065,74 @@ export function runMigrations(db: Database.Database, upTo: number = LATEST_SCHEM
       END;
     `);
     db.prepare('INSERT INTO schema_migrations (version) VALUES (12)').run();
+  }
+
+  // Version 13: daily site reports (journal de chantier). One report per project and
+  // calendar day, with the workforce, equipment and materials consumed on site.
+  // Additive only: no existing table or record is modified.
+  const migration13 = db.prepare('SELECT version FROM schema_migrations WHERE version = 13').get();
+  if (upTo >= 13 && !migration13) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS site_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        phase_id INTEGER REFERENCES project_phases(id) ON DELETE SET NULL,
+        task_id INTEGER REFERENCES project_tasks(id) ON DELETE SET NULL,
+        report_number TEXT NOT NULL UNIQUE,
+        report_date TEXT NOT NULL,
+        weather TEXT NOT NULL DEFAULT '' CHECK(weather IN ('','ensoleille','nuageux','pluvieux','venteux','tres_chaud','froid')),
+        temperature_c REAL,
+        site_condition TEXT NOT NULL DEFAULT '',
+        work_done TEXT NOT NULL DEFAULT '',
+        observations TEXT NOT NULL DEFAULT '',
+        incidents TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','submitted','approved','rejected')),
+        revision INTEGER NOT NULL DEFAULT 1,
+        submitted_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        submitted_at TEXT,
+        reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        reviewed_at TEXT,
+        rejection_reason TEXT NOT NULL DEFAULT '',
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(project_id, report_date)
+      );
+
+      CREATE TABLE IF NOT EXISTS site_report_workforce (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        report_id INTEGER NOT NULL REFERENCES site_reports(id) ON DELETE CASCADE,
+        worker_id INTEGER NOT NULL REFERENCES workers(id),
+        hours_worked REAL NOT NULL DEFAULT 0 CHECK(hours_worked >= 0),
+        notes TEXT NOT NULL DEFAULT '',
+        UNIQUE(report_id, worker_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS site_report_equipment (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        report_id INTEGER NOT NULL REFERENCES site_reports(id) ON DELETE CASCADE,
+        vehicle_id INTEGER NOT NULL REFERENCES vehicles(id),
+        hours_used REAL NOT NULL DEFAULT 0 CHECK(hours_used >= 0),
+        notes TEXT NOT NULL DEFAULT '',
+        UNIQUE(report_id, vehicle_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS site_report_materials (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        report_id INTEGER NOT NULL REFERENCES site_reports(id) ON DELETE CASCADE,
+        material_id INTEGER NOT NULL REFERENCES materials(id),
+        quantity REAL NOT NULL DEFAULT 0 CHECK(quantity >= 0),
+        unit TEXT NOT NULL DEFAULT '',
+        notes TEXT NOT NULL DEFAULT ''
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_site_reports_project_date ON site_reports(project_id, report_date);
+      CREATE INDEX IF NOT EXISTS idx_site_reports_status ON site_reports(status);
+      CREATE INDEX IF NOT EXISTS idx_site_report_workforce_report ON site_report_workforce(report_id);
+      CREATE INDEX IF NOT EXISTS idx_site_report_equipment_report ON site_report_equipment(report_id);
+      CREATE INDEX IF NOT EXISTS idx_site_report_materials_report ON site_report_materials(report_id);
+      CREATE INDEX IF NOT EXISTS idx_documents_related ON documents(related_type, related_id);
+    `);
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (13)').run();
   }
 }
