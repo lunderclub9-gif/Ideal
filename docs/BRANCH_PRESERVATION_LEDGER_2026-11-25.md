@@ -50,3 +50,10 @@ The compare endpoint reported zero commits ahead for all of these branches. They
 - “Superseded” means the inspected main implementation is newer or already includes the relevant feature. It is not a license to delete the source branch.
 - If future evidence identifies a distinct user-facing behavior not represented in main, port that behavior as a small reviewed change onto a current feature branch with tests.
 - No force-push, branch deletion, history rewrite or direct main modification was performed.
+
+## Mise à jour du 2026-11-26
+
+- Nouvelle branche de travail `feature/ideal-full-erp-completion`, créée depuis `main` (`c5562db`), poussée puis fusionnée par la PR #23 (`main` = `f979cf0`). Aucun commit d’une autre branche n’a été rejoué.
+- Aucune branche existante n’a été supprimée, renommée, forcée ou réécrite. Le ledger précédent reste la référence pour les branches divergentes (`feature/complete-module-actions`, `feature/ideal-windows-trust-hardening`, `feature/microsoft-store-msix`, `phase-2-workforce-project-costs`) : aucune de leurs modifications n’a été identifiée comme nécessaire à cette tranche.
+- Branche de documentation `docs/release-188-fr` : audit daté et notes de version uniquement.
+- La release `windows-build-188` est construite depuis `main` (`f979cf0`), pas depuis une branche de travail.
