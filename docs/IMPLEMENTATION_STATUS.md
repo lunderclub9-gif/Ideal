@@ -30,7 +30,7 @@ Statuses: **Verified** (workflow + tests confirmed), **Not fully verified** (cod
 | 3.3 Suppliers and subcontractors | Partial | suppliers/purchases in simulation | **Subcontractor entity and certificates missing** |
 | 3.4 Projects, contracts, amendments | Verified | projects/contracts/milestones in regressions | Multiple sites per project, project cost codes |
 | 3.5 BOQ, estimates, rate analysis, quotations | **Partial — core + devis conversion** | BOQ block in `test:regressions` (versions, sections, items, resources, approval, duplication, permissions, conversion to a linked devis with VAT, totals and amount in words) | BOQ → contract conversion, version comparison, BOQ print/export of its own layout |
-| 3.6 WBS, planning, scheduling | Partial | tasks/phases in simulation | Dependencies, cycle validation, Gantt, baseline/revised schedule |
+| 3.6 WBS, planning, scheduling | Partial | Existing phases/tasks; schema 12 task dependencies with same-project constraints, cycle prevention, task-date validation, French UI add/remove; `test:project-scheduling` and Windows packaged-app smoke test passed in PR #20 | WBS hierarchy, Gantt/timeline, baseline/revised schedule, milestones and critical path |
 | 3.7 Daily site reports | Missing | — | Entire module |
 | 3.8 Progress measurement and billing | Missing | — | Measured quantities, IPC, retention/advance rules |
 | 3.9 Workforce, attendance, payroll | Not fully verified | attendance/payroll in simulation | Locked-period correction flow, configurable formulas with effective dates |
