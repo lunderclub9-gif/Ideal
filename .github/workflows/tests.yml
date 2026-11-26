@@ -36,6 +36,8 @@ jobs:
       # destroys a customer's books, which no later test can undo.
       - name: Migrate a captured company database through the whole chain
         run: npm run test:migrations
+      - name: Test project scheduling and dependency integrity
+        run: npm run test:project-scheduling
       - name: Test backup, restore and session protection
         run: npm run test:data-protection
       - name: Test lifecycle policies in an isolated temporary database

@@ -69,7 +69,7 @@ export function reopenDb(): Database.Database {
 }
 
 /** Highest schema version this build understands. The migration test keeps it honest. */
-export const LATEST_SCHEMA_VERSION = 11;
+export const LATEST_SCHEMA_VERSION = 12;
 
 export function runMigrations(db: Database.Database, upTo: number = LATEST_SCHEMA_VERSION) {
   db.exec(`
@@ -1015,5 +1015,55 @@ export function runMigrations(db: Database.Database, upTo: number = LATEST_SCHEM
     }
 
     db.prepare('INSERT INTO schema_migrations (version) VALUES (11)').run();
+  }
+
+  // Version 12: explicit task dependencies for project scheduling. Additive only:
+  // existing tasks and historical project records remain unchanged.
+  const migration12 = db.prepare('SELECT version FROM schema_migrations WHERE version = 12').get();
+  if (upTo >= 12 && !migration12) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS project_task_dependencies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        predecessor_task_id INTEGER NOT NULL REFERENCES project_tasks(id) ON DELETE CASCADE,
+        successor_task_id INTEGER NOT NULL REFERENCES project_tasks(id) ON DELETE CASCADE,
+        created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        CHECK(predecessor_task_id <> successor_task_id),
+        UNIQUE(predecessor_task_id, successor_task_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_task_dependencies_project
+        ON project_task_dependencies(project_id);
+      CREATE INDEX IF NOT EXISTS idx_task_dependencies_successor
+        ON project_task_dependencies(successor_task_id);
+
+      CREATE TRIGGER IF NOT EXISTS trg_task_dependency_project_insert
+      BEFORE INSERT ON project_task_dependencies
+      BEGIN
+        SELECT CASE WHEN
+          (SELECT project_id FROM project_tasks WHERE id = NEW.predecessor_task_id) IS NOT NEW.project_id
+          OR (SELECT project_id FROM project_tasks WHERE id = NEW.successor_task_id) IS NOT NEW.project_id
+        THEN RAISE(ABORT, 'Task dependencies must stay within one project') END;
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_task_dependency_cycle_insert
+      BEFORE INSERT ON project_task_dependencies
+      BEGIN
+        SELECT CASE WHEN EXISTS (
+          WITH RECURSIVE reachable(task_id) AS (
+            SELECT successor_task_id
+            FROM project_task_dependencies
+            WHERE predecessor_task_id = NEW.successor_task_id
+            UNION
+            SELECT d.successor_task_id
+            FROM project_task_dependencies d
+            JOIN reachable r ON d.predecessor_task_id = r.task_id
+          )
+          SELECT 1 FROM reachable WHERE task_id = NEW.predecessor_task_id
+        ) THEN RAISE(ABORT, 'Task dependencies cannot contain a cycle') END;
+      END;
+    `);
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (12)').run();
   }
 }

@@ -603,6 +603,9 @@ router.get('/projects/:id', requireAuth, requirePermission('projects:read'), (re
        WHERE t.project_id = ? ORDER BY t.id ASC`
     )
     .all(id);
+  const taskDependencies = db
+    .prepare('SELECT * FROM project_task_dependencies WHERE project_id = ? ORDER BY id ASC')
+    .all(id);
   const changeOrders = db.prepare('SELECT * FROM change_orders WHERE project_id = ? ORDER BY id DESC').all(id);
   const contracts = db.prepare('SELECT * FROM contracts WHERE project_id = ? ORDER BY id DESC').all(id) as any[];
   for (const ctr of contracts) {
@@ -629,6 +632,7 @@ router.get('/projects/:id', requireAuth, requirePermission('projects:read'), (re
     financials,
     phases,
     tasks,
+    taskDependencies,
     changeOrders,
     contracts,
     stockMovements,
@@ -916,14 +920,50 @@ router.post('/projects/:id/phases', requireAuth, requirePermission('projects:wri
   res.status(201).json(db.prepare('SELECT * FROM project_phases WHERE id = ?').get(info.lastInsertRowid));
 });
 
-router.post('/projects/:id/tasks', requireAuth, requirePermission('projects:write'), (req, res) => {
+router.post('/projects/:id/tasks', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
   const id = Number(req.params.id);
   const b = req.body || {};
-  if (!b.title?.trim()) {
+  const db = getDb();
+  if (!Number.isInteger(id) || id <= 0 || !db.prepare('SELECT id FROM projects WHERE id = ?').get(id)) {
+    res.status(404).json({ error: 'Chantier introuvable.' });
+    return;
+  }
+  if (!String(b.title || '').trim()) {
     res.status(400).json({ error: 'Le titre de la tâche est obligatoire.' });
     return;
   }
-  const db = getDb();
+  const validDate = (value: unknown) => {
+    if (value === null || value === undefined || value === '') return true;
+    if (typeof value !== 'string' || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value)) return false;
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  };
+  if (!validDate(b.planned_start) || !validDate(b.due_date) || (b.planned_start && b.due_date && b.planned_start > b.due_date)) {
+    res.status(400).json({ error: 'Les dates de planification sont invalides : la date de début doit précéder ou égaler l’échéance.' });
+    return;
+  }
+  const phaseId = b.phase_id ? Number(b.phase_id) : null;
+  if (phaseId !== null && (!Number.isInteger(phaseId) || !db.prepare('SELECT id FROM project_phases WHERE id = ? AND project_id = ?').get(phaseId, id))) {
+    res.status(400).json({ error: 'La phase sélectionnée ne fait pas partie de ce chantier.' });
+    return;
+  }
+  const workerId = b.assigned_worker_id ? Number(b.assigned_worker_id) : null;
+  if (workerId !== null) {
+    const worker = db.prepare("SELECT id, status FROM workers WHERE id = ?").get(workerId) as any;
+    if (!worker || worker.status === 'terminated' || worker.status === 'suspended') {
+      res.status(400).json({ error: 'Le salarié sélectionné est introuvable, sorti ou suspendu.' });
+      return;
+    }
+  }
+  const status = b.status || 'planned';
+  if (!['planned', 'in_progress', 'delayed', 'completed'].includes(status)) {
+    res.status(400).json({ error: 'Statut de tâche invalide.' });
+    return;
+  }
+  if (status === 'delayed' && !String(b.delay_reason || '').trim()) {
+    res.status(400).json({ error: 'Veuillez préciser le motif du retard.' });
+    return;
+  }
   const info = db
     .prepare(
       `INSERT INTO project_tasks (project_id, phase_id, title, assigned_worker_id, planned_start, due_date, status, delay_reason, delay_reported_at, notes)
@@ -931,16 +971,17 @@ router.post('/projects/:id/tasks', requireAuth, requirePermission('projects:writ
     )
     .run(
       id,
-      b.phase_id ? Number(b.phase_id) : null,
-      b.title.trim(),
-      b.assigned_worker_id ? Number(b.assigned_worker_id) : null,
+      phaseId,
+      String(b.title).trim(),
+      workerId,
       b.planned_start || null,
       b.due_date || null,
-      b.status || 'planned',
+      status,
       b.delay_reason || '',
-      b.status === 'delayed' ? new Date().toISOString().slice(0, 10) : null,
+      status === 'delayed' ? new Date().toISOString().slice(0, 10) : null,
       b.notes || ''
     );
+  logAudit(req.user!, 'CREATE', 'project_task', info.lastInsertRowid, '', String(b.title).trim());
   res.status(201).json(db.prepare('SELECT * FROM project_tasks WHERE id = ?').get(info.lastInsertRowid));
 });
 
@@ -988,6 +1029,74 @@ router.put('/projects/tasks/:taskId', requireAuth, requirePermission('projects:w
   );
   logAudit(req.user!, 'UPDATE', 'project_task', taskId, old.status, b.status ?? old.status);
   res.json(db.prepare('SELECT * FROM project_tasks WHERE id = ?').get(taskId));
+});
+
+router.post('/projects/:id/task-dependencies', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const projectId = Number(req.params.id);
+  const predecessorId = Number(req.body?.predecessor_task_id);
+  const successorId = Number(req.body?.successor_task_id);
+  const db = getDb();
+
+  if (!Number.isInteger(projectId) || projectId <= 0 || !db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId)) {
+    res.status(404).json({ error: 'Chantier introuvable.' });
+    return;
+  }
+  if (!Number.isInteger(predecessorId) || !Number.isInteger(successorId) || predecessorId <= 0 || successorId <= 0 || predecessorId === successorId) {
+    res.status(400).json({ error: 'Sélectionnez deux tâches différentes.' });
+    return;
+  }
+  const tasks = db.prepare('SELECT id FROM project_tasks WHERE project_id = ? AND id IN (?, ?)').all(projectId, predecessorId, successorId) as any[];
+  if (tasks.length !== 2) {
+    res.status(400).json({ error: 'Les deux tâches doivent appartenir au même chantier.' });
+    return;
+  }
+  const cycle = db.prepare(`
+    WITH RECURSIVE reachable(task_id) AS (
+      SELECT successor_task_id
+      FROM project_task_dependencies
+      WHERE predecessor_task_id = ?
+      UNION
+      SELECT d.successor_task_id
+      FROM project_task_dependencies d
+      JOIN reachable r ON d.predecessor_task_id = r.task_id
+    )
+    SELECT 1 AS found FROM reachable WHERE task_id = ? LIMIT 1
+  `).get(successorId, predecessorId);
+  if (cycle) {
+    res.status(409).json({ error: 'Cette dépendance créerait une boucle dans le planning.' });
+    return;
+  }
+  try {
+    const info = db.prepare(
+      'INSERT INTO project_task_dependencies (project_id, predecessor_task_id, successor_task_id, created_by) VALUES (?, ?, ?, ?)'
+    ).run(projectId, predecessorId, successorId, req.user!.id);
+    logAudit(req.user!, 'CREATE', 'project_task_dependency', info.lastInsertRowid, '', `${predecessorId} → ${successorId}`);
+    res.status(201).json(db.prepare('SELECT * FROM project_task_dependencies WHERE id = ?').get(info.lastInsertRowid));
+  } catch (error: any) {
+    if (String(error?.message || '').includes('UNIQUE')) {
+      res.status(409).json({ error: 'Cette dépendance existe déjà.' });
+      return;
+    }
+    if (String(error?.message || '').includes('cycle')) {
+      res.status(409).json({ error: 'Cette dépendance créerait une boucle dans le planning.' });
+      return;
+    }
+    throw error;
+  }
+});
+
+router.delete('/projects/:id/task-dependencies/:dependencyId', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
+  const projectId = Number(req.params.id);
+  const dependencyId = Number(req.params.dependencyId);
+  const db = getDb();
+  const dependency = db.prepare('SELECT * FROM project_task_dependencies WHERE id = ? AND project_id = ?').get(dependencyId, projectId) as any;
+  if (!dependency) {
+    res.status(404).json({ error: 'Dépendance introuvable.' });
+    return;
+  }
+  db.prepare('DELETE FROM project_task_dependencies WHERE id = ?').run(dependencyId);
+  logAudit(req.user!, 'DELETE', 'project_task_dependency', dependencyId, `${dependency.predecessor_task_id} → ${dependency.successor_task_id}`, '');
+  res.json({ ok: true });
 });
 
 router.post('/projects/:id/change-orders', requireAuth, requirePermission('projects:write'), (req: AuthedRequest, res) => {
